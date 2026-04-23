@@ -171,7 +171,6 @@
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="TextAlignment" Value="Left"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
@@ -199,7 +198,6 @@
             <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="TextAlignment" Value="Left"/>
         </Style>
 
         <Style x:Key="BadgeBorderStyle" TargetType="Border">

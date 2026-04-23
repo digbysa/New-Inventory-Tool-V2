@@ -95,6 +95,7 @@ try {
         $script:AppState.LastStatusMode = $Mode
     }
 
+    function Get-DataFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data' }
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
 
@@ -106,8 +107,8 @@ try {
 
     function Add-CsvRow {
         param([string]$Path,[psobject]$Row)
-        if (Test-Path -LiteralPath $Path) { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation -Append }
-        else { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation }
+        if (Test-Path -LiteralPath $Path) { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation -Append -Encoding UTF8 }
+        else { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation -Encoding UTF8 }
     }
 
     function Set-DisplayText {
@@ -118,74 +119,240 @@ try {
         if ($textbox) { $textbox.Text = $Value }
     }
 
-    function New-SampleData {
-        $device = [pscustomobject]@{
-            SearchKeys   = @('AO400568', 'HSS-8093577', 'C24102M031')
-            DetectedType = 'Tangent'
-            Name         = 'AO400568'
-            AssetTag     = 'HSS-8093577'
-            Serial       = 'C24102M031'
-            Parent       = '(n/a)'
-            RITM         = 'TRP - 26 May 2025'
-            RetireDate   = '31 May 2028'
-            LastRounded  = '12 March 2026 - 39 days ago'
-            City         = 'Duncan'
-            Location     = 'VIHA-CDH-Cowichan District Hospital'
-            Building     = 'Main Building'
-            Floor        = '1'
-            Room         = '1068 (PACU)'
-            Department   = 'Medical Device Reprocessing Department (MDRD)'
+    function Parse-DateLoose {
+        param([string]$s)
+        if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+        try { return [datetime]$s } catch {}
+        foreach ($fmt in @('yyyy-MM-dd','dd MMMM yyyy','dd MMM yyyy','MM/dd/yyyy HH:mm:ss','MM/dd/yyyy')) {
+            try { return [datetime]::ParseExact($s.Trim(), $fmt, [Globalization.CultureInfo]::InvariantCulture) } catch {}
+        }
+        return $null
+    }
+
+    function Fmt-DateLong { param($dt) if ($dt) { try { return ([datetime]$dt).ToString('dd MMMM yyyy') } catch {} } return '' }
+
+    function Extract-Ritm {
+        param([string]$po)
+        if ([string]::IsNullOrWhiteSpace($po)) { return '' }
+        if ($po -match '(RITM\d+|TRP\s*-\s*\d{1,2}\s+\w+\s+\d{4})') { return $matches[1] }
+        return $po
+    }
+
+    function Get-DeviceType {
+        param([psobject]$Record)
+        if (-not $Record) { return '' }
+        $type = ('' + $Record.Type).Trim()
+        if ($type -eq 'Computer' -and ('' + $Record.Name).Trim().ToUpper().StartsWith('AO')) { return 'Tangent' }
+        return $type
+    }
+
+    function Load-DataSet {
+        param([string]$ResolvedXamlPath)
+        $dataFolder = Get-DataFolder -ResolvedXamlPath $ResolvedXamlPath
+        if (-not (Test-Path -LiteralPath $dataFolder)) { throw "Data folder not found: $dataFolder" }
+
+        $records = New-Object System.Collections.Generic.List[object]
+        $locationRows = New-Object System.Collections.Generic.List[object]
+
+        foreach ($csvFile in (Get-ChildItem -LiteralPath $dataFolder -Recurse -Filter '*.csv')) {
+            $name = $csvFile.Name
+            $site = Split-Path -Leaf (Split-Path -Parent $csvFile.FullName)
+            $rows = @()
+            try { $rows = Import-Csv -LiteralPath $csvFile.FullName } catch { $rows = @() }
+            foreach ($r in $rows) {
+                if ($name -like 'LocationMaster*') {
+                    $locationRows.Add([pscustomobject]@{
+                        City = ('' + $site).Trim()
+                        Location = ('' + $r.location).Trim()
+                        Building = ('' + $r.u_building).Trim()
+                        Floor = ('' + $r.u_floor).Trim()
+                        Room = ('' + $r.u_room).Trim()
+                        Department = ('' + $r.u_department).Trim()
+                    }) | Out-Null
+                    continue
+                }
+
+                $type = $null
+                $kind = 'Peripheral'
+                $parent = ''
+                switch -Wildcard ($name) {
+                    'Computers*' { $type = 'Computer'; $kind = 'Computer' }
+                    'Monitors*'  { $type = 'Monitor'; $parent = $r.u_parent_asset }
+                    'Mics*'      { $type = 'Mic'; $parent = $r.u_parent_asset }
+                    'Scanners*'  { $type = 'Scanner'; $parent = $r.u_parent_asset }
+                    'Carts*'     { $type = 'Cart'; $parent = $r.u_parent_asset }
+                    default { }
+                }
+                if (-not $type) { continue }
+
+                $assetTag = if ($r.asset_tag) { $r.asset_tag } elseif ($r.asset) { $r.asset } else { '' }
+                $record = [pscustomobject]@{
+                    Kind = $kind
+                    Type = $type
+                    Name = ('' + $r.name).Trim()
+                    AssetTag = ('' + $assetTag).Trim()
+                    Serial = ('' + $r.serial_number).Trim()
+                    Parent = ('' + $parent).Trim()
+                    City = if ($r.'location.city') { ('' + $r.'location.city').Trim() } else { ('' + $site).Trim() }
+                    Location = ('' + $r.location).Trim()
+                    Building = ('' + $r.u_building).Trim()
+                    Floor = ('' + $r.u_floor).Trim()
+                    Room = ('' + $r.u_room).Trim()
+                    Department = ('' + $r.u_department_location).Trim()
+                    RITM = (Extract-Ritm -po ('' + $r.po_number))
+                    Retire = Parse-DateLoose -s ('' + $r.u_scheduled_retirement)
+                    LastRounded = Parse-DateLoose -s ('' + $r.u_last_rounded_date)
+                    MaintenanceType = ('' + $r.u_device_rounding).Trim()
+                }
+                $records.Add($record) | Out-Null
+            }
         }
 
-        $associated = @(
-            [pscustomobject]@{ Role='Parent'; Type='Tangent'; Name='AO400568'; AssetTag='HSS-8093577'; Serial='C24102M031'; RITM='TRP - 26 May 2025'; Retire='31 May 2028' },
-            [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; RITM='-'; Retire='-' }
-        )
+        $indexByAsset = @{}
+        $indexByName = @{}
+        $indexBySerial = @{}
+        $childrenByParent = @{}
+        foreach ($r in $records) {
+            if ($r.AssetTag) { $indexByAsset[$r.AssetTag.ToUpper()] = $r }
+            if ($r.Name) { $indexByName[$r.Name.ToUpper()] = $r }
+            if ($r.Serial) { $indexBySerial[$r.Serial.ToUpper()] = $r }
+            if ($r.Parent) {
+                $k = $r.Parent.ToUpper()
+                if (-not $childrenByParent.ContainsKey($k)) { $childrenByParent[$k] = New-Object System.Collections.Generic.List[object] }
+                $childrenByParent[$k].Add($r)
+            }
+        }
 
-        $nearby = @(
-            [pscustomobject]@{ HostName='LD065898'; IPAddress='';             Subnet='';       AssetTag='HSS-8077199'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#6 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Asset not found' },
-            [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Laptop is not available' },
-            [pscustomobject]@{ HostName='LD062047'; IPAddress='10.64.47.15';  Subnet='VPN';    AssetTag='HSS-1037495'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#8 Charge Cabinet)'; Department='CHS (Reception)'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Inaccessible - Laptop is not available' },
-            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; DaysAgo='45'; Status='-' },
-            [pscustomobject]@{ HostName='LD072236'; IPAddress='10.209.233.47'; Subnet='Unknown';AssetTag='HSS-1037488'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='104 (Chart Room)'; Department='Charting'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Complete' }
-        )
+        return [pscustomobject]@{
+            Records = @($records)
+            IndexByAsset = $indexByAsset
+            IndexByName = $indexByName
+            IndexBySerial = $indexBySerial
+            ChildrenByParent = $childrenByParent
+            LocationRows = @($locationRows)
+        }
+    }
 
-        return [pscustomobject]@{ Device=$device; Associated=$associated; Nearby=$nearby }
+    function Find-Record {
+        param([string]$SearchTerm,[pscustomobject]$DataSet)
+        $term = ('' + $SearchTerm).Trim()
+        if ([string]::IsNullOrWhiteSpace($term)) { return $null }
+        $upper = $term.ToUpper()
+        if ($DataSet.IndexByAsset.ContainsKey($upper)) { return $DataSet.IndexByAsset[$upper] }
+        if ($DataSet.IndexBySerial.ContainsKey($upper)) { return $DataSet.IndexBySerial[$upper] }
+        if ($DataSet.IndexByName.ContainsKey($upper)) { return $DataSet.IndexByName[$upper] }
+
+        foreach ($r in $DataSet.Records) {
+            if ($r.AssetTag -like "*$term*" -or $r.Serial -like "*$term*" -or $r.Name -like "*$term*") { return $r }
+        }
+        return $null
+    }
+
+    function Get-AssociatedRows {
+        param([pscustomobject]$Current,[pscustomobject]$DataSet)
+        $rows = New-Object System.Collections.Generic.List[object]
+        if (-not $Current) { return @($rows) }
+        $rows.Add([pscustomobject]@{ Role='Parent'; Type=(Get-DeviceType $Current); Name=$Current.Name; AssetTag=$Current.AssetTag; Serial=$Current.Serial; RITM=$Current.RITM; Retire=(Fmt-DateLong $Current.Retire) }) | Out-Null
+        if ($Current.AssetTag) {
+            $key = $Current.AssetTag.ToUpper()
+            if ($DataSet.ChildrenByParent.ContainsKey($key)) {
+                foreach ($child in $DataSet.ChildrenByParent[$key]) {
+                    $rows.Add([pscustomobject]@{ Role='Child'; Type=(Get-DeviceType $child); Name=$child.Name; AssetTag=$child.AssetTag; Serial=$child.Serial; RITM=$child.RITM; Retire=(Fmt-DateLong $child.Retire) }) | Out-Null
+                }
+            }
+        }
+        return @($rows)
+    }
+
+    function Get-NearbyRows {
+        param([pscustomobject]$Current,[pscustomobject]$DataSet)
+        $rows = New-Object System.Collections.Generic.List[object]
+        if (-not $Current) { return @($rows) }
+        $sameLoc = $DataSet.Records | Where-Object { $_.Type -eq 'Computer' -and $_.Location -eq $Current.Location }
+        foreach ($pc in $sameLoc) {
+            $days = ''
+            if ($pc.LastRounded) {
+                try { $days = [math]::Max(0, [int]((New-TimeSpan -Start $pc.LastRounded -End (Get-Date)).TotalDays)) } catch { $days = '' }
+            }
+            $rows.Add([pscustomobject]@{
+                HostName = $pc.Name
+                IPAddress = ''
+                Subnet = ''
+                AssetTag = $pc.AssetTag
+                Location = $pc.Location
+                Building = $pc.Building
+                Floor = $pc.Floor
+                Room = $pc.Room
+                Department = $pc.Department
+                MaintenanceType = if ($pc.MaintenanceType) { $pc.MaintenanceType } else { 'General Rounding' }
+                LastRounded = Fmt-DateLong $pc.LastRounded
+                DaysAgo = "$days"
+                Status = '-'
+            }) | Out-Null
+        }
+        return @($rows)
+    }
+
+    function Populate-LocationCombos {
+        param([hashtable]$Ui,[psobject]$Current,[pscustomobject]$DataSet)
+        $pairs = @(
+            @{ Combo=$Ui.CityComboBox; Value=$Current.City; Col='City' },
+            @{ Combo=$Ui.LocationComboBox; Value=$Current.Location; Col='Location' },
+            @{ Combo=$Ui.BuildingComboBox; Value=$Current.Building; Col='Building' },
+            @{ Combo=$Ui.FloorComboBox; Value=$Current.Floor; Col='Floor' },
+            @{ Combo=$Ui.RoomComboBox; Value=$Current.Room; Col='Room' },
+            @{ Combo=$Ui.DepartmentComboBox; Value=$Current.Department; Col='Department' }
+        )
+        foreach ($pair in $pairs) {
+            $pair.Combo.Items.Clear()
+            $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+            if ($pair.Value) { [void]$seen.Add([string]$pair.Value); [void]$pair.Combo.Items.Add([string]$pair.Value) }
+            foreach ($r in $DataSet.LocationRows) {
+                $candidate = ('' + $r.($pair.Col)).Trim()
+                if (-not [string]::IsNullOrWhiteSpace($candidate) -and $seen.Add($candidate)) {
+                    [void]$pair.Combo.Items.Add($candidate)
+                }
+            }
+            $pair.Combo.Text = [string]$pair.Value
+        }
     }
 
     function Set-WindowDataBindings {
-        param([hashtable]$Ui,[pscustomobject]$SampleData)
-        $device = $SampleData.Device
-        $Ui.SearchTextBox.Text = $device.Name
-        $Ui.SelectedDeviceText.Text = $device.Name
-        Set-DisplayText -Ui $Ui -BaseName 'DetectedType' -Value $device.DetectedType
-        Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $device.Name
-        Set-DisplayText -Ui $Ui -BaseName 'AssetTag' -Value $device.AssetTag
-        Set-DisplayText -Ui $Ui -BaseName 'Serial' -Value $device.Serial
-        Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $device.Parent
-        Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $device.RITM
-        Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value $device.RetireDate
-        $Ui.LastRoundedText.Text = $device.LastRounded
-        $Ui.CityTextBox.Text = $device.City
-        $Ui.LocationTextBox.Text = $device.Location
-        $Ui.BuildingTextBox.Text = $device.Building
-        $Ui.FloorTextBox.Text = $device.Floor
-        $Ui.RoomTextBox.Text = $device.Room
-        $Ui.DepartmentTextBox.Text = $device.Department
-        $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm')"
-        $Ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($SampleData.Nearby.Count)"
-        $Ui.AssociatedDevicesDataGrid.ItemsSource = $SampleData.Associated
-        $Ui.NearbyDataGrid.ItemsSource = $SampleData.Nearby
-    }
+        param([hashtable]$Ui,[pscustomobject]$Current,[pscustomobject]$DataSet)
+        if (-not $Current) { return }
 
-    function Find-SampleDevice {
-        param([string]$SearchTerm,[pscustomobject]$SampleData)
-        $term = $SearchTerm.Trim()
-        if ([string]::IsNullOrWhiteSpace($term)) { return $null }
-        foreach ($key in $SampleData.Device.SearchKeys) {
-            if ($key -like "*$term*" -or $term -like "*$key*") { return $SampleData.Device }
-        }
-        return $null
+        $parentText = if ($Current.Parent) { $Current.Parent } else { '(n/a)' }
+        $lastRoundedText = if ($Current.LastRounded) {
+            $d = [math]::Max(0, [int]((New-TimeSpan -Start $Current.LastRounded -End (Get-Date)).TotalDays))
+            "$(Fmt-DateLong $Current.LastRounded) - $d day$(if($d -eq 1){''} else {'s'}) ago"
+        } else { '' }
+
+        $Ui.SearchTextBox.Text = $Current.Name
+        $Ui.SelectedDeviceText.Text = $Current.Name
+        Set-DisplayText -Ui $Ui -BaseName 'DetectedType' -Value (Get-DeviceType $Current)
+        Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $Current.Name
+        Set-DisplayText -Ui $Ui -BaseName 'AssetTag' -Value $Current.AssetTag
+        Set-DisplayText -Ui $Ui -BaseName 'Serial' -Value $Current.Serial
+        Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $parentText
+        Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $Current.RITM
+        Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value (Fmt-DateLong $Current.Retire)
+        $Ui.LastRoundedText.Text = $lastRoundedText
+        $Ui.CityTextBox.Text = $Current.City
+        $Ui.LocationTextBox.Text = $Current.Location
+        $Ui.BuildingTextBox.Text = $Current.Building
+        $Ui.FloorTextBox.Text = $Current.Floor
+        $Ui.RoomTextBox.Text = $Current.Room
+        $Ui.DepartmentTextBox.Text = $Current.Department
+        $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm')"
+
+        $associated = Get-AssociatedRows -Current $Current -DataSet $DataSet
+        $nearby = Get-NearbyRows -Current $Current -DataSet $DataSet
+
+        $Ui.AssociatedDevicesDataGrid.ItemsSource = $associated
+        $Ui.NearbyDataGrid.ItemsSource = $nearby
+        $Ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($nearby.Count)"
+
+        Populate-LocationCombos -Ui $Ui -Current $Current -DataSet $DataSet
     }
 
     function Get-RoundingMinutes {
@@ -205,13 +372,27 @@ try {
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
         $row = [pscustomobject]@{
-            AssetTag=$CurrentDevice.AssetTag; Name=$CurrentDevice.Name; Serial=$CurrentDevice.Serial
-            City=$CurrentDevice.City; Location=$CurrentDevice.Location; Building=$CurrentDevice.Building
-            Floor=$CurrentDevice.Floor; Room=$CurrentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
-            RoundingMinutes=(Get-RoundingMinutes -Ui $Ui); CableMgmtOK=[bool]$Ui.ValidateCableCheckBox.IsChecked
-            LabelOK=[bool]$Ui.LabelMonitorCheckBox.IsChecked; CartOK=[bool]$Ui.PhysicalCartCheckBox.IsChecked
-            PeripheralsOK=[bool]$Ui.ValidatePeripheralsCheckBox.IsChecked; Comments=$Ui.CommentsTextBox.Text
-            SavedAt=(Get-Date).ToString('s'); SavedFrom='System'
+            Timestamp       = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+            AssetTag        = $CurrentDevice.AssetTag
+            Name            = $CurrentDevice.Name
+            Serial          = $CurrentDevice.Serial
+            City            = $CurrentDevice.City
+            Location        = $CurrentDevice.Location
+            Building        = $CurrentDevice.Building
+            Floor           = $CurrentDevice.Floor
+            Room            = $CurrentDevice.Room
+            CheckStatus     = $Ui.CheckStatusComboBox.Text
+            RoundingMinutes = (Get-RoundingMinutes -Ui $Ui)
+            CableMgmtOK     = if ($Ui.ValidateCableCheckBox.IsChecked) { 'Yes' } else { 'No' }
+            CablingNeeded   = if ($Ui.CablingNeededCheckBox.IsChecked) { 'Yes' } else { 'No' }
+            LabelOK         = if ($Ui.LabelMonitorCheckBox.IsChecked) { 'Yes' } else { 'No' }
+            CartOK          = if ($Ui.PhysicalCartCheckBox.IsChecked) { 'Yes' } else { 'No' }
+            PeripheralsOK   = if ($Ui.ValidatePeripheralsCheckBox.IsChecked) { 'Yes' } else { 'No' }
+            MaintenanceType = $Ui.MaintenanceTypeComboBox.Text
+            Department      = $Ui.DepartmentTextBox.Text
+            RoundingUrl     = ''
+            Comments        = $Ui.CommentsTextBox.Text
+            Rounded         = 'No'
         }
         Add-CsvRow -Path $csvPath -Row $row
         [System.Windows.MessageBox]::Show("Saved event to:`n$csvPath", 'Save Event') | Out-Null
@@ -228,10 +409,27 @@ try {
         }
         foreach ($item in $selectedRows) {
             $row = [pscustomobject]@{
-                AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
-                CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -eq '-') { 'Complete' } else { $item.Status })
-                RoundingMinutes=3; CableMgmtOK=$true; LabelOK=$true; CartOK=$true; PeripheralsOK=$true
-                Comments='Saved from Nearby tab'; SavedAt=(Get-Date).ToString('s'); SavedFrom='Nearby'
+                Timestamp       = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                AssetTag        = $item.AssetTag
+                Name            = $item.HostName
+                Serial          = ''
+                City            = $Ui.CityTextBox.Text
+                Location        = $item.Location
+                Building        = $item.Building
+                Floor           = $item.Floor
+                Room            = $item.Room
+                CheckStatus     = $(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -eq '-') { 'Complete' } else { $item.Status })
+                RoundingMinutes = 3
+                CableMgmtOK     = 'Yes'
+                CablingNeeded   = 'No'
+                LabelOK         = 'Yes'
+                CartOK          = 'Yes'
+                PeripheralsOK   = 'Yes'
+                MaintenanceType = $item.MaintenanceType
+                Department      = $item.Department
+                RoundingUrl     = ''
+                Comments        = 'Saved from Nearby tab'
+                Rounded         = 'No'
             }
             Add-CsvRow -Path $csvPath -Row $row
         }
@@ -250,13 +448,54 @@ try {
 
     function Save-LocationValues {
         param([hashtable]$Ui)
-
         $Ui.CityTextBox.Text = $Ui.CityComboBox.Text
         $Ui.LocationTextBox.Text = $Ui.LocationComboBox.Text
         $Ui.BuildingTextBox.Text = $Ui.BuildingComboBox.Text
         $Ui.FloorTextBox.Text = $Ui.FloorComboBox.Text
         $Ui.RoomTextBox.Text = $Ui.RoomComboBox.Text
         $Ui.DepartmentTextBox.Text = $Ui.DepartmentComboBox.Text
+    }
+
+    function Get-NearbySubnetValue {
+        param([string]$IpAddress)
+        if ([string]::IsNullOrWhiteSpace($IpAddress)) { return '' }
+        $ip = $IpAddress.Trim()
+        if ($ip.StartsWith('10.64.')) { return 'VPN' }
+        return 'Unknown'
+    }
+
+    function Invoke-NearbyPingAll {
+        param([hashtable]$Ui)
+        $rows = @($Ui.NearbyDataGrid.ItemsSource)
+        if ($rows.Count -eq 0) {
+            Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText 'No nearby hosts available to ping'
+            return
+        }
+        foreach ($row in $rows) {
+            $hostName = ('' + $row.HostName).Trim()
+            if ([string]::IsNullOrWhiteSpace($hostName)) { continue }
+            $success = $false
+            $ipAddress = ''
+            try {
+                $ping = New-Object System.Net.NetworkInformation.Ping
+                try {
+                    $reply = $ping.Send($hostName, 2000)
+                    if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+                        $success = $true
+                        if ($reply.Address) { $ipAddress = '' + $reply.Address }
+                    }
+                } finally {
+                    $ping.Dispose()
+                }
+            } catch {
+                $success = $false
+            }
+            $row.IPAddress = $ipAddress
+            $row.Subnet = Get-NearbySubnetValue -IpAddress $ipAddress
+            $row.Status = if ($success) { 'Complete' } else { 'Inaccessible - Laptop is not available' }
+        }
+        $Ui.NearbyDataGrid.Items.Refresh()
+        Set-StatusMessage -Ui $Ui -Mode 'PingComplete'
     }
 
     $resolvedXamlPath = (Resolve-Path -LiteralPath $XamlPath).Path
@@ -283,38 +522,29 @@ try {
         'DataPathText','OutputPathText','DaysPerWeekBadge','TodayBadge','ThisWeekBadge','RemainingPerDayBadge','StatusMessageBadge'
     )
 
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=(New-SampleData); CurrentDevice=$null }
-    $script:AppState.CurrentDevice = $script:AppState.SampleData.Device
+    $dataSet = Load-DataSet -ResolvedXamlPath $resolvedXamlPath
+    $initialDevice = $dataSet.Records | Where-Object { $_.Type -eq 'Computer' } | Select-Object -First 1
+    if (-not $initialDevice) { $initialDevice = $dataSet.Records | Select-Object -First 1 }
 
-    Set-WindowDataBindings -Ui $ui -SampleData $script:AppState.SampleData
-    Set-StatusMessage -Ui $ui -Mode 'Found'
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; DataSet=$dataSet; CurrentDevice=$initialDevice }
+
+    if ($script:AppState.CurrentDevice) {
+        Set-WindowDataBindings -Ui $ui -Current $script:AppState.CurrentDevice -DataSet $script:AppState.DataSet
+        Set-StatusMessage -Ui $ui -Mode 'Found'
+    }
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
 
-    $ui.DataPathText.Text = "Data: $(Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data')"
+    $ui.DataPathText.Text = "Data: $(Get-DataFolder -ResolvedXamlPath $resolvedXamlPath)"
     $ui.OutputPathText.Text = "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
 
-    foreach ($pair in @(
-        @{ Combo=$ui.CityComboBox; Value=$script:AppState.CurrentDevice.City },
-        @{ Combo=$ui.LocationComboBox; Value=$script:AppState.CurrentDevice.Location },
-        @{ Combo=$ui.BuildingComboBox; Value=$script:AppState.CurrentDevice.Building },
-        @{ Combo=$ui.FloorComboBox; Value=$script:AppState.CurrentDevice.Floor },
-        @{ Combo=$ui.RoomComboBox; Value=$script:AppState.CurrentDevice.Room },
-        @{ Combo=$ui.DepartmentComboBox; Value=$script:AppState.CurrentDevice.Department }
-    )) {
-        $pair.Combo.Items.Clear()
-        [void]$pair.Combo.Items.Add($pair.Value)
-        [void]$pair.Combo.Items.Add('2nd Choice')
-        $pair.Combo.SelectedIndex = 0
-    }
-
     $ui.QueryButton.Add_Click({
-        $match = Find-SampleDevice -SearchTerm $ui.SearchTextBox.Text -SampleData $script:AppState.SampleData
+        $match = Find-Record -SearchTerm $ui.SearchTextBox.Text -DataSet $script:AppState.DataSet
         if ($null -eq $match) {
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'No matching device found'
             return
         }
         $script:AppState.CurrentDevice = $match
-        Set-WindowDataBindings -Ui $ui -SampleData $script:AppState.SampleData
+        Set-WindowDataBindings -Ui $ui -Current $script:AppState.CurrentDevice -DataSet $script:AppState.DataSet
         Set-StatusMessage -Ui $ui -Mode 'Found'
     })
 
@@ -324,10 +554,28 @@ try {
         }
     })
 
-    $ui.PingButton.Add_Click({ [System.Windows.MessageBox]::Show('Ping button clicked.', 'Ping') | Out-Null })
-    $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })
-    $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Monitor Label button clicked.', 'Monitor Label') | Out-Null })
-    $ui.FixNameButton.Add_Click({ [System.Windows.MessageBox]::Show('Fix Name button clicked.', 'Fix Name') | Out-Null })
+    $ui.PingButton.Add_Click({
+        if (-not $script:AppState.CurrentDevice) { return }
+        $host = $script:AppState.CurrentDevice.Name
+        $pingOk = $false
+        try {
+            $ping = New-Object System.Net.NetworkInformation.Ping
+            try {
+                $reply = $ping.Send($host, 2000)
+                $pingOk = ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
+            } finally { $ping.Dispose() }
+        } catch {}
+        if ($pingOk) {
+            $ui.DeviceOnlineText.Text = 'Online'
+            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText 'Device ping successful'
+        } else {
+            $ui.DeviceOnlineText.Text = 'Offline'
+            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Device is not pingable'
+        }
+    })
+    $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Phase 2: Live Details migration pending.', 'Live Details') | Out-Null })
+    $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Phase 2: Monitor Label migration pending.', 'Monitor Label') | Out-Null })
+    $ui.FixNameButton.Add_Click({ [System.Windows.MessageBox]::Show('Phase 2: Fix Name migration pending.', 'Fix Name') | Out-Null })
     $ui.EditLocationButton.Add_Click({
         if ($ui.EditLocationButton.Content -eq 'Save') {
             Save-LocationValues -Ui $ui
@@ -340,12 +588,24 @@ try {
     $ui.CancelEditLocationButton.Add_Click({ Toggle-LocationEditMode -Ui $ui -IsEditing:$false })
     $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1) })
     $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ([Math]::Max(0, (Get-RoundingMinutes -Ui $ui) - 1)) })
-    $ui.CheckCompleteButton.Add_Click({ $ui.CheckStatusComboBox.Text = 'Complete' })
+    $ui.CheckCompleteButton.Add_Click({
+        $ui.CheckStatusComboBox.Text = 'Complete'
+        $ui.ValidateCableCheckBox.IsChecked = $true
+        $ui.LabelMonitorCheckBox.IsChecked = $true
+        $ui.ValidatePeripheralsCheckBox.IsChecked = $true
+        $ui.PhysicalCartCheckBox.IsChecked = $true
+    })
     $ui.SaveEventButton.Add_Click({ Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath })
-    $ui.ManualRoundButton.Add_Click({ [System.Windows.MessageBox]::Show('Manual Round button clicked.', 'Manual Round') | Out-Null })
-    $ui.RebuildNearbyButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($script:AppState.SampleData.Nearby.Count)" })
+    $ui.ManualRoundButton.Add_Click({ [System.Windows.MessageBox]::Show('Phase 2: Manual Round URL migration pending.', 'Manual Round') | Out-Null })
+    $ui.RebuildNearbyButton.Add_Click({
+        if ($script:AppState.CurrentDevice) {
+            $nearby = Get-NearbyRows -Current $script:AppState.CurrentDevice -DataSet $script:AppState.DataSet
+            $ui.NearbyDataGrid.ItemsSource = $nearby
+            $ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($nearby.Count)"
+        }
+    })
     $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.UnselectAll() })
-    $ui.PingAllButton.Add_Click({ Set-StatusMessage -Ui $ui -Mode 'PingComplete' })
+    $ui.PingAllButton.Add_Click({ Invoke-NearbyPingAll -Ui $ui })
     $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -ResolvedXamlPath $resolvedXamlPath })
 
     $ui.MainTabControl.Add_SelectionChanged({

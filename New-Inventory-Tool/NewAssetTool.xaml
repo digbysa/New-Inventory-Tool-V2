@@ -1,0 +1,130 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
+        Title="{Binding SelectedSiteName, StringFormat=New Inventory Tool - {0}}"
+        Background="#FFF3F5F9"
+        FontFamily="Segoe UI"
+        FontSize="14"
+        WindowState="Normal"
+        ResizeMode="CanResize"
+        SizeToContent="Height"
+        MinWidth="1100"
+        MinHeight="700"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid x:Name="RootGrid" Margin="8">
+        <Grid.LayoutTransform>
+            <ScaleTransform x:Name="RootScaleTransform"
+                            ScaleX="1"
+                            ScaleY="1"/>
+        </Grid.LayoutTransform>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                CornerRadius="22,22,0,0"
+                Background="#FF0D1B3B"
+                Padding="18,14,18,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                    <TextBlock x:Name="BannerDeviceNameText"
+                               Text="-"
+                               Foreground="White"
+                               FontSize="40"
+                               FontWeight="SemiBold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="130"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Height="50"
+                                Background="#FF2A3754"
+                                BorderBrush="#335D6886"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Margin="0,0,12,0">
+                            <Grid>
+                                <TextBox x:Name="SearchTextBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Foreground="White"
+                                         FontSize="17"
+                                         Padding="16,0"
+                                         VerticalContentAlignment="Center"/>
+                                <TextBlock Text="Search device / asset / serial"
+                                           Margin="16,0,16,0"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Foreground="#FFD0D8EA"
+                                           IsHitTestVisible="False">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=SearchTextBox}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </Border>
+
+                        <Button x:Name="LookupButton"
+                                Grid.Column="1"
+                                Height="50"
+                                Content="Lookup"
+                                FontSize="20"
+                                FontWeight="SemiBold"
+                                Background="#FF19D4F2"
+                                Foreground="#FF0D1B3B"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Padding="14,0"/>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="#FFEFF2F7"
+                BorderBrush="#FFD4DCEB"
+                BorderThickness="1"
+                CornerRadius="0,0,22,22"
+                Padding="0,14,0,0">
+            <wfi:WindowsFormsHost x:Name="WinFormsHost" Margin="0"/>
+        </Border>
+    </Grid>
+</Window>

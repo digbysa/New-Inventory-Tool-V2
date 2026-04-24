@@ -245,12 +245,12 @@ try {
         }
 
         return [pscustomobject]@{
-            Records = @($records)
+            Records = @($records.ToArray())
             IndexByAsset = $indexByAsset
             IndexByName = $indexByName
             IndexBySerial = $indexBySerial
             ChildrenByParent = $childrenByParent
-            LocationRows = @($locationRows)
+            LocationRows = @($locationRows.ToArray())
         }
     }
 

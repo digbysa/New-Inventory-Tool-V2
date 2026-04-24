@@ -139,6 +139,14 @@ try {
         return $prop.Value
     }
 
+    function Get-TrimmedPropertyValue {
+        param(
+            [Parameter(Mandatory=$true)][psobject]$InputObject,
+            [Parameter(Mandatory=$true)][string]$PropertyName
+        )
+        return ('' + (Get-PropertyValue -InputObject $InputObject -PropertyName $PropertyName)).Trim()
+    }
+
     function Fmt-DateLong { param($dt) if ($dt) { try { return ([datetime]$dt).ToString('dd MMMM yyyy') } catch {} } return '' }
 
     function Extract-Ritm {
@@ -173,11 +181,11 @@ try {
                 if ($name -like 'LocationMaster*') {
                     $locationRows.Add([pscustomobject]@{
                         City = ('' + $site).Trim()
-                        Location = ('' + $r.location).Trim()
-                        Building = ('' + $r.u_building).Trim()
-                        Floor = ('' + $r.u_floor).Trim()
-                        Room = ('' + $r.u_room).Trim()
-                        Department = ('' + $r.u_department).Trim()
+                        Location = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'location'
+                        Building = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_building'
+                        Floor = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_floor'
+                        Room = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_room'
+                        Department = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_department'
                     }) | Out-Null
                     continue
                 }
@@ -187,10 +195,10 @@ try {
                 $parent = ''
                 switch -Wildcard ($name) {
                     'Computers*' { $type = 'Computer'; $kind = 'Computer' }
-                    'Monitors*'  { $type = 'Monitor'; $parent = $r.u_parent_asset }
-                    'Mics*'      { $type = 'Mic'; $parent = $r.u_parent_asset }
-                    'Scanners*'  { $type = 'Scanner'; $parent = $r.u_parent_asset }
-                    'Carts*'     { $type = 'Cart'; $parent = $r.u_parent_asset }
+                    'Monitors*'  { $type = 'Monitor'; $parent = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_parent_asset' }
+                    'Mics*'      { $type = 'Mic'; $parent = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_parent_asset' }
+                    'Scanners*'  { $type = 'Scanner'; $parent = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_parent_asset' }
+                    'Carts*'     { $type = 'Cart'; $parent = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_parent_asset' }
                     default { }
                 }
                 if (-not $type) { continue }
@@ -202,20 +210,20 @@ try {
                 $record = [pscustomobject]@{
                     Kind = $kind
                     Type = $type
-                    Name = ('' + $r.name).Trim()
+                    Name = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'name'
                     AssetTag = ('' + $assetTag).Trim()
-                    Serial = ('' + $r.serial_number).Trim()
+                    Serial = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'serial_number'
                     Parent = ('' + $parent).Trim()
                     City = if ([string]::IsNullOrWhiteSpace(('' + $locationCity))) { ('' + $site).Trim() } else { ('' + $locationCity).Trim() }
-                    Location = ('' + $r.location).Trim()
-                    Building = ('' + $r.u_building).Trim()
-                    Floor = ('' + $r.u_floor).Trim()
-                    Room = ('' + $r.u_room).Trim()
-                    Department = ('' + $r.u_department_location).Trim()
-                    RITM = (Extract-Ritm -po ('' + $r.po_number))
-                    Retire = Parse-DateLoose -s ('' + $r.u_scheduled_retirement)
-                    LastRounded = Parse-DateLoose -s ('' + $r.u_last_rounded_date)
-                    MaintenanceType = ('' + $r.u_device_rounding).Trim()
+                    Location = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'location'
+                    Building = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_building'
+                    Floor = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_floor'
+                    Room = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_room'
+                    Department = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_department_location'
+                    RITM = (Extract-Ritm -po (Get-TrimmedPropertyValue -InputObject $r -PropertyName 'po_number'))
+                    Retire = Parse-DateLoose -s (Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_scheduled_retirement')
+                    LastRounded = Parse-DateLoose -s (Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_last_rounded_date')
+                    MaintenanceType = Get-TrimmedPropertyValue -InputObject $r -PropertyName 'u_device_rounding'
                 }
                 $records.Add($record) | Out-Null
             }

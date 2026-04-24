@@ -129,6 +129,16 @@ try {
         return $null
     }
 
+    function Get-PropertyValue {
+        param(
+            [Parameter(Mandatory=$true)][psobject]$InputObject,
+            [Parameter(Mandatory=$true)][string]$PropertyName
+        )
+        $prop = $InputObject.PSObject.Properties[$PropertyName]
+        if ($null -eq $prop) { return $null }
+        return $prop.Value
+    }
+
     function Fmt-DateLong { param($dt) if ($dt) { try { return ([datetime]$dt).ToString('dd MMMM yyyy') } catch {} } return '' }
 
     function Extract-Ritm {
@@ -185,7 +195,9 @@ try {
                 }
                 if (-not $type) { continue }
 
-                $assetTag = if ($r.asset_tag) { $r.asset_tag } elseif ($r.asset) { $r.asset } else { '' }
+                $assetTagFromTag = Get-PropertyValue -InputObject $r -PropertyName 'asset_tag'
+                $assetTagFromAsset = Get-PropertyValue -InputObject $r -PropertyName 'asset'
+                $assetTag = if ($assetTagFromTag) { $assetTagFromTag } elseif ($assetTagFromAsset) { $assetTagFromAsset } else { '' }
                 $record = [pscustomobject]@{
                     Kind = $kind
                     Type = $type

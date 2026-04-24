@@ -198,6 +198,7 @@ try {
                 $assetTagFromTag = Get-PropertyValue -InputObject $r -PropertyName 'asset_tag'
                 $assetTagFromAsset = Get-PropertyValue -InputObject $r -PropertyName 'asset'
                 $assetTag = if ($assetTagFromTag) { $assetTagFromTag } elseif ($assetTagFromAsset) { $assetTagFromAsset } else { '' }
+                $locationCity = Get-PropertyValue -InputObject $r -PropertyName 'location.city'
                 $record = [pscustomobject]@{
                     Kind = $kind
                     Type = $type
@@ -205,7 +206,7 @@ try {
                     AssetTag = ('' + $assetTag).Trim()
                     Serial = ('' + $r.serial_number).Trim()
                     Parent = ('' + $parent).Trim()
-                    City = if ($r.'location.city') { ('' + $r.'location.city').Trim() } else { ('' + $site).Trim() }
+                    City = if ([string]::IsNullOrWhiteSpace(('' + $locationCity))) { ('' + $site).Trim() } else { ('' + $locationCity).Trim() }
                     Location = ('' + $r.location).Trim()
                     Building = ('' + $r.u_building).Trim()
                     Floor = ('' + $r.u_floor).Trim()

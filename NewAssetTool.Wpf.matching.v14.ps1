@@ -118,7 +118,108 @@ try {
         if ($textbox) { $textbox.Text = $Value }
     }
 
+
+    function Get-FieldValue {
+        param([object]$Row,[string[]]$Names)
+        foreach ($name in $Names) {
+            if ($Row.PSObject.Properties.Name -contains $name) {
+                $value = $Row.$name
+                if (-not [string]::IsNullOrWhiteSpace([string]$value)) { return [string]$value }
+            }
+        }
+        return ''
+    }
+
+    function Import-InventoryCsv {
+        param([string]$Path)
+        try { return @(Import-Csv -LiteralPath $Path -ErrorAction Stop) } catch { return @() }
+    }
+
+    function Load-InventoryData {
+        param([string]$ResolvedXamlPath)
+        $dataRoot = Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data'
+        $computers = @(); $monitors = @(); $locations = @()
+        if (Test-Path -LiteralPath $dataRoot) {
+            foreach ($file in Get-ChildItem -LiteralPath $dataRoot -Recurse -File -Filter '*.csv') {
+                if ($file.Name -like 'Computers - *.csv') { $computers += Import-InventoryCsv -Path $file.FullName }
+                elseif ($file.Name -like 'Monitors - *.csv') { $monitors += Import-InventoryCsv -Path $file.FullName }
+                elseif ($file.Name -like 'LocationMaster*.csv') { $locations += Import-InventoryCsv -Path $file.FullName }
+            }
+        }
+        return [pscustomobject]@{ DataRoot=$dataRoot; Computers=$computers; Monitors=$monitors; Locations=$locations }
+    }
+
+    function ConvertTo-DeviceRecord {
+        param([object]$Row)
+        $name = Get-FieldValue -Row $Row -Names @('name','HostName')
+        return [pscustomobject]@{
+            SearchKeys=@($name,(Get-FieldValue -Row $Row -Names @('asset_tag','AssetTag')),(Get-FieldValue -Row $Row -Names @('serial_number','Serial')))
+            DetectedType='Computer'; Name=$name
+            AssetTag=Get-FieldValue -Row $Row -Names @('asset_tag','AssetTag')
+            Serial=Get-FieldValue -Row $Row -Names @('serial_number','Serial')
+            Parent='(n/a)'; RITM=Get-FieldValue -Row $Row -Names @('po_number','RITM')
+            RetireDate=Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','RetireDate')
+            LastRounded=Get-FieldValue -Row $Row -Names @('u_last_rounded_date','LastRounded')
+            City=Get-FieldValue -Row $Row -Names @('location.city','City')
+            Location=Get-FieldValue -Row $Row -Names @('location','Location')
+            Building=Get-FieldValue -Row $Row -Names @('u_building','Building')
+            Floor=Get-FieldValue -Row $Row -Names @('u_floor','Floor')
+            Room=Get-FieldValue -Row $Row -Names @('u_room','Room')
+            Department=Get-FieldValue -Row $Row -Names @('u_department_location','Department')
+        }
+    }
+
+    function Find-InventoryMatch {
+        param([string]$SearchTerm,[pscustomobject]$Inventory)
+        $term = $SearchTerm.Trim().ToUpper()
+        if ([string]::IsNullOrWhiteSpace($term)) { return $null }
+        foreach ($row in $Inventory.Computers) {
+            $candidates = @(
+                (Get-FieldValue -Row $row -Names @('name')),
+                (Get-FieldValue -Row $row -Names @('asset_tag')),
+                (Get-FieldValue -Row $row -Names @('serial_number'))
+            )
+            foreach ($candidate in $candidates) {
+                if (-not [string]::IsNullOrWhiteSpace($candidate) -and $candidate.ToUpper() -like "*$term*") {
+                    return ConvertTo-DeviceRecord -Row $row
+                }
+            }
+        }
+        return $null
+    }
+
+    function Build-AssociatedDevices {
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
+        $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=$Device.RetireDate })
+        foreach ($m in $Inventory.Monitors) {
+            $parent = Get-FieldValue -Row $m -Names @('u_parent_asset')
+            if ($parent -and $Device.AssetTag -and $parent.Trim().ToUpper() -eq $Device.AssetTag.Trim().ToUpper()) {
+                $results += [pscustomobject]@{ Role='Child'; Type='Monitor'; Name=(Get-FieldValue -Row $m -Names @('name')); AssetTag=(Get-FieldValue -Row $m -Names @('asset_tag')); Serial=(Get-FieldValue -Row $m -Names @('serial_number')); RITM=(Get-FieldValue -Row $m -Names @('po_number')); Retire=(Get-FieldValue -Row $m -Names @('u_scheduled_retirement')) }
+            }
+        }
+        return $results
+    }
+
+    function Build-NearbyDevices {
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
+        $location = $Device.Location
+        if ([string]::IsNullOrWhiteSpace($location)) { return @() }
+        $nearby = @()
+        foreach ($row in $Inventory.Computers) {
+            if ((Get-FieldValue -Row $row -Names @('location')) -eq $location) {
+                $nearby += [pscustomobject]@{ HostName=(Get-FieldValue -Row $row -Names @('name')); IPAddress=''; Subnet=''; AssetTag=(Get-FieldValue -Row $row -Names @('asset_tag')); Location=$location; Building=(Get-FieldValue -Row $row -Names @('u_building')); Floor=(Get-FieldValue -Row $row -Names @('u_floor')); Room=(Get-FieldValue -Row $row -Names @('u_room')); Department=(Get-FieldValue -Row $row -Names @('u_department_location')); MaintenanceType=(Get-FieldValue -Row $row -Names @('u_device_rounding')); LastRounded=(Get-FieldValue -Row $row -Names @('u_last_rounded_date')); DaysAgo=''; Status='-' }
+            }
+        }
+        return $nearby
+    }
+
+    function Build-QueryData {
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
+        return [pscustomobject]@{ Device=$Device; Associated=(Build-AssociatedDevices -Device $Device -Inventory $Inventory); Nearby=(Build-NearbyDevices -Device $Device -Inventory $Inventory) }
+    }
+
     function New-SampleData {
+        # fallback sample data when CSV sources are unavailable
         $device = [pscustomobject]@{
             SearchKeys   = @('AO400568', 'HSS-8093577', 'C24102M031')
             DetectedType = 'Tangent'
@@ -283,7 +384,14 @@ try {
         'DataPathText','OutputPathText','DaysPerWeekBadge','TodayBadge','ThisWeekBadge','RemainingPerDayBadge','StatusMessageBadge'
     )
 
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=(New-SampleData); CurrentDevice=$null }
+    $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath
+    $initialData = New-SampleData
+    if ($inventory.Computers.Count -gt 0) {
+        $initialDevice = ConvertTo-DeviceRecord -Row $inventory.Computers[0]
+        $initialData = Build-QueryData -Device $initialDevice -Inventory $inventory
+    }
+
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$initialData; CurrentDevice=$null; Inventory=$inventory }
     $script:AppState.CurrentDevice = $script:AppState.SampleData.Device
 
     Set-WindowDataBindings -Ui $ui -SampleData $script:AppState.SampleData
@@ -308,13 +416,15 @@ try {
     }
 
     $ui.QueryButton.Add_Click({
-        $match = Find-SampleDevice -SearchTerm $ui.SearchTextBox.Text -SampleData $script:AppState.SampleData
+$match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $script:AppState.Inventory
         if ($null -eq $match) {
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'No matching device found'
             return
         }
-        $script:AppState.CurrentDevice = $match
-        Set-WindowDataBindings -Ui $ui -SampleData $script:AppState.SampleData
+        $queryData = Build-QueryData -Device $match -Inventory $script:AppState.Inventory
+        $script:AppState.SampleData = $queryData
+        $script:AppState.CurrentDevice = $queryData.Device
+        Set-WindowDataBindings -Ui $ui -SampleData $queryData
         Set-StatusMessage -Ui $ui -Mode 'Found'
     })
 

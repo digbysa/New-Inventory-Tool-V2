@@ -1,0 +1,954 @@
+City,Location,Building,Floor,Room,Department
+Chemainus,VIHA-CDH-Cowichan District Hospital-Main Building-1st Floor,1st Admin Trailer,1,'-,(TBD)
+Duncan,VIHA-CDH-Cowichan District Hospital-Main Building-2nd Floor,Annex Building,2,#203,ACC Clinical Ops
+Ladysmith,VIHA-CDH-Cowichan District Hospital-Main Building-3rd Floor,B-Wing,3,(Old Library),ACSS
+Lake Cowichan,VIHA-CDH-Cowichan District Hospital-Main Building-4th Floor,C-Wing,4,(TBD),ACT Team
+Mayne Island,VIHA-CDH-Cowichan District Hospital-Main Building-Basement 1,D-Wing,G,.Reception,Activities
+Mill Bay,VIHA-CHCC-Chemainus Health Care Centre-Main Building-1st Floor,Lancer Building,,.Reception - Back LH,Acute Care
+Salt Spring Island,VIHA-CHCC-Chemainus Health Care Centre-Main Building-Basement 1,Main Building,,.Reception - Back RH,Admin Assistant Cowichan Valley
+,VIHA-CLRC-Cowichan Lodge-Main Building-1st Floor,Mobile MRI (Outside),,.Reception - Main LH,Admin Support
+,VIHA-CPRC-Cairnsmore Place (CDH)-Main Building-1st Floor,Trailer,,.Reception - Main RH,Admin Supp-Prevention Svc
+,VIHA-CPRF-Caulfield Place Residential Facility-Main Building-1st Floor,,,.Reception(TBD),Admin Team Lead
+,VIHA-CQSS-Cowichan Quw'utsun Secondary School-Main Building-1st Floor,,,?,Administration
+,VIHA-CUPCC-Cowichan Urgent Primary Care Centre-Main Building-1st Floor,,,? (Laundry),Admitting
+,VIHA-CUPCC-Cowichan Urgent Primary Care Centre-Main Building-2nd Floor,,,? (Swing Office),Adult Day Program
+,VIHA-DCDF-Duncan Community Dialysis Facility-Main Building-1st Floor,,,?? Not Found - Janet Preston,Adult Rehab Open Door
+,VIHA-DGSHC-Duncan Government Street Health Centre-Main Building-1st Floor,,,?? WFH (Not found),Ambulatory Care Unit (ACU)
+,VIHA-DJS-Duncan Jubilee Street-Main Building-1st Floor,,,??? (Shawna Cadieux),AMSU - Addiction Medicne & Substance Use
+,VIHA-DMHC-Duncan Mental Health Centre-Main Building-1st Floor,,,002 (Support Services Manager),Anesthetic Clinic
+,VIHA-DNDR-Duncan Norcross & Drinkwater Road-Main Building-1st Floor,,,004 (Social Worker - Cesca Zamboni),Assisted Living Admin
+,VIHA-DNDR-Duncan Norcross & Drinkwater Road-Main Building-2nd Floor,,,006 (Ultrasound Reception),Biomedical Engineering
+,VIHA-DSS-Duncan Station Street-Main Building-2nd Floor,,,009 (Dietician),Breast Health
+,VIHA-DWH-Duncan Waldon House-Main Building-1st Floor,,,01 (Clinic Room),Cancer Care
+,VIHA-DWRC-Duncan Wellness and Recovery Centre-Main Building-1st Floor,,,02 (),Capital Projects
+,VIHA-FHMH-Floral House Mental Health-Main Building-1st Floor,,,028 (FMO Workshop Area),Case Management
+,VIHA-LCHC-Ladysmith Community Health Centre-Main Building-1st Floor,,,029 (FMO Office M. Casey),Case Managers Ladysmith
+,VIHA-LCHC-Ladysmith Community Health Centre-Main Building-Basement 1,,,03 (Clinic Room),CDH 2nd Floor Central
+,VIHA-LCHU-Lake Cowichan Health Unit-Main Building-1st Floor,,,03 (Nicole),CDH 2nd Floor East
+,VIHA-LMH-Lady Minto Hospital-Lionel Beach Annex-1st Floor,,,032 (Support Services),CDH 2nd Floor South
+,VIHA-LMH-Lady Minto Hospital-Lionel Beach Annex-2nd Floor,,,038 (Patricia Byron),CDH 2nd Floor West
+,VIHA-LMH-Lady Minto Hospital-Main Building-1st Floor,,,039 (Pharmacy Area),CDH 3rd Floor East
+,VIHA-LMH-Lady Minto Hospital-Main Building-Basement 1,,,04 (Diane),CDH 3rd Floor South
+,VIHA-MBRC-Mill Bay Radiology Centre-Main Building-1st Floor,,,04 (Nicole Watters),CDH 3rd Floor West
+,VIHA-MIHU-Mayne Island Health Unit-Main Building-1st Floor,,,045 (Pharmacy Office),CDH Implementation Admin
+,VIHA-MMHU-Margaret Moss Building-Main Building-1st Floor,,,05 (Amber),CDH Perioperative.
+,VIHA-MMHU-Margaret Moss Building-Main Building-Basement 1,,,05 (Shelley),CDH RP
+,VIHA-SSCHC-Salt Spring Island Creek House-Main Building-1st Floor,,,06 (),CDH/Quality Medical Imaging
+,VIHA-SSMHSU-Salt Spring Mental Health Substance Use Services-Main Building-1st Floor,,,06 (Hillary),CDHRP
+,VIHA-WHMH-Wisteria House Mental Health-Main Building-1st Floor,,,07 (),CDHRP (Replacement Project)
+,VIHA-WRMH-Wicks Road Mental Health-Main Building-1st Floor,,,07 (Shylo Miller  - L6),Charting
+,VIHA-WRMH-Wicks Road Mental Health-Main Building-2nd Floor,,,08 (Dr. Nick Hargrove),CHCP - Cowichan Health & Care Plan
+,,,,08 (Leah Soer),CHCP Hospital at Home
+,,,,09 - Benjamin Rhames,Chemainus LTC
+,,,,09 (),Child Youth & Family Services
+,,,,09 (Lyndsey Shields),CHS
+,,,,1,CHS - Community Health Services
+,,,,10,CHS - Community Health Services (Steps)
+,,,,10 (Meeting Room),CHS (Reception)
+,,,,100,CHS Clinic
+,,,,101 (#1 Charge Cabinet),CHS Nursing SSI
+,,,,101 (#2 Charge Cabinet),CHS Respiratory Therapist
+,,,,101 (#3 Charge Cabinet),Clinical Day Care
+,,,,101 (#4 Charge Cabinet),Clinical Education
+,,,,101 (#5 Charge Cabinet),Clinical Governance Admin
+,,,,101 (#6 Charge Cabinet),Clinical Imp & Informatics
+,,,,101 (#7??? Charge Cabinet),Clinical Informatics
+,,,,101 (#8 Charge Cabinet),Clinical Nurse Educator
+,,,,101 (Admitting),Clinical Practice Educator Wound
+,,,,101 (Anesthesia Clinic through Rm 103),Clinical Service Delivery - Executive Director
+,,,,101 (Medical Day Care),CLKS LearningDesign&Tech
+,,,,101 (W41),Coding Team
+,,,,101 (W42),Community Health Services
+,,,,101 (W43),Community Health Services (Advanced Lower Limb Assessment)
+,,,,101 (W44),Community Home Support
+,,,,101 (W45),Community Home Support - Timekeeping
+,,,,1014 (Echo Lab),Consultant Volunteer Engagement
+,,,,1017 (OR Purchasing Office),COV IHealth Project Staff
+,,,,1018 (Back Area),COVID PopHlth Asse Su&Epid
+,,,,1018 (Health Records),COVID Saanich Gulf Islds Admin
+,,,,1019,Cowich Vall MHSU Adm Supp
+,,,,102,Cowichan Assist Living LPN
+,,,,102 (Desk 1),Cowichan District Hospital.
+,,,,102 (Desk 2),Cowichan Health & Care
+,,,,102 (Health Records),Cowichan Health & Care Plan
+,,,,102 (Pre-Admissions),Cowichan Hlth & Care Plan
+,,,,102 (Ultrasound),Cowichan Home Support
+,,,,1020,Cowichan HS Overnight Team
+,,,,1020 (Health Records),Cowichan Lodge
+,,,,1021 (Dictation Room),Cowichan Lodge Adult TMH
+,,,,1022 (Booking Office),Cowichan Lodge Seniors TMH
+,,,,1023A (Radiology),Cowichan Lodge-YSTAR
+,,,,1023B (Radiology),Cowichan Valley Adm
+,,,,1025 (Boardroom) Brenda Stager,Cowichan Valley Admin
+,,,,1025 (EDU Floater),Cowichan Valley Home Support
+,,,,1025 (Surgical Services),Cowichan Valley HS Admin
+,,,,1026 (OR Booking),Cowichan Valley HS Nursing
+,,,,103,Cowichan Valley MHSU
+,,,,103 - in Storage (Telehealth),Cowichan Valley MHSU Community
+,,,,103 (Ultrasound),Cowichan Valley PCN
+,,,,1034 (Switchboard),CRM ASTAT
+,,,,1038 (Staff Room),CRT
+,,,,1039 (Reception),CSC HSCL Duncan
+,,,,1039 (Rehab Area),CVH Inpatients - 3C & 3D
+,,,,1039 (Side Office - Mobile),CYF CI Cowichan
+,,,,104,Device Acquisition
+,,,,104 (Chart Room),Diabetes & Geriatrics Clinic
+,,,,104 (OR Booking),Diabetes & Nutrition Services
+,,,,104 (Outpatient Laboratory),Dialysis
+,,,,1045 (Accessions),Dietary
+,,,,1045 (Back Office),DOT Nurse
+,,,,1045 (Blood Bank),Duncan Community Hlth Services
+,,,,1045 (Core Care),ECG
+,,,,1045 (Hallway),Echocardiography
+,,,,1045 (Hallway)(Collection Cart #1),Education and Practice Support
+,,,,1045 (Hallway)(Collection Cart #2),Emergency
+,,,,1045 (Hallway)(Collection Cart #3),End of Life
+,,,,1045 (Hallway)(Collection Cart #4),Environmental Public Health
+,,,,1045 (Hallway)(Collection Cart #5),Environmental Public Health Admin
+,,,,1045 (Hallway)(Collection Cart #6),EWS Home Care
+,,,,1045 (Hallway)(Collection Cart #7),Executive
+,,,,1045 (Lab Core),Extended Care
+,,,,1045 (Outside Core Care),Extended Care - Long Term Care
+,,,,1046 (Reception),Facility Management and Operations (FMO)
+,,,,105 (Consulting Services),Family Practice Clinic
+,,,,105 (W1) Telehealth,Finance
+,,,,1050 (Chief Technologist),"Finance, Budget Process & Financial Planning"
+,,,,1052 (MDRD Decontamination),Fire & Safety
+,,,,1053,Food Services
+,,,,1058 (Doctor's Lounge),General Housing SI
+,,,,106,Geriatric Specialty Services
+,,,,106 (Exam Room),Health & Care Plan
+,,,,1060 (Doctor's On-Call Room),Health Records
+,,,,1066B (CT supervisors Office),Health Wellness & Safety
+,,,,1067 (Cubby),Heart Function
+,,,,1068 (PACU),Home & Community Care
+,,,,1069 (Ophthalmology OR),Home Care Nursing (AL LPN 2)
+,,,,107 (Clinical Day Care),Home Care Nursing (East HCN 1)
+,,,,107 (Exam Room),Home Care Nursing (Float 1)
+,,,,107 (Protection Services),Home Care Nursing (HCN Float 3)
+,,,,1078 (Clean Utility Room),Home Care Nursing (HCN Palliative 3)
+,,,,108,Home Care Nursing (Palliative HCN 2)
+,,,,108 (CN),Home Care Nursing (South HCN 1)
+,,,,108 (Exam Room),Home Care Nursing (South HCN 2)
+,,,,108 (Office),Home Care Nursing (West HCN 1)
+,,,,1080 (Cataract Clinic),Home Care Nursing (West HCN 2)
+,,,,1081 (Radiologist),Home Care Services
+,,,,1083 (CT Tech Station),Home Support Scheduling
+,,,,1083 (Outside CT Tech Station),Hospice - End of Life
+,,,,1088 (Mammography Office),Hospital At Home
+,,,,109 (Clinical Lead),Housekeeping
+,,,,109 (Exam Room),Housekeeping Admin
+,,,,1091 (Reception),HS Overnight Team
+,,,,1092 (Medical Imaging Booking),Human Resource Corporate Admin
+,,,,1093 (Breast Imaging Room),Human Resources
+,,,,1095 (X-Ray Tech Room 1),Human Resources - South Team 3
+,,,,1096 (X-Ray Office),Implement - Project Management CDHRP
+,,,,1098 (X-Ray Tech Room 3),Implement - Clinical
+,,,,1099 (X-Ray Tech Room 2),Implement - Proj Mgmt Office
+,,,,11,Infant Mental Health - CHF
+,,,,11 (),Infection Control - Admin
+,,,,11 (Samantha),Infection Prevention & Control
+,,,,110 (Child Youth & Family Services),"Innovation, Analytics & Information"
+,,,,110 (Exam Room),Intensive Care Unit (ICU)
+,,,,1103 (Hallway),Lab - Point of Care
+,,,,1104 (Inside Ortho),Lab Admin
+,,,,1104 (Ultrasound Hallway),Lab Pre-Analytics
+,,,,1105 (Ultrasound Room 1),Laboratory
+,,,,1107,Laundry Services
+,,,,1107 (Manager Office),Logistics/Fire Prevention
+,,,,1109 (Reception),Long Term Care
+,,,,1109 (Ultrasound Tech Room 3/4),Margaret Moss Public Health Unit
+,,,,111 (Exam Room) First Aid Room,Maternity
+,,,,111 (LH Desk),Maternity Clinic
+,,,,111 (RH Desk),Medical
+,,,,1110 (Office),Medical / Surgical Care
+,,,,1111 (Ultrasound Office),Medical Booking
+,,,,1113 (CRT Room),Medical Device Reprocessing Department (MDRD)
+,,,,1117 (Trauma Room),Medical Imaging
+,,,,1118A (Tyler Smith),Medical Records
+,,,,1118B (Education Room),Medicine
+,,,,112,Mental Health
+,,,,112 (Administration),Mental Health Adults
+,,,,112 (Clinic Room),Mental Health Substance Abuse
+,,,,112 (CN),Nursing
+,,,,112 (CNL Office),Occupational Health and Safety
+,,,,112 (not connected),Occupational Therapy
+,,,,1127 (ECG),Operating Rooms
+,,,,1128 (EMRG Hallway),OR Booking
+,,,,1128 (Fast Track Room),Orthopedic Clinic
+,,,,1128 (Med Room),Outreach
+,,,,1128 (Nurse Station),Palliative Care
+,,,,1128 (Outside Trauma - Lab Machine),Palliative End of Life
+,,,,1128 (Physicians Station - Back Wall),Pathology
+,,,,1128 (Physicians Station - Standing),Pharmacy
+,,,,1128 (Physicians Station),Physiotherapy
+,,,,112B (),Post Anesthetic Care Unit (PACU)
+,,,,113,Practice Support Team
+,,,,1130 (Outside Triage),Protection Services
+,,,,1130 (Triage),Psychiatry
+,,,,1134 (ACU Back Hallway),Public Health
+,,,,1134 (ACU Hallway),Rehabilitation
+,,,,1134 (Nurse Station),Respiratory Therapy
+,,,,1137 (Procedure Room 1),Scheduling
+,,,,114,Seniors Outreach Team
+,,,,114 (Long Term Care - Nurse Station),Social Work
+,,,,114 (Shared Office),Spiritual Health
+,,,,1140 (Endoscopic Suite),Spiritual Services
+,,,,1143NW (Mammo Exam Room),Staff Scheduling
+,,,,1145 (Waiting Room Office),Stores
+,,,,114A,SUIT - Substance Use Integrated Team
+,,,,114B,Support Services
+,,,,114B (SMARTDOP Machine),Surgical Daycare
+,,,,115 (Activities Aide),Surgical Services
+,,,,115 (Child Youth & Family Services),Surgical Services Admin
+,,,,115 (W46),Switchboard
+,,,,115 (W47),Talent Aquis and Retn Adm
+,,,,115 (W48),Technology Systems Support
+,,,,115 (W49),Training
+,,,,115 (W50),Triage
+,,,,115 (W51),Ultrasound
+,,,,115 (W52) Education Desk,University of Victoria
+,,,,115 (W53),Urgent Care
+,,,,115 (W54),Urgent Primary Care
+,,,,116,Virtual Care Services
+,,,,116 (W55),Work From Home
+,,,,116 (W56),Workforce Optimization
+,,,,116 (W57),Youth and Family Substance use Serviced
+,,,,116 (W58),
+,,,,116 (W59),
+,,,,116 (W60),
+,,,,116 (W61),
+,,,,116 (W62),
+,,,,116 (W63),
+,,,,116 (W64),
+,,,,116 (W65),
+,,,,116 (W66),
+,,,,116 (W67),
+,,,,116 (W68),
+,,,,117,
+,,,,117 (Dr. Reception),
+,,,,117 (Kellie Connelly),
+,,,,117 (W69),
+,,,,117 (W70),
+,,,,117 (W71),
+,,,,117 (W72),
+,,,,117 (W73),
+,,,,117 (W74),
+,,,,117 (W75),
+,,,,117 (W76),
+,,,,117 (W77),
+,,,,117 (W78) Jennifer Brown,
+,,,,118,
+,,,,118 (Admin Office),
+,,,,118 (W28),
+,,,,118 (W80),
+,,,,118 (W81),
+,,,,118 (W82),
+,,,,118 (W83),
+,,,,118 (W84),
+,,,,119,
+,,,,119 (Exan Room),
+,,,,119 (Home & Community Care),
+,,,,119 (W85),
+,,,,119 (W86),
+,,,,119 (W87),
+,,,,119 (W88),
+,,,,119 (W89),
+,,,,119 (W90),
+,,,,119B (Home & Community Care),
+,,,,12,
+,,,,120,
+,,,,120 (Desk 1),
+,,,,120 (Desk 2),
+,,,,120 (Desk 3),
+,,,,120 (Desk 4),
+,,,,120 (Desk 5),
+,,,,120 (W100),
+,,,,120 (W101),
+,,,,120 (W102),
+,,,,120 (W103),
+,,,,120 (W104),
+,,,,120 (W91),
+,,,,120 (W92),
+,,,,120 (W93),
+,,,,120 (W94),
+,,,,120 (W95),
+,,,,120 (W96),
+,,,,120 (W97),
+,,,,120 (W98),
+,,,,120 (W99),
+,,,,121,
+,,,,121 (Desk 1),
+,,,,121 (Desk 2),
+,,,,121 (Desk 3),
+,,,,121 (Desk 4),
+,,,,121 (Desk 5),
+,,,,122,
+,,,,122 (Exam Room / Office),
+,,,,122 (Home & Community Care),
+,,,,123,
+,,,,123 (LH Back),
+,,,,123 (LH Front),
+,,,,123 (RH Back),
+,,,,123 (RH Front),
+,,,,124 - Reception,
+,,,,124 (Home & Community Care),
+,,,,124A (Volunteer Office),
+,,,,125,
+,,,,125 (Home & Community Care),
+,,,,125 (W28),
+,,,,125 (W35),
+,,,,126,
+,,,,126 (Rounds - connected to TV on wall),
+,,,,126 (Rounds),
+,,,,126 (W09),
+,,,,126 (W29),
+,,,,127,
+,,,,127 (W30),
+,,,,127 (W31),
+,,,,128,
+,,,,128 (Medications),
+,,,,128 (W32),
+,,,,129,
+,,,,129 (Cabinet in hall - HSS 1),
+,,,,129 (Cabinet in Hall - HSS 2),
+,,,,129 (Cabinet in Hall - HSS 3),
+,,,,129 (Cabinet in Hall - HSS 4),
+,,,,129 (Cabinet in Hall - HSS 5),
+,,,,129 (W33) Erica McKendry,
+,,,,129 (Waiting Room),
+,,,,13 (.Lisa Horvath - Admin Lead),
+,,,,13 (file cabinet),
+,,,,130 (Laboratory),
+,,,,131 - Floor for storage,
+,,,,131 (Elyse Laughland) (Temporary in this room),
+,,,,131 (W34) - Rhonda Soldera,
+,,,,132 (Check in Records),
+,,,,132 (W9) - Breakout Room,
+,,,,133,
+,,,,133 - Office,
+,,,,133 - Xray room,
+,,,,133 (Medical Imaging),
+,,,,133 (W37),
+,,,,133 (W38),
+,,,,134,
+,,,,134 (Medical Imaging),
+,,,,134 (W39),
+,,,,135,
+,,,,135 (Emergency Room - Urgent Care),
+,,,,135 (W40),
+,,,,136 (Exam Room 1),
+,,,,136 (W2),
+,,,,136 (W3),
+,,,,136a (Exam Room 2),
+,,,,137 (Exam Room 3),
+,,,,137 (W10),
+,,,,137 (W11),
+,,,,137 (W12),
+,,,,137 (W13),
+,,,,137 (W14),
+,,,,137 (W15),
+,,,,137 (W16),
+,,,,137 (W17),
+,,,,137 (W4),
+,,,,137 (W5),
+,,,,137 (W6),
+,,,,137 (W7),
+,,,,137 (W8),
+,,,,138,
+,,,,138 (Exam Room 4),
+,,,,138 (W18),
+,,,,138 (W19),
+,,,,138 (W20),
+,,,,138 (W21),
+,,,,138 (W22),
+,,,,139 (Exam Room 5),
+,,,,139 (W23),
+,,,,139 (W24),
+,,,,139 (W25),
+,,,,139 (W27),
+,,,,13a,
+,,,,14,
+,,,,140 (Exam Room 6),
+,,,,141 (Exam Room 7),
+,,,,142 (Exam Room 8),
+,,,,145 (ER/ACU - Physio Gym),
+,,,,15,
+,,,,153 (ACU - Ante Room),
+,,,,16,
+,,,,16 (Fernanda Gutierrez - WFH sometimes),
+,,,,163 (TBD),
+,,,,17,
+,,,,17 (Administration),
+,,,,172,
+,,,,175,
+,,,,19,
+,,,,19 (Desk A - Rhonda),
+,,,,192 (CNE),
+,,,,193 (CNE),
+,,,,194 (Trauma),
+,,,,195 (Trauma Room / OR),
+,,,,1N (Main Nurse Desk),
+,,,,1N (Main Nurse Desk)(7/24),
+,,,,1N (OR1),
+,,,,1N (OR1)(CADI),
+,,,,1N (OR2),
+,,,,1N (OR4),
+,,,,1st admin trailer,
+,,,,1st FL Office,
+,,,,2,
+,,,,2 (Mark's Office),
+,,,,2 (NOT FOUND),
+,,,,2(CN),
+,,,,20,
+,,,,20 (Bonnie Potter),
+,,,,201,
+,,,,201 - (Admin Section A),
+,,,,201 - (in storage),
+,,,,201 - Office 2 (Section A),
+,,,,201 Office 1 (Section A),
+,,,,2011 (2-South),
+,,,,202,
+,,,,202 - Chart (Section C),
+,,,,202 - Office 5 (Section C),
+,,,,202 - Office 6 (Section C),
+,,,,202 - Reception (Section C),
+,,,,202 (W152),
+,,,,203,
+,,,,203 c/o Melissa Manson,
+,,,,2031 (Back Room TV),
+,,,,2031 (Nurse Station - Back Office TV),
+,,,,2031 (Nurse Station - Back Office),
+,,,,2032 (Nurse Station - Bat Cave),
+,,,,2035 (ICU Patient Lounge),
+,,,,204 - 0 (Group Room),
+,,,,204 - 3 (Section B),
+,,,,204 - 4 (Section B),
+,,,,2043 (2nd Floor Day Room),
+,,,,2043 (2nd Floor Day Room)(Spare),
+,,,,2044,
+,,,,2044 (Tub Room),
+,,,,205,
+,,,,2055A (Maternity Clinic),
+,,,,2055B (Maternity Clinic),
+,,,,2055C (Maternity Clinic),
+,,,,2062 (Assessment Room #2),
+,,,,2064 (Back Office),
+,,,,2065 (Nursery - Fetalink on wall),
+,,,,2065 (Nursery - Monitoring Board On Wall),
+,,,,2065 (Nursery),
+,,,,2066 (Assessment Room #1),
+,,,,2067 (Birthing Room #1),
+,,,,2067 (Birthing Room #2),
+,,,,2067 (Birthing Room 3 - PARR),
+,,,,207,
+,,,,208,
+,,,,2083 (Nikki Kokkinis),
+,,,,2084 (Christine S),
+,,,,2084 (Roshni),
+,,,,209,
+,,,,21,
+,,,,21 (Megan),
+,,,,211,
+,,,,212,
+,,,,212 - Jonathan Noakes,
+,,,,213,
+,,,,214,
+,,,,215,
+,,,,216,
+,,,,217,
+,,,,217 (W127) Geraldine Blair-Speirs,
+,,,,218 (W128) WFH - Corry Pettigrew,
+,,,,219,
+,,,,219 - Not Found,
+,,,,219 (W129),
+,,,,21A(),
+,,,,21b,
+,,,,22,
+,,,,22 (Desk B - ),
+,,,,220 (574 Cornation Street - HSS 6),
+,,,,220 (574 Cornation Street),
+,,,,220 (W130) Anna Forrest,
+,,,,221(),
+,,,,221B (Home Care Nursing),
+,,,,221B (Home Care Nursing)(CN),
+,,,,221B(),
+,,,,222,
+,,,,222 (Home Care Nursing),
+,,,,222 (Home Care Nursing)(CN),
+,,,,223 (W137),
+,,,,223 (W138),
+,,,,223 (W146),
+,,,,223 (W147),
+,,,,224,
+,,,,224 (Home Care Nursing),
+,,,,225,
+,,,,225 (Home Care Nursing),
+,,,,226,
+,,,,227,
+,,,,23,
+,,,,23 (Aimee),
+,,,,24,
+,,,,25,
+,,,,251 (W105) Reception,
+,,,,252 (W106 - side desk),
+,,,,252 (W106),
+,,,,252 (W107),
+,,,,253 (W108),
+,,,,253 (W109) - Alison Gardner,
+,,,,254 (W110),
+,,,,254 (W111),
+,,,,255 (W112),
+,,,,256 (W113),
+,,,,257 (W118),
+,,,,257 (W119),
+,,,,258,
+,,,,258 (W121) Jodi Worth,
+,,,,259 (WFH),
+,,,,26,
+,,,,26 (CHS Rehab),
+,,,,260 (W150),
+,,,,260 (W151) Maryann,
+,,,,261,
+,,,,261 (W149) - Emma James,
+,,,,262 (W148) Sue Kurucz,
+,,,,262 ???,
+,,,,266 (W114),
+,,,,266 (W115) Angela Eykelbosh,
+,,,,267,
+,,,,267 (TBD),
+,,,,268 (W116) Jennifer Sirup,
+,,,,268 (W117) Kelsey,
+,,,,27,
+,,,,28,
+,,,,2880 (Central Nurse Station Office),
+,,,,29,
+,,,,2C (Hallway),
+,,,,2N (Hallway),
+,,,,2N (LDR Med Room Area),
+,,,,2N (Maternity OR),
+,,,,2N (Nurse Station - Fetalink),
+,,,,2N (Nurse Station),
+,,,,2N (Nurse Station)(7/24),
+,,,,2S (Hallway East),
+,,,,2S (Hallway West),
+,,,,2S (ICU Nurse Station),
+,,,,2S (Nurse Station - Front),
+,,,,2S (Nurse Station - Round Table),
+,,,,2S (Nurse Station),
+,,,,3,
+,,,,3 (CN),
+,,,,300B (file room),
+,,,,300C,
+,,,,301 (Director),
+,,,,3011 (Liaisons Office),
+,,,,303 (Meeting Room),
+,,,,303 (Meeting Room)(SUIT Spare),
+,,,,3031 (Nurse Station - Back Office TV),
+,,,,3031 (Nurse Station - Back Office),
+,,,,3032 (Nurse Station - Bat Cave),
+,,,,3033 (Clinical Coordinator Office),
+,,,,3036 (Floor 3 Dayroom - in storage),
+,,,,3036 (Floor 3 Dayroom),
+,,,,3037 (Tub Room),
+,,,,304 (Admin),
+,,,,304 Adult South Station - LPN,
+,,,,304 Adult South Station - PRW,
+,,,,3057 (Unit Clerk),
+,,,,3059 (Med/Report Room),
+,,,,306 (Counselor),
+,,,,3060 (CSO Office),
+,,,,3060 (CSO Office)(In Box),
+,,,,3060 (CSO Office)(Not Found),
+,,,,3063 (Outpatiant Procedure Room),
+,,,,307 (Outreach),
+,,,,308 (Clinic),
+,,,,31,
+,,,,310 (Outreach Team),
+,,,,310 (Outreach Team)(Floater),
+,,,,311 (Team Lead),
+,,,,311 WFH - Griffin Halme,
+,,,,313 - WFH,
+,,,,313 (NP Clinic),
+,,,,314 (Co-ordinator),
+,,,,320,
+,,,,3329 (Chemotherapy & Medical Daycare Office),
+,,,,3330 (Oncology Physician),
+,,,,3332 (Chemotherapy Medical Daycare),
+,,,,3335 (Electrocardiogram)(Mobile),
+,,,,3336 (ECG - Mobile),
+,,,,3336 (Electrodiagnostic - Back Office),
+,,,,3336 (Electrodiagnostic),
+,,,,3336 (Electrodiagnostic)(Holter),
+,,,,3336 (Electrodiagnostic)(Mobile),
+,,,,3337 (Internal Medicine),
+,,,,365,
+,,,,3N (Hallway West),
+,,,,3N (Hallway),
+,,,,3N (Nurse Station),
+,,,,3N (Nurse Station)(7/24),
+,,,,3S (Hallway East - Substation),
+,,,,3S (Hallway East),
+,,,,3S (Hallway West - Substation),
+,,,,3S (Hallway West),
+,,,,3S (Nurse Station - Front),
+,,,,3S (Nurse Station - Front)(7/24),
+,,,,3S (Nurse Station - Round Table),
+,,,,4,
+,,,,4001,
+,,,,4002 (Pulmonary Function Lab),
+,,,,4003 (Outside Respiratory Therapy),
+,,,,4003 (Respiratory Therapy),
+,,,,4003 (Respiratory Therapy)(Spare),
+,,,,4005 (Medication Room),
+,,,,4005 (Medication Room)(Unlocked),
+,,,,4015 (Meeting Room),
+,,,,4019 (Patient Care Coordinator),
+,,,,4019 (Patient Care Coordinator)(Spare),
+,,,,4019 (Patient Care Coordinator)(WFH/Spare),
+,,,,4024 (CNL Office),
+,,,,4026 (Social Work),
+,,,,4028 (Geriatric Specialty Services),
+,,,,4028 (Spiritual Leader),
+,,,,4028 (Spiritual Practioner),
+,,,,4029,
+,,,,4029 (Protection Services Office),
+,,,,4034 (Meeting Room 1),
+,,,,4036,
+,,,,4036 (Clinical Nurse Lead + Social Worker),
+,,,,4036 (Clinical Nurse Lead + Social Worker)(TV),
+,,,,4036 (Patient Care Coordinator - Floater),
+,,,,4037 (Nurse Station - Corner Station),
+,,,,4037 (Nurse Station),
+,,,,4037 (Psychiatry - Nurse Station),
+,,,,404,
+,,,,418,
+,,,,421 (Nursing Station #1),
+,,,,421 (Nursing Station #1) CN,
+,,,,454,
+,,,,454 - C-Wing Care Station#2,
+,,,,48,
+,,,,4S (Hallway),
+,,,,5,
+,,,,59,
+,,,,6,
+,,,,7,
+,,,,8,
+,,,,9,
+,,,,ACT Team Area-,
+,,,,Activities,
+,,,,ACU - Main Nurse Station,
+,,,,ACU - Main Nurse Station (Security Camera PC),
+,,,,ACU - Physicians Area,
+,,,,admin,
+,,,,Admin Office,
+,,,,Admin Office (Floor 1),
+,,,,Admin Office (Floor 1)(Storage),
+,,,,Admin Shelf (Floor 1),
+,,,,Attention Jody (207),
+,,,,B?? (TBD),
+,,,,B28 (Staff Scheduling),
+,,,,B31 (Staff Scheduling),
+,,,,B32,
+,,,,B32 (Staff Scheduling),
+,,,,B33,
+,,,,B33-(Dr. Crombie),
+,,,,B34,
+,,,,B35,
+,,,,B36,
+,,,,B37,
+,,,,B38,
+,,,,B39,
+,,,,B40,
+,,,,B42,
+,,,,B44,
+,,,,B45,
+,,,,B46,
+,,,,B47,
+,,,,B47 (Denise Macdonald),
+,,,,B49 (Training Room),
+,,,,B50,
+,,,,B50 (Training Room),
+,,,,Basement,
+,,,,Board Room B,
+,,,,B-Sunroom (Admin Area),
+,,,,C - Patient Lounge - North(TBD),
+,,,,C - Reception(TBD),
+,,,,C300,
+,,,,C310(TBD),
+,,,,C312 (Meeting Room),
+,,,,C319 (Social Work)(TBD),
+,,,,C319(OT Office)(TBD),
+,,,,C400 (Meeting Room)(TBD),
+,,,,C401(TBD),
+,,,,C418,
+,,,,C454(TBD),
+,,,,Care station 1,
+,,,,Carolyn's Office,
+,,,,CDH Lecture Room,
+,,,,Cellar (Medical Imaging - Records Storage Cage),
+,,,,Clinic,
+,,,,Clinic Room - Basement,
+,,,,Clinic Room (RM 7),
+,,,,Clinic Room (RM 9),
+,,,,Colleen Davis office to change soon,
+,,,,C-Wing Care Station#1,
+,,,,D Wing(Room D82),
+,,,,D??,
+,,,,D077 (Bridgette von B),
+,,,,D080 (Lisa Young - Director),
+,,,,D081 (Sheena N),
+,,,,D084,
+,,,,D084 (Housekeeping Office),
+,,,,D085,
+,,,,D086 (Sarah Thompson),
+,,,,D087 (Sarah StCyr),
+,,,,D088,
+,,,,D090,
+,,,,D091,
+,,,,D091 (Teresa 'Lori' Richter),
+,,,,D094,
+,,,,D094 (Michelle C),
+,,,,D097 (Catherine Rousselle),
+,,,,D097 (Sheri Biblow),
+,,,,D098 (Sonya Manhas),
+,,,,D099 (Nelson F.),
+,,,,D100 (David Leadbetter),
+,,,,D100 (Sharron Drew),
+,,,,D100 WFH - David Leadbetter,
+,,,,D102,
+,,,,D102 (Seniors unit room),
+,,,,D78,
+,,,,D83 - WFH,
+,,,,D95 (Mark C),
+,,,,Doctor's Lounge,
+,,,,Employee Office,
+,,,,Endoscopy suite,
+,,,,ER/ACU (Patient Bed Area)(In Storage),
+,,,,Exam Room 1704,
+,,,,Exam Room 1705,
+,,,,FALSE,
+,,,,Family Practice - Erin room,
+,,,,File Room (RH Corner),
+,,,,Float Station #3,
+,,,,Float Station #4,
+,,,,FPC Provider Area,
+,,,,FPC Provider Area (Faye H. Side Office),
+,,,,FPC Provider Area (on the wall),
+,,,,FPC Provider Area (Side Office),
+,,,,FPC Reception,
+,,,,FPC Reception Area,
+,,,,FPC Reception Area (Brenda),
+,,,,G002 (Housekeeping),
+,,,,G006 (Bio-Medical),
+,,,,G009 (Lecture Room),
+,,,,G016 (Food and Nutrition Service Manager),
+,,,,G017 (Food Services Supervisor),
+,,,,G026 (Dietician Coordinator),
+,,,,G026 (Dietitian Inpatient),
+,,,,G026 (Dietitian Out Patient),
+,,,,G027 (Hospital At Home),
+,,,,G027 (Hospital at Home),
+,,,,G027 (Hospital At Home) (Marked as Spare),
+,,,,G029A (Infection Prevention and Control),
+,,,,G029B (Nurse Educator Office),
+,,,,G029B (Nurse Educator Office)(Student Laptop),
+,,,,G035,
+,,,,G035 (Laundry Room),
+,,,,G036 (Laundry Manager),
+,,,,G036 (Laundry Room Area),
+,,,,G038 (Stores),
+,,,,G040 (Managers Office),
+,,,,G046 (FMO Manager),
+,,,,G047 (FMO Office),
+,,,,G047 WFH,
+,,,,G048 (Electrical Manager Office),
+,,,,G049 (Electrical Shop),
+,,,,G051 (FMO/Engineering),
+,,,,G052 (Plumbing),
+,,,,G054A (FMO Supervisors Office),
+,,,,G054B (Maintenance Shop / Green Room),
+,,,,G057 (Boiler Room Office),
+,,,,G08 (Physiotherapy),
+,,,,G101,
+,,,,G101 (Pharmacy - Back),
+,,,,G101 (Pharmacy - Front),
+,,,,G101 (Pharmacy - Front)(724),
+,,,,G101 (Pharmacy - Hallway),
+,,,,G101 (Pharmacy - Manager Office),
+,,,,G101 (Pharmacy - PacMed),
+,,,,G102 (Manager Office),
+,,,,G109 (Anti-Room),
+,,,,G14 (Laboratory),
+,,,,G14 (Office),
+,,,,G14 (Reception area),
+,,,,G21,
+,,,,G21 (Griffin Russell),
+,,,,G25 - Teleconference Room,
+,,,,G25A (WFH - Micheal Primrose),
+,,,,G36 - WFH (RIchard Lewis),
+,,,,G36 (FMO Back shop area),
+,,,,G36? Not Found,
+,,,,Hallway,
+,,,,Hallway (Admitting),
+,,,,Harbourside (Nurse Station),
+,,,,Home Office (VPN),
+,,,,Home Use,
+,,,,IMP48 (On-Call Room),
+,,,,IMP55 (Library),
+,,,,IMP58 (UVIC - Office),
+,,,,IMP59 (Admin Office),
+,,,,L132 (Maintenance),
+,,,,L133 (Housekeeping Office),
+,,,,L137 (Adult Day Program Office),
+,,,,L140 (Boardroom),
+,,,,L146 (Food Service Supervisor),
+,,,,Lab (WAIT WHILE Board),
+,,,,Laboratory (Core Lab),
+,,,,Laboratory (Reception),
+,,,,M02 (Harbourside Unit Clerk's Office),
+,,,,M03 (Harbourside Conference Room),
+,,,,M04 (Social Work Office),
+,,,,M16 (Manager),
+,,,,M16a (CNL Office),
+,,,,M17 (Swing Office),
+,,,,M18 (Education Room),
+,,,,M27 (Activities Office),
+,,,,Main,
+,,,,main entrance/gift shop area,
+,,,,Main Office,
+,,,,Main Room,
+,,,,MAINTENANCE OFFICE(TBD),
+,,,,Mayne Island Health unit,
+,,,,Meeting Room A,
+,,,,Mobile MRI Trailer - Technologist,
+,,,,Near Reception - Basement,
+,,,,North Care Station,
+,,,,North Care Station(TBD),
+,,,,Not found - 268(W116),
+,,,,Not on-site (TBD),
+,,,,Nurse Station,
+,,,,Nurse's Station,
+,,,,Nursing Station,
+,,,,Nursing Station (CN),
+,,,,Nursing Station (New Entrance),
+,,,,Ocean Point (Nurse Station),
+,,,,Office,
+,,,,Office 1,
+,,,,Office 1711,
+,,,,Office 2,
+,,,,Office 3,
+,,,,Office 30 Trailer,
+,,,,Office 4,
+,,,,Office 5,
+,,,,Office 7 (Section C),
+,,,,OR Core,
+,,,,OR3,
+,,,,Outreach Room,
+,,,,Outreach room,
+,,,,Outreach Room - Rachelle,
+,,,,Outside Nursing Station (New Entrance),
+,,,,Penthouse,
+,,,,Physiotherapy (Office),
+,,,,Physiotherapy (Treatment Room),
+,,,,Processing Room (Bone Marrow Density),
+,,,,Rad Workstation(CN),
+,,,,Reception,
+,,,,Reception - Basement,
+,,,,Reception (Back loan laptop),
+,,,,Reception (Main Office),
+,,,,Reception-WFH,
+,,,,RM 1,
+,,,,RM 2,
+,,,,RM# 01a (South Wing),
+,,,,RM# 103,
+,,,,RM# 19A (East Wing),
+,,,,RM# 23b (East Wing),
+,,,,RM# 30A (North Wing),
+,,,,RM# 36 (AKA pharmacist office),
+,,,,RM# 37 (Gail Kerrone Manager),
+,,,,RM# 38 (Reception),
+,,,,RM# 41,
+,,,,RM# 42 (Nursing Station),
+,,,,RM# 50 (Rehab),
+,,,,RM# 51 (Laundry room),
+,,,,Rm#46,
+,,,,RM#48,
+,,,,RM3 (Heather's Office),
+,,,,RM6 ( Kirsten's Office),
+,,,,RM7 (Kim's Office),
+,,,,Roaming (L15),
+,,,,Room 107 (PSO/Security),
+,,,,Room 126 (rounds/board room),
+,,,,room 136 in Hospice,
+,,,,Room 2 (Clinic Room),
+,,,,Room 3 (Clinic Room),
+,,,,Room 4 (Public Health Nurse),
+,,,,Sandy's office (5),
+,,,,SB002-Equipment Storage,
+,,,,Side Administration Desk,
+,,,,Spare,
+,,,,staff room,
+,,,,Stored On Site,
+,,,,Suite 250 Reception Desk,
+,,,,Sun Room,
+,,,,Sunroom (Admin Area),
+,,,,Sunroom (admin area),
+,,,,Switchboard,
+,,,,TBD,
+,,,,Trailer 1 (Admin Office - Storage),
+,,,,Trailer 1 (Admin Office),
+,,,,Trailer 1 (Admin Office) / 208,
+,,,,Trailer 2 (Admin Office),
+,,,,Trailer 2 (Cynthia Turgeon),
+,,,,Trailer 2 (Respiratory Assessment Trailer),
+,,,,Ultrasound Room,
+,,,,unknown,
+,,,,Urgent Care (Dictation Room),
+,,,,Urgent Care (Hallway),
+,,,,Urgent Care (Physician Desk),
+,,,,Urgent Care (Physician Desk)(724),
+,,,,Urgent Care (Physician Filing Room),
+,,,,Urgent Care (Reception Desk),
+,,,,Urgent Care Physician Room,
+,,,,Urgent Care Whiteboard TV,
+,,,,WFH,
+,,,,WFH -,
+,,,,WFH - ???,
+,,,,WFH - Aimee MacPhail,
+,,,,WFH - Andrea Akhurst,
+,,,,WFH - Candis Haslam,
+,,,,WFH - Candy Craven,
+,,,,WFH - Caroline Sholseth,
+,,,,WFH - Chelsey Mcdonald,
+,,,,WFH - Denise Paul,
+,,,,WFH - Devon,
+,,,,WFH - Faye Hjort,
+,,,,WFH - Heather,
+,,,,WFH - Home Office (VPN),
+,,,,WFH - Janeen Kidd (Project Director),
+,,,,WFH - JBurke2,
+,,,,WFH - Jennifer Sirup,
+,,,,WFH - Jo Lemay (301),
+,,,,WFH - Joanne Rife,
+,,,,WFH - Kerstin Lewis,
+,,,,WFH - Melissa Morrison,
+,,,,WFH - Ronald Pachet,
+,,,,WFH - Ruchir Mehndiratta,
+,,,,WFH - Trailer 1 (Dr Graham Blackburn),
+,,,,WFH - will provide meeting room#,
+,,,,WFH - Work From Home336,
+,,,,WFH (Angelene Soldan),
+,,,,WFH (Catherine Brooks),
+,,,,WFH (Don Ferrario),
+,,,,WFH (LGoodwin2),
+,,,,WFH (Vanessa Wright),
+,,,,WFH ???,
+,,,,WFH Dr Peter Gotz,
+,,,,WFH G20,
+,,,,WFH user,
+,,,,X-Ray (Bone Marrow Density Procedure Room),
+,,,,X-Ray (Nurse Station),
+,,,,X-Ray (Procedure Room),
+,,,,X-Ray Area,
+,,,,Xray department WFH,

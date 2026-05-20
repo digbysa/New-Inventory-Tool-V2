@@ -197,7 +197,7 @@ try {
                 $results += [pscustomobject]@{ Role='Child'; Type='Monitor'; Name=(Get-FieldValue -Row $m -Names @('name')); AssetTag=(Get-FieldValue -Row $m -Names @('asset_tag')); Serial=(Get-FieldValue -Row $m -Names @('serial_number')); RITM=(Get-FieldValue -Row $m -Names @('po_number')); Retire=(Get-FieldValue -Row $m -Names @('u_scheduled_retirement')) }
             }
         }
-        return $results
+        return ,$results
     }
 
     function Build-NearbyDevices {
@@ -210,7 +210,7 @@ try {
                 $nearby += [pscustomobject]@{ HostName=(Get-FieldValue -Row $row -Names @('name')); IPAddress=''; Subnet=''; AssetTag=(Get-FieldValue -Row $row -Names @('asset_tag')); Location=$location; Building=(Get-FieldValue -Row $row -Names @('u_building')); Floor=(Get-FieldValue -Row $row -Names @('u_floor')); Room=(Get-FieldValue -Row $row -Names @('u_room')); Department=(Get-FieldValue -Row $row -Names @('u_department_location')); MaintenanceType=(Get-FieldValue -Row $row -Names @('u_device_rounding')); LastRounded=(Get-FieldValue -Row $row -Names @('u_last_rounded_date')); DaysAgo=''; Status='-' }
             }
         }
-        return $nearby
+        return ,$nearby
     }
 
     function Build-QueryData {

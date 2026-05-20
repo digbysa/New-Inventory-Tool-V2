@@ -5144,7 +5144,13 @@ function Populate-UI($displayRec,$parentRec){
   $txtRetire.Text = Fmt-DateLong $displayRec.Retire
   Show-RoundingStatus $parentRec $displayRec
   if($parentRec){ Validate-Location $parentRec } else { Validate-Location $displayRec }
-  if($parentRec){ Refresh-AssocViews $parentRec }
+  $assocSource = $null
+  if($parentRec){
+    $assocSource = $parentRec
+  } elseif($displayRec -and $displayRec.Type -eq 'Computer'){
+    $assocSource = $displayRec
+  }
+  Refresh-AssocViews $assocSource
   Update-CartCheckbox-State $parentRec
   Update-ManualRoundButton   $parentRec
   if($btnAddPeripheral){ Set-SearchTextButtonBaseState -Button $btnAddPeripheral -BaseEnabled ([bool]$parentRec) }

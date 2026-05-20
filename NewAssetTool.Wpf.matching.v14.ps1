@@ -118,6 +118,85 @@ try {
         if ($textbox) { $textbox.Text = $Value }
     }
 
+    function Parse-DateLoose {
+        param([string]$Value)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+        $formats = @('yyyy-MM-dd','yyyy/MM/dd','MM/dd/yyyy','MM-dd-yyyy','dd/MM/yyyy','dd-MM-yyyy','d/M/yyyy','M/d/yyyy','dd MMMM yyyy','d MMMM yyyy','dd MMM yyyy','d MMM yyyy')
+        foreach ($format in $formats) {
+            try {
+                return [datetime]::ParseExact($Value, $format, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeLocal)
+            } catch {}
+        }
+        try { return (Get-Date -Date $Value) } catch { return $null }
+    }
+
+    function Format-DateLong {
+        param([string]$Value)
+        $dt = Parse-DateLoose -Value $Value
+        if (-not $dt) { return $Value }
+        return $dt.ToString('dd MMMM yyyy')
+    }
+
+    function Extract-Ritm {
+        param([string]$Value)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+        $trimmed = $Value.Trim()
+        $ritm = [regex]::Match($trimmed, '(RITM\d+)')
+        if ($ritm.Success) { return $ritm.Groups[1].Value }
+        $trpEight = [regex]::Match($trimmed, 'TRP(?<date>\d{8})')
+        if ($trpEight.Success) {
+            try {
+                $dt = [datetime]::ParseExact($trpEight.Groups['date'].Value, 'yyyyMMdd', [System.Globalization.CultureInfo]::InvariantCulture)
+                return ('TRP - {0}' -f $dt.ToString('dd MMMM yyyy'))
+            } catch {}
+        }
+        $trpSix = [regex]::Match($trimmed, 'TRP(?<date>\d{6})(?!\d)')
+        if ($trpSix.Success) {
+            try {
+                $digits = $trpSix.Groups['date'].Value
+                $month = [int]$digits.Substring(0,2)
+                $day = [int]$digits.Substring(2,2)
+                $year = 2000 + [int]$digits.Substring(4,2)
+                $dt = [datetime]::new($year, $month, $day)
+                return ('TRP - {0}' -f $dt.ToString('dd MMMM yyyy'))
+            } catch {}
+        }
+        return $trimmed
+    }
+
+    function Get-RoundingStatus {
+        param([Nullable[datetime]]$RoundedDate)
+        if (-not $RoundedDate) { return 'Red' }
+        $today = (Get-Date).Date
+        $dow = [int](Get-Date $today -UFormat %u)
+        $monday = $today.AddDays(-($dow - 1))
+        if ($RoundedDate -ge $monday) { return 'Green' }
+        if ($RoundedDate -ge $today.AddDays(-35)) { return 'Yellow' }
+        return 'Red'
+    }
+
+    function Set-LastRoundedDisplay {
+        param([hashtable]$Ui,[string]$LastRoundedRaw)
+        $dt = Parse-DateLoose -Value $LastRoundedRaw
+        if (-not $dt) {
+            $Ui.LastRoundedText.Text = ''
+            $Ui.LastRoundedText.Foreground = New-Brush '#BE123C'
+            return
+        }
+        $dateText = $dt.ToString('dd MMMM yyyy')
+        $daysAgo = [int](((Get-Date).Date - $dt.Date).TotalDays)
+        if ($daysAgo -le 0) { $Ui.LastRoundedText.Text = "$dateText - Today" }
+        else {
+            $plural = if ($daysAgo -eq 1) { '' } else { 's' }
+            $Ui.LastRoundedText.Text = ("{0} - {1} day{2} ago" -f $dateText, $daysAgo, $plural)
+        }
+        switch (Get-RoundingStatus -RoundedDate $dt) {
+            'Green' { $Ui.LastRoundedText.Foreground = New-Brush '#15803D' }
+            'Yellow' { $Ui.LastRoundedText.Foreground = New-Brush '#B45309' }
+            default { $Ui.LastRoundedText.Foreground = New-Brush '#BE123C' }
+        }
+    }
+
 
     function Get-FieldValue {
         param([object]$Row,[string[]]$Names)
@@ -157,8 +236,8 @@ try {
             DetectedType='Computer'; Name=$name
             AssetTag=Get-FieldValue -Row $Row -Names @('asset_tag','AssetTag')
             Serial=Get-FieldValue -Row $Row -Names @('serial_number','Serial')
-            Parent='(n/a)'; RITM=Get-FieldValue -Row $Row -Names @('po_number','RITM')
-            RetireDate=Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','RetireDate')
+            Parent='(n/a)'; RITM=Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number','RITM'))
+            RetireDate=Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','RetireDate'))
             LastRounded=Get-FieldValue -Row $Row -Names @('u_last_rounded_date','LastRounded')
             City=Get-FieldValue -Row $Row -Names @('location.city','City')
             Location=Get-FieldValue -Row $Row -Names @('location','Location')
@@ -190,11 +269,11 @@ try {
 
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
-        $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=$Device.RetireDate })
+        $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate) })
         foreach ($m in $Inventory.Monitors) {
             $parent = Get-FieldValue -Row $m -Names @('u_parent_asset')
             if ($parent -and $Device.AssetTag -and $parent.Trim().ToUpper() -eq $Device.AssetTag.Trim().ToUpper()) {
-                $results += [pscustomobject]@{ Role='Child'; Type='Monitor'; Name=(Get-FieldValue -Row $m -Names @('name')); AssetTag=(Get-FieldValue -Row $m -Names @('asset_tag')); Serial=(Get-FieldValue -Row $m -Names @('serial_number')); RITM=(Get-FieldValue -Row $m -Names @('po_number')); Retire=(Get-FieldValue -Row $m -Names @('u_scheduled_retirement')) }
+                $results += [pscustomobject]@{ Role='Child'; Type='Monitor'; Name=(Get-FieldValue -Row $m -Names @('name')); AssetTag=(Get-FieldValue -Row $m -Names @('asset_tag')); Serial=(Get-FieldValue -Row $m -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $m -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $m -Names @('u_scheduled_retirement'))) }
             }
         }
         return ,$results
@@ -257,7 +336,6 @@ try {
     function Set-WindowDataBindings {
         param([hashtable]$Ui,[pscustomobject]$SampleData)
         $device = $SampleData.Device
-        $Ui.SearchTextBox.Text = $device.Name
         $Ui.SelectedDeviceText.Text = $device.Name
         Set-DisplayText -Ui $Ui -BaseName 'DetectedType' -Value $device.DetectedType
         Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $device.Name
@@ -265,8 +343,8 @@ try {
         Set-DisplayText -Ui $Ui -BaseName 'Serial' -Value $device.Serial
         Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $device.Parent
         Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $device.RITM
-        Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value $device.RetireDate
-        $Ui.LastRoundedText.Text = $device.LastRounded
+        Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value (Format-DateLong $device.RetireDate)
+        Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $device.LastRounded
         $Ui.CityTextBox.Text = $device.City
         $Ui.LocationTextBox.Text = $device.Location
         $Ui.BuildingTextBox.Text = $device.Building

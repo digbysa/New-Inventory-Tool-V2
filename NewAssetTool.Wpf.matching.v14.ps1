@@ -370,7 +370,12 @@ try {
                 }
             }
         }
-        return [pscustomobject]@{ DataRoot=$dataRoot; SiteFolderPath=$SiteFolderPath; Computers=$computers; Monitors=$monitors; Carts=$carts; Mics=$mics; Scanners=$scanners; Locations=$locations }
+        $inventory = [pscustomobject]@{
+            DataRoot=$dataRoot; SiteFolderPath=$SiteFolderPath
+            Computers=$computers; Monitors=$monitors; Carts=$carts; Mics=$mics; Scanners=$scanners; Locations=$locations
+        }
+        Build-InventoryIndices -Inventory $inventory
+        return $inventory
     }
 
     function ConvertTo-DeviceRecord {
@@ -395,6 +400,44 @@ try {
         }
     }
 
+    function Add-IndexKey {
+        param([hashtable]$Index,[string]$Key,[pscustomobject]$Value)
+        if (-not $Index -or -not $Value) { return }
+        if ([string]::IsNullOrWhiteSpace($Key)) { return }
+        $normalized = $Key.Trim().ToUpper()
+        if ([string]::IsNullOrWhiteSpace($normalized)) { return }
+        $Index[$normalized] = $Value
+        $compact = ($normalized -replace '[-\s]','')
+        if (-not [string]::IsNullOrWhiteSpace($compact)) { $Index[$compact] = $Value }
+    }
+
+    function Build-InventoryIndices {
+        param([pscustomobject]$Inventory)
+        if (-not $Inventory) { return }
+        $indexByName = @{}
+        $indexByAsset = @{}
+        $indexBySerial = @{}
+
+        foreach ($set in @(
+            @{Rows=$Inventory.Computers; Type='Computer'},
+            @{Rows=$Inventory.Monitors; Type='Monitor'},
+            @{Rows=$Inventory.Carts; Type='Cart'},
+            @{Rows=$Inventory.Mics; Type='Mic'},
+            @{Rows=$Inventory.Scanners; Type='Scanner'}
+        )) {
+            foreach ($row in $set.Rows) {
+                $record = ConvertTo-DeviceRecord -Row $row -DetectedType $set.Type
+                Add-IndexKey -Index $indexByName -Key $record.Name -Value $record
+                Add-IndexKey -Index $indexByAsset -Key $record.AssetTag -Value $record
+                Add-IndexKey -Index $indexBySerial -Key $record.Serial -Value $record
+            }
+        }
+
+        $Inventory | Add-Member -NotePropertyName IndexByName -NotePropertyValue $indexByName -Force
+        $Inventory | Add-Member -NotePropertyName IndexByAsset -NotePropertyValue $indexByAsset -Force
+        $Inventory | Add-Member -NotePropertyName IndexBySerial -NotePropertyValue $indexBySerial -Force
+    }
+
     function Find-InventoryMatch {
         param([string]$SearchTerm,[pscustomobject]$Inventory)
         $term = $SearchTerm.Trim().ToUpper()
@@ -404,55 +447,36 @@ try {
         $isAssetTag = $term -match '^(HSS|C)'
         $isHssAssetTag = $term -match '^HSS-'
 
-        function Find-InCollection {
-            param([object[]]$Rows,[string[]]$Fields,[string]$DetectedType)
-            foreach ($row in $Rows) {
-                foreach ($field in $Fields) {
-                    $candidate = Get-FieldValue -Row $row -Names @($field)
-                    if (-not [string]::IsNullOrWhiteSpace($candidate) -and $candidate.Trim().ToUpper() -eq $term) {
-                        return (ConvertTo-DeviceRecord -Row $row -DetectedType $DetectedType)
-                    }
-                }
-            }
-            return $null
-        }
-
         if ($isComputerName) {
-            $match = Find-InCollection -Rows $Inventory.Computers -Fields @('name') -DetectedType 'Computer'
+            $match = $Inventory.IndexByName[$term]
             if ($match) { return $match }
         }
 
         if ($isAssetTag) {
             if ($isHssAssetTag) {
-                $match = Find-InCollection -Rows $Inventory.Monitors -Fields @('asset_tag') -DetectedType 'Monitor'
-                if ($match) { return $match }
-                $match = Find-InCollection -Rows $Inventory.Computers -Fields @('asset_tag') -DetectedType 'Computer'
-                if ($match) { return $match }
-                $match = Find-InCollection -Rows $Inventory.Carts -Fields @('asset_tag') -DetectedType 'Cart'
-                if ($match) { return $match }
+                $match = $Inventory.IndexByAsset[$term]
+                if ($match -and $match.DetectedType -in @('Monitor','Computer','Cart')) { return $match }
             }
             else {
-                $match = Find-InCollection -Rows $Inventory.Computers -Fields @('asset_tag') -DetectedType 'Computer'
-                if ($match) { return $match }
-                $match = Find-InCollection -Rows $Inventory.Monitors -Fields @('asset_tag') -DetectedType 'Monitor'
-                if ($match) { return $match }
-                $match = Find-InCollection -Rows $Inventory.Carts -Fields @('asset_tag') -DetectedType 'Cart'
-                if ($match) { return $match }
-                $match = Find-InCollection -Rows $Inventory.Mics -Fields @('asset_tag') -DetectedType 'Mic'
-                if ($match) { return $match }
-                $match = Find-InCollection -Rows $Inventory.Scanners -Fields @('asset_tag') -DetectedType 'Scanner'
+                $match = $Inventory.IndexByAsset[$term]
                 if ($match) { return $match }
             }
         }
 
-        foreach ($set in @(
-            @{Rows=$Inventory.Computers; Fields=@('name','asset_tag','serial_number'); Type='Computer'},
-            @{Rows=$Inventory.Monitors; Fields=@('name','asset_tag','serial_number'); Type='Monitor'},
-            @{Rows=$Inventory.Carts; Fields=@('name','asset_tag','serial_number'); Type='Cart'},
-            @{Rows=$Inventory.Mics; Fields=@('name','asset_tag','serial_number'); Type='Mic'},
-            @{Rows=$Inventory.Scanners; Fields=@('name','asset_tag','serial_number'); Type='Scanner'}
-        )) {
-            $match = Find-InCollection -Rows $set.Rows -Fields $set.Fields -DetectedType $set.Type
+        $match = $Inventory.IndexByName[$term]
+        if ($match) { return $match }
+        $match = $Inventory.IndexByAsset[$term]
+        if ($match) { return $match }
+        $match = $Inventory.IndexBySerial[$term]
+        if ($match) { return $match }
+
+        $compactTerm = ($term -replace '[-\s]','')
+        if ($compactTerm -and $compactTerm -ne $term) {
+            $match = $Inventory.IndexByName[$compactTerm]
+            if ($match) { return $match }
+            $match = $Inventory.IndexByAsset[$compactTerm]
+            if ($match) { return $match }
+            $match = $Inventory.IndexBySerial[$compactTerm]
             if ($match) { return $match }
         }
         return $null

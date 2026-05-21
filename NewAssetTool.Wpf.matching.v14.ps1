@@ -446,19 +446,6 @@ try {
         $parentTokens = @()
         $parentTokens += @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial)
         if (-not [string]::IsNullOrWhiteSpace($Device.Parent)) { $parentTokens += $Device.Parent }
-
-        $parentSeed = if (-not [string]::IsNullOrWhiteSpace($Device.Parent)) { $Device.Parent } else { $null }
-        if (-not [string]::IsNullOrWhiteSpace($parentSeed)) {
-            foreach ($row in $Inventory.Computers) {
-                $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
-                $candidates = @($record.Name,$record.AssetTag,$record.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
-                if ($candidates -contains $parentSeed.Trim().ToUpper()) {
-                    $parentTokens += @($record.Name,$record.AssetTag,$record.Serial)
-                    break
-                }
-            }
-        }
-
         $parentTokens = @($parentTokens | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() } | Select-Object -Unique)
 
         $addedChildAssetTags = @{}

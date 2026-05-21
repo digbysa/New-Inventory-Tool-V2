@@ -443,13 +443,21 @@ try {
             $record = [pscustomobject]@{ Role=$Role; Type=$Type; Name=(Get-FieldValue -Row $Row -Names @('name')); AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag')); Serial=(Get-FieldValue -Row $Row -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement'))); CmdbUrl=(Get-CmdbLink -DeviceType $Type -AssetTag (Get-FieldValue -Row $Row -Names @('asset_tag'))) }
             $results = @($results + $record)
         }
-        $parentTokens = @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+        $parentTokens = @()
+        $parentTokens += @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial)
+        if (-not [string]::IsNullOrWhiteSpace($Device.Parent)) { $parentTokens += $Device.Parent }
+        $parentTokens = @($parentTokens | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() } | Select-Object -Unique)
+
+        $addedChildAssetTags = @{}
         foreach ($token in $parentTokens) {
             if (-not $childrenByParent.ContainsKey($token)) { continue }
             foreach ($row in $childrenByParent[$token]) {
+                $childAssetTag = (Get-FieldValue -Row $row -Names @('asset_tag')).Trim().ToUpper()
+                if (-not [string]::IsNullOrWhiteSpace($childAssetTag) -and $addedChildAssetTags.ContainsKey($childAssetTag)) { continue }
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
-                $role = if ($Device.AssetTag -and ((Get-FieldValue -Row $row -Names @('asset_tag')).Trim().ToUpper() -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
+                $role = if ($Device.AssetTag -and ($childAssetTag -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
                 Add-AssociatedRecord -Role $role -Type $type -Row $row
+                if (-not [string]::IsNullOrWhiteSpace($childAssetTag)) { $addedChildAssetTags[$childAssetTag] = $true }
             }
         }
         return ,$results

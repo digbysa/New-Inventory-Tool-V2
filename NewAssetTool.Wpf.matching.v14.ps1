@@ -667,10 +667,11 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
             return
         }
         $script:AppState.CurrentDevice = $match
-        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=@(); Nearby=@() }
+        $associated = Build-AssociatedDevices -Device $match -Inventory $script:AppState.Inventory
+        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=@() }
         $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
         Set-PrimaryDeviceBindings -Ui $ui -Device $match
-        $ui.AssociatedDevicesDataGrid.ItemsSource = @()
+        $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
         $ui.NearbyDataGrid.ItemsSource = @()
         $ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
         $ui.DeviceOnlineText.Text = 'Checking...'
@@ -679,7 +680,6 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
         $ui.DeviceResponseTimeText.Text = ''
         $ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        Start-QueryDataPopulationAsync -Ui $ui -Device $match -Inventory $script:AppState.Inventory -QueryToken $script:AppState.CurrentQueryToken
         Start-OnlineStatusUpdateAsync -Ui $ui -HostName $match.Name
     })
 

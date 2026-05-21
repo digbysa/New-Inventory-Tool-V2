@@ -326,14 +326,16 @@ try {
     }
 
     function ConvertTo-DeviceRecord {
-        param([object]$Row)
+        param([object]$Row,[string]$DetectedType='Computer')
         $name = Get-FieldValue -Row $Row -Names @('name','HostName')
+        $parent = Get-FieldValue -Row $Row -Names @('u_parent_asset','Parent')
+        if ([string]::IsNullOrWhiteSpace($parent)) { $parent = '(n/a)' }
         return [pscustomobject]@{
             SearchKeys=@($name,(Get-FieldValue -Row $Row -Names @('asset_tag','AssetTag')),(Get-FieldValue -Row $Row -Names @('serial_number','Serial')))
-            DetectedType='Computer'; Name=$name
+            DetectedType=$DetectedType; Name=$name
             AssetTag=Get-FieldValue -Row $Row -Names @('asset_tag','AssetTag')
             Serial=Get-FieldValue -Row $Row -Names @('serial_number','Serial')
-            Parent='(n/a)'; RITM=Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number','RITM'))
+            Parent=$parent; RITM=Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number','RITM'))
             RetireDate=Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','RetireDate'))
             LastRounded=Get-FieldValue -Row $Row -Names @('u_last_rounded_date','LastRounded')
             City=Get-FieldValue -Row $Row -Names @('location.city','City')
@@ -349,24 +351,57 @@ try {
         param([string]$SearchTerm,[pscustomobject]$Inventory)
         $term = $SearchTerm.Trim().ToUpper()
         if ([string]::IsNullOrWhiteSpace($term)) { return $null }
-        foreach ($row in $Inventory.Computers) {
-            $candidates = @(
-                (Get-FieldValue -Row $row -Names @('name')),
-                (Get-FieldValue -Row $row -Names @('asset_tag')),
-                (Get-FieldValue -Row $row -Names @('serial_number'))
-            )
-            foreach ($candidate in $candidates) {
-                if (-not [string]::IsNullOrWhiteSpace($candidate) -and $candidate.ToUpper() -like "*$term*") {
-                    return ConvertTo-DeviceRecord -Row $row
+
+        $isComputerName = $term -match '^(PC|LD|TD|AO)'
+        $isAssetTag = $term -match '^(HSS|C)'
+
+        function Find-InCollection {
+            param([object[]]$Rows,[string[]]$Fields,[string]$DetectedType)
+            foreach ($row in $Rows) {
+                foreach ($field in $Fields) {
+                    $candidate = Get-FieldValue -Row $row -Names @($field)
+                    if (-not [string]::IsNullOrWhiteSpace($candidate) -and $candidate.Trim().ToUpper() -eq $term) {
+                        return (ConvertTo-DeviceRecord -Row $row -DetectedType $DetectedType)
+                    }
                 }
             }
+            return $null
+        }
+
+        if ($isComputerName) {
+            $match = Find-InCollection -Rows $Inventory.Computers -Fields @('name') -DetectedType 'Computer'
+            if ($match) { return $match }
+        }
+
+        if ($isAssetTag) {
+            $match = Find-InCollection -Rows $Inventory.Computers -Fields @('asset_tag') -DetectedType 'Computer'
+            if ($match) { return $match }
+            $match = Find-InCollection -Rows $Inventory.Monitors -Fields @('asset_tag') -DetectedType 'Monitor'
+            if ($match) { return $match }
+            $match = Find-InCollection -Rows $Inventory.Carts -Fields @('asset_tag') -DetectedType 'Cart'
+            if ($match) { return $match }
+            $match = Find-InCollection -Rows $Inventory.Mics -Fields @('asset_tag') -DetectedType 'Mic'
+            if ($match) { return $match }
+            $match = Find-InCollection -Rows $Inventory.Scanners -Fields @('asset_tag') -DetectedType 'Scanner'
+            if ($match) { return $match }
+        }
+
+        foreach ($set in @(
+            @{Rows=$Inventory.Computers; Fields=@('name','asset_tag','serial_number'); Type='Computer'},
+            @{Rows=$Inventory.Monitors; Fields=@('name','asset_tag','serial_number'); Type='Monitor'},
+            @{Rows=$Inventory.Carts; Fields=@('name','asset_tag','serial_number'); Type='Cart'},
+            @{Rows=$Inventory.Mics; Fields=@('name','asset_tag','serial_number'); Type='Mic'},
+            @{Rows=$Inventory.Scanners; Fields=@('name','asset_tag','serial_number'); Type='Scanner'}
+        )) {
+            $match = Find-InCollection -Rows $set.Rows -Fields $set.Fields -DetectedType $set.Type
+            if ($match) { return $match }
         }
         return $null
     }
 
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
-        $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType 'Computer' -AssetTag $Device.AssetTag) })
+        $results = @([pscustomobject]@{ Role='Parent'; Type=$Device.DetectedType; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $Device.DetectedType -AssetTag $Device.AssetTag) })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName

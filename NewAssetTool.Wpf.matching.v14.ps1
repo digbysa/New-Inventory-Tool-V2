@@ -139,6 +139,7 @@ try {
 
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
+    function Get-RoundingMapPath { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data/Rounding.csv' }
 
     function Ensure-OutputFolder {
         param([string]$ResolvedXamlPath)
@@ -921,12 +922,36 @@ function Find-SampleDevice {
         param([hashtable]$Ui)
         $minutes = 0
         if (-not [int]::TryParse($Ui.RoundingTimeTextBox.Text, [ref]$minutes)) { return 0 }
-        return [Math]::Max(0, $minutes)
+        return [Math]::Min(120, [Math]::Max(1, $minutes))
     }
 
     function Set-RoundingMinutes {
         param([hashtable]$Ui,[int]$Minutes)
-        $Ui.RoundingTimeTextBox.Text = [Math]::Max(0, $Minutes).ToString()
+        $Ui.RoundingTimeTextBox.Text = [Math]::Min(120, [Math]::Max(1, $Minutes)).ToString()
+    }
+
+    function Get-MaintenanceTypeOrDefault {
+        param([string]$MaintenanceType,[string]$DeviceName)
+        if (-not [string]::IsNullOrWhiteSpace($MaintenanceType)) { return $MaintenanceType.Trim() }
+        if (-not [string]::IsNullOrWhiteSpace($DeviceName) -and $DeviceName.Trim() -match '^(?i)AO') { return 'Mobile Cart' }
+        return 'General Rounding'
+    }
+
+    function Get-RoundingUrlForDevice {
+        param([pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
+        if (-not $CurrentDevice -or -not $CurrentDevice.AssetTag) { return $null }
+        $key = $CurrentDevice.AssetTag.Trim().ToUpper()
+        if ($RoundingByAssetTag.ContainsKey($key)) {
+            return "https://devicerounding.nttdatanucleus.com/DeviceMaintenance/Index?DeviceId=$($RoundingByAssetTag[$key])"
+        }
+        return $null
+    }
+
+    function Update-ManualRoundButtonState {
+        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
+        $url = Get-RoundingUrlForDevice -CurrentDevice $CurrentDevice -RoundingByAssetTag $RoundingByAssetTag
+        $Ui.ManualRoundButton.Tag = $url
+        $Ui.ManualRoundButton.IsEnabled = -not [string]::IsNullOrWhiteSpace($url)
     }
 
     function Save-RoundingEvent {
@@ -937,12 +962,17 @@ function Find-SampleDevice {
             AssetTag=$CurrentDevice.AssetTag; Name=$CurrentDevice.Name; Serial=$CurrentDevice.Serial
             City=$CurrentDevice.City; Location=$CurrentDevice.Location; Building=$CurrentDevice.Building
             Floor=$CurrentDevice.Floor; Room=$CurrentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
-            RoundingMinutes=(Get-RoundingMinutes -Ui $Ui); CableMgmtOK=[bool]$Ui.ValidateCableCheckBox.IsChecked
+            RoundingMinutes=(Get-RoundingMinutes -Ui $Ui); CableMgmtOK=$(if($Ui.ValidateCableCheckBox.IsChecked){'Yes'}else{'No'})
+            CablingNeeded=$(if($Ui.CablingNeededCheckBox.IsChecked){'Yes'}else{'No'})
             LabelOK=[bool]$Ui.LabelMonitorCheckBox.IsChecked; CartOK=[bool]$Ui.PhysicalCartCheckBox.IsChecked
-            PeripheralsOK=[bool]$Ui.ValidatePeripheralsCheckBox.IsChecked; Comments=$Ui.CommentsTextBox.Text
-            SavedAt=(Get-Date).ToString('s'); SavedFrom='System'
+            PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
+            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$CurrentDevice.Department
+            RoundingUrl=$Ui.ManualRoundButton.Tag; Comments=$Ui.CommentsTextBox.Text
+            Rounded=$(if($script:ManualRoundUsed){'Yes'}else{'No'})
+            Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
         }
         Add-CsvRow -Path $csvPath -Row $row
+        $script:ManualRoundUsed = $false
         [System.Windows.MessageBox]::Show("Saved event to:`n$csvPath", 'Save Event') | Out-Null
     }
 
@@ -1020,9 +1050,36 @@ function Find-SampleDevice {
     $siteFolderPath = if ($selectedSite) { $selectedSite.FolderPath } else { $null }
     $siteName = if ($selectedSite) { $selectedSite.Name } else { 'All Sites' }
     $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
+    $roundingByAssetTag = @{}
+    $roundingMapPath = Get-RoundingMapPath -ResolvedXamlPath $resolvedXamlPath
+    if (Test-Path $roundingMapPath) {
+        try {
+            foreach ($r in (Import-Csv -Path $roundingMapPath)) {
+                $at = [string]$r.'Asset Tag'
+                $id = [string]$r.SlNo
+                if (-not [string]::IsNullOrWhiteSpace($at) -and -not [string]::IsNullOrWhiteSpace($id)) {
+                    $roundingByAssetTag[$at.Trim().ToUpper()] = $id.Trim()
+                }
+            }
+        } catch {}
+    }
+    $script:ManualRoundUsed = $false
+    $roundingTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $roundingTimer.Interval = [TimeSpan]::FromSeconds(1)
+    $script:RoundingStartTimeUtc = $null
+    $script:RoundingBaseMinutes = 3
+    $roundingTimer.Add_Tick({
+        if (-not $script:RoundingStartTimeUtc) { return }
+        $elapsed = [DateTime]::UtcNow - $script:RoundingStartTimeUtc
+        $elapsedMinutes = [int][Math]::Floor($elapsed.TotalMinutes)
+        $target = $script:RoundingBaseMinutes
+        if ($elapsedMinutes -ge $script:RoundingBaseMinutes) { $target = [Math]::Min(120, $elapsedMinutes) }
+        if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
+    })
     $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName }
 
     Clear-WindowData -Ui $ui
+    Set-RoundingMinutes -Ui $ui -Minutes 3
     Increment-Fonts -Root $window
     Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
@@ -1047,6 +1104,15 @@ function Find-SampleDevice {
             return
         }
         $script:AppState.CurrentDevice = $match
+        $script:ManualRoundUsed = $false
+        $maintenanceType = ''
+        try { $maintenanceType = [string]$match.u_device_rounding } catch {}
+        Set-ControlText -Control $ui.MaintenanceTypeComboBox -Value (Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $match.Name)
+        Update-ManualRoundButtonState -Ui $ui -CurrentDevice $match -RoundingByAssetTag $roundingByAssetTag
+        $script:RoundingBaseMinutes = 3
+        Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes
+        $script:RoundingStartTimeUtc = [DateTime]::UtcNow
+        $roundingTimer.Start()
         $associated = Build-AssociatedDevices -Device $match -Inventory $script:AppState.Inventory
         $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=@() }
         $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
@@ -1065,10 +1131,14 @@ function Find-SampleDevice {
 
     $ui.SearchTextBox.Add_TextChanged({
         if ([string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) {
+            $roundingTimer.Stop()
+            $script:RoundingStartTimeUtc = $null
             $script:AppState.CurrentDevice = $null
             $script:AppState.SampleData = $null
             $script:AppState.CurrentQueryToken = ''
             Clear-WindowData -Ui $ui
+            Set-RoundingMinutes -Ui $ui -Minutes 3
+            Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
         }
     })
@@ -1104,11 +1174,40 @@ function Find-SampleDevice {
         }
     })
     $ui.CancelEditLocationButton.Add_Click({ Toggle-LocationEditMode -Ui $ui -IsEditing:$false })
-    $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1) })
-    $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ([Math]::Max(0, (Get-RoundingMinutes -Ui $ui) - 1)) })
-    $ui.CheckCompleteButton.Add_Click({ Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete' })
-    $ui.SaveEventButton.Add_Click({ Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath })
-    $ui.ManualRoundButton.Add_Click({ [System.Windows.MessageBox]::Show('Manual Round button clicked.', 'Manual Round') | Out-Null })
+    $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
+    $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) - 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
+    $ui.CheckCompleteButton.Add_Click({
+        $checkBoxes = @($ui.ValidateCableCheckBox,$ui.LabelMonitorCheckBox,$ui.ValidatePeripheralsCheckBox,$ui.PhysicalCartCheckBox)
+        $enabled = @($checkBoxes | Where-Object { $_.IsEnabled })
+        $allChecked = $enabled.Count -gt 0 -and (@($enabled | Where-Object { -not $_.IsChecked }).Count -eq 0)
+        if ($allChecked) {
+            foreach ($cb in $checkBoxes) { $cb.IsChecked = $false }
+        } else {
+            foreach ($cb in $enabled) { $cb.IsChecked = $true }
+        }
+        Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete'
+    })
+    $ui.SaveEventButton.Add_Click({
+        if (-not $script:AppState.CurrentDevice) { return }
+        $roundingTimer.Stop()
+        $script:RoundingStartTimeUtc = $null
+        if ($ui.MaintenanceTypeComboBox.Text -eq 'Excluded') {
+            [System.Windows.MessageBox]::Show("This device is marked as Excluded. Enable 'Excluded' to log rounding.","Save Event") | Out-Null
+            return
+        }
+        Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath
+        Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete'
+        $script:RoundingBaseMinutes = 3
+        Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes
+    })
+    $ui.ManualRoundButton.Add_Click({
+        if ([string]::IsNullOrWhiteSpace($ui.ManualRoundButton.Tag)) {
+            [System.Windows.MessageBox]::Show("No rounding URL found for this device.","Manual Round") | Out-Null
+            return
+        }
+        $script:ManualRoundUsed = $true
+        Start-Process -FilePath $ui.ManualRoundButton.Tag
+    })
     $ui.RebuildNearbyButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
@@ -1132,6 +1231,7 @@ function Find-SampleDevice {
     $ui.CablingNeededCheckBox.IsChecked = $false
     $ui.PhysicalCartCheckBox.IsChecked = $false
     $ui.AddDeviceToTrackerCheckBox.IsChecked = $false
+    $ui.ManualRoundButton.IsEnabled = $false
 
     [void]$window.ShowDialog()
 }

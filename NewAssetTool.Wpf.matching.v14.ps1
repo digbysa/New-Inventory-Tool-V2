@@ -237,15 +237,18 @@ try {
     function Load-InventoryData {
         param([string]$ResolvedXamlPath)
         $dataRoot = Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data'
-        $computers = @(); $monitors = @(); $locations = @()
+        $computers = @(); $monitors = @(); $locations = @(); $carts = @(); $mics = @(); $scanners = @()
         if (Test-Path -LiteralPath $dataRoot) {
             foreach ($file in Get-ChildItem -LiteralPath $dataRoot -Recurse -File -Filter '*.csv') {
                 if ($file.Name -like 'Computers - *.csv') { $computers += Import-InventoryCsv -Path $file.FullName }
                 elseif ($file.Name -like 'Monitors - *.csv') { $monitors += Import-InventoryCsv -Path $file.FullName }
                 elseif ($file.Name -like 'LocationMaster*.csv') { $locations += Import-InventoryCsv -Path $file.FullName }
+                elseif ($file.Name -eq 'Carts.csv') { $carts += Import-InventoryCsv -Path $file.FullName }
+                elseif ($file.Name -eq 'Mics.csv') { $mics += Import-InventoryCsv -Path $file.FullName }
+                elseif ($file.Name -eq 'Scanners.csv') { $scanners += Import-InventoryCsv -Path $file.FullName }
             }
         }
-        return [pscustomobject]@{ DataRoot=$dataRoot; Computers=$computers; Monitors=$monitors; Locations=$locations }
+        return [pscustomobject]@{ DataRoot=$dataRoot; Computers=$computers; Monitors=$monitors; Carts=$carts; Mics=$mics; Scanners=$scanners; Locations=$locations }
     }
 
     function ConvertTo-DeviceRecord {
@@ -290,26 +293,50 @@ try {
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
         $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate) })
-        foreach ($m in $Inventory.Monitors) {
-            $parent = Get-FieldValue -Row $m -Names @('u_parent_asset')
-            if ($parent -and $Device.AssetTag -and $parent.Trim().ToUpper() -eq $Device.AssetTag.Trim().ToUpper()) {
-                $results += [pscustomobject]@{ Role='Child'; Type='Monitor'; Name=(Get-FieldValue -Row $m -Names @('name')); AssetTag=(Get-FieldValue -Row $m -Names @('asset_tag')); Serial=(Get-FieldValue -Row $m -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $m -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $m -Names @('u_scheduled_retirement'))) }
+        $childrenByParent = @{}
+        foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
+            $collection = $Inventory.$collectionName
+            if (-not $collection) { continue }
+            foreach ($row in $collection) {
+                $token = (Get-FieldValue -Row $row -Names @('u_parent_asset')).Trim()
+                if ([string]::IsNullOrWhiteSpace($token)) { continue }
+                $key = $token.ToUpper()
+                if (-not $childrenByParent.ContainsKey($key)) { $childrenByParent[$key] = @() }
+                $childrenByParent[$key] += ,$row
+            }
+        }
+        $addChildRecord = {
+            param($Role,$Type,$Row)
+            $results += [pscustomobject]@{
+                Role=$Role; Type=$Type
+                Name=(Get-FieldValue -Row $Row -Names @('name'))
+                AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag'))
+                Serial=(Get-FieldValue -Row $Row -Names @('serial_number'))
+                RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number')))
+                Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement')))
+            }
+        }
+        $parentTokens = @($Device.AssetTag,$Device.Name,$Device.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+        $cartsForParent = @()
+        foreach ($token in $parentTokens) {
+            if (-not $childrenByParent.ContainsKey($token)) { continue }
+            foreach ($row in $childrenByParent[$token]) {
+                $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
+                & $addChildRecord 'Child' $type $row
+                if ($type -eq 'Cart') { $cartsForParent += ,$row }
+            }
+        }
+        foreach ($cart in $cartsForParent) {
+            $cartTokens = @((Get-FieldValue -Row $cart -Names @('asset_tag')),(Get-FieldValue -Row $cart -Names @('name'))) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+            foreach ($token in $cartTokens) {
+                if (-not $childrenByParent.ContainsKey($token)) { continue }
+                foreach ($row in $childrenByParent[$token]) {
+                    $type = if ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
+                    & $addChildRecord 'Grandchild' $type $row
+                }
             }
         }
         return ,$results
-    }
-
-    function Build-NearbyDevices {
-        param([pscustomobject]$Device,[pscustomobject]$Inventory)
-        $location = $Device.Location
-        if ([string]::IsNullOrWhiteSpace($location)) { return @() }
-        $nearby = @()
-        foreach ($row in $Inventory.Computers) {
-            if ((Get-FieldValue -Row $row -Names @('location')) -eq $location) {
-                $nearby += [pscustomobject]@{ HostName=(Get-FieldValue -Row $row -Names @('name')); IPAddress=''; Subnet=''; AssetTag=(Get-FieldValue -Row $row -Names @('asset_tag')); Location=$location; Building=(Get-FieldValue -Row $row -Names @('u_building')); Floor=(Get-FieldValue -Row $row -Names @('u_floor')); Room=(Get-FieldValue -Row $row -Names @('u_room')); Department=(Get-FieldValue -Row $row -Names @('u_department_location')); MaintenanceType=(Get-FieldValue -Row $row -Names @('u_device_rounding')); LastRounded=(Get-FieldValue -Row $row -Names @('u_last_rounded_date')); DaysAgo=''; Status='-' }
-            }
-        }
-        return ,$nearby
     }
 
     function Build-QueryData {
@@ -341,13 +368,12 @@ try {
         param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory,[string]$QueryToken)
         [System.Threading.Tasks.Task]::Run([Action]{
             $associated = Build-AssociatedDevices -Device $Device -Inventory $Inventory
-            $nearby = Build-NearbyDevices -Device $Device -Inventory $Inventory
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if ($script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 $Ui.AssociatedDevicesDataGrid.ItemsSource = $associated
-                $Ui.NearbyDataGrid.ItemsSource = $nearby
-                $Ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($nearby.Count)"
-                $script:AppState.SampleData = [pscustomobject]@{ Device=$Device; Associated=$associated; Nearby=$nearby }
+                $Ui.NearbyDataGrid.ItemsSource = @()
+                $Ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
+                $script:AppState.SampleData = [pscustomobject]@{ Device=$Device; Associated=$associated; Nearby=@() }
             }) | Out-Null
         }) | Out-Null
     }
@@ -407,7 +433,7 @@ try {
         $Ui.RoomTextBox.Text = $device.Room
         $Ui.DepartmentTextBox.Text = $device.Department
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm')"
-        $Ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($SampleData.Nearby.Count)"
+        $Ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = $SampleData.Associated
         $Ui.NearbyDataGrid.ItemsSource = $SampleData.Nearby
     }
@@ -504,7 +530,7 @@ try {
         $Ui.LastRoundedContainer.BorderBrush = New-Brush '#D9E1EA'
         $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
         foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { $box.Text = '' }
-        $Ui.NearbyScopeSummaryText.Text = 'Nearby scopes (Location): 0 - Showing 0'
+        $Ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
         $Ui.NearbyDataGrid.ItemsSource = @()
         $Ui.DeviceOnlineText.Text = 'Ready'
@@ -646,7 +672,7 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
         Set-PrimaryDeviceBindings -Ui $ui -Device $match
         $ui.AssociatedDevicesDataGrid.ItemsSource = @()
         $ui.NearbyDataGrid.ItemsSource = @()
-        $ui.NearbyScopeSummaryText.Text = 'Nearby scopes (Location): 1 - Loading...'
+        $ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
         $ui.DeviceOnlineText.Text = 'Checking...'
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
@@ -682,10 +708,10 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
     $ui.CheckCompleteButton.Add_Click({ $ui.CheckStatusComboBox.Text = 'Complete' })
     $ui.SaveEventButton.Add_Click({ Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath })
     $ui.ManualRoundButton.Add_Click({ [System.Windows.MessageBox]::Show('Manual Round button clicked.', 'Manual Round') | Out-Null })
-    $ui.RebuildNearbyButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($script:AppState.SampleData.Nearby.Count)" })
-    $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.UnselectAll() })
-    $ui.PingAllButton.Add_Click({ Set-StatusMessage -Ui $ui -Mode 'PingComplete' })
-    $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -ResolvedXamlPath $resolvedXamlPath })
+    $ui.RebuildNearbyButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
+    $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
+    $ui.PingAllButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
+    $ui.NearbySaveButton.Add_Click({ [System.Windows.MessageBox]::Show('Nearby logic is currently disabled.', 'Nearby Disabled') | Out-Null })
 
     $ui.MainTabControl.Add_SelectionChanged({
         if ($window.IsLoaded) {

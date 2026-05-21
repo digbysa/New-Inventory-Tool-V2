@@ -305,9 +305,9 @@ try {
                 $childrenByParent[$key] += ,$row
             }
         }
-        $addChildRecord = {
+        function Add-AssociatedRecord {
             param($Role,$Type,$Row)
-            $results += [pscustomobject]@{
+            $record = [pscustomobject]@{
                 Role=$Role; Type=$Type
                 Name=(Get-FieldValue -Row $Row -Names @('name'))
                 AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag'))
@@ -315,6 +315,7 @@ try {
                 RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number')))
                 Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement')))
             }
+            $results = @($results + $record)
         }
         $parentTokens = @($Device.AssetTag,$Device.Name,$Device.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
         $cartsForParent = @()
@@ -322,7 +323,7 @@ try {
             if (-not $childrenByParent.ContainsKey($token)) { continue }
             foreach ($row in $childrenByParent[$token]) {
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
-                & $addChildRecord 'Child' $type $row
+                Add-AssociatedRecord -Role 'Child' -Type $type -Row $row
                 if ($type -eq 'Cart') { $cartsForParent += ,$row }
             }
         }
@@ -332,7 +333,7 @@ try {
                 if (-not $childrenByParent.ContainsKey($token)) { continue }
                 foreach ($row in $childrenByParent[$token]) {
                     $type = if ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
-                    & $addChildRecord 'Grandchild' $type $row
+                    Add-AssociatedRecord -Role 'Grandchild' -Type $type -Row $row
                 }
             }
         }

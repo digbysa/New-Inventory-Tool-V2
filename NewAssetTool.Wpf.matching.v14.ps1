@@ -419,6 +419,21 @@ try {
         }
         return $null
     }
+    function Get-AssociationTokenVariants {
+        param([string]$Token)
+        $variants = New-Object System.Collections.ArrayList
+        if ([string]::IsNullOrWhiteSpace($Token)) { return ,@() }
+        $upper = $Token.Trim().ToUpper()
+        if ([string]::IsNullOrWhiteSpace($upper)) { return ,@() }
+        [void]$variants.Add($upper)
+        $compact = ($upper -replace '[-\s]','')
+        if (-not [string]::IsNullOrWhiteSpace($compact) -and -not $variants.Contains($compact)) { [void]$variants.Add($compact) }
+        $baseHost = ($upper -replace '-MIC$','' -replace '-SCN$','')
+        if (-not [string]::IsNullOrWhiteSpace($baseHost) -and -not $variants.Contains($baseHost)) { [void]$variants.Add($baseHost) }
+        $baseCompact = ($baseHost -replace '[-\s]','')
+        if (-not [string]::IsNullOrWhiteSpace($baseCompact) -and -not $variants.Contains($baseCompact)) { [void]$variants.Add($baseCompact) }
+        return ,$variants
+    }
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
         $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
@@ -431,11 +446,12 @@ try {
             $collection = $Inventory.$collectionName
             if (-not $collection) { continue }
             foreach ($row in $collection) {
-                $token = (Get-FieldValue -Row $row -Names @('u_parent_asset','Parent')).Trim()
+                $token = Get-FieldValue -Row $row -Names @('u_parent_asset','Parent')
                 if ([string]::IsNullOrWhiteSpace($token)) { continue }
-                $key = $token.ToUpper()
-                if (-not $childrenByParent.ContainsKey($key)) { $childrenByParent[$key] = @() }
-                $childrenByParent[$key] += ,$row
+                foreach ($key in (Get-AssociationTokenVariants -Token $token)) {
+                    if (-not $childrenByParent.ContainsKey($key)) { $childrenByParent[$key] = @() }
+                    $childrenByParent[$key] += ,$row
+                }
             }
         }
         function Add-AssociatedRecord {
@@ -443,10 +459,12 @@ try {
             $record = [pscustomobject]@{ Role=$Role; Type=$Type; Name=(Get-FieldValue -Row $Row -Names @('name')); AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag')); Serial=(Get-FieldValue -Row $Row -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement'))); CmdbUrl=(Get-CmdbLink -DeviceType $Type -AssetTag (Get-FieldValue -Row $Row -Names @('asset_tag'))) }
             $results = @($results + $record)
         }
-        $parentTokens = @()
-        $parentTokens += @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial)
-        if (-not [string]::IsNullOrWhiteSpace($Device.Parent)) { $parentTokens += $Device.Parent }
-        $parentTokens = @($parentTokens | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() } | Select-Object -Unique)
+        $parentTokens = New-Object System.Collections.ArrayList
+        foreach ($candidate in @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial,$Device.Parent)) {
+            foreach ($variant in (Get-AssociationTokenVariants -Token $candidate)) {
+                if (-not $parentTokens.Contains($variant)) { [void]$parentTokens.Add($variant) }
+            }
+        }
 
         $addedChildAssetTags = @{}
         foreach ($token in $parentTokens) {

@@ -273,8 +273,41 @@
                     <ControlTemplate TargetType="TabControl">
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
-                                <Border Background="#CDD4DC" Height="1" VerticalAlignment="Bottom"/>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.ColumnSpan="2" Background="#CDD4DC" Height="1" VerticalAlignment="Bottom"/>
                                 <TabPanel IsItemsHost="True" Background="Transparent"/>
+                                <Grid Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,28,0">
+                                        <Border Width="15" Height="15" Background="{StaticResource BlueBrush}" CornerRadius="2" Margin="0,0,8,0"/>
+                                        <TextBlock x:Name="SelectedDeviceText" Text="Ready" Foreground="#0F5EA8" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <Ellipse x:Name="DeviceOnlineDot" Width="5" Height="5" Fill="#16A34A" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="DeviceOnlineText" Text="Online" Foreground="#16A34A" FontSize="14" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="DeviceResponseTimeText" Text="(37 ms)" Foreground="#94A3B8" Margin="4,0,0,0" FontSize="14" VerticalAlignment="Center"/>
+                                        <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="12,0,6,0">
+                                            <TextBlock Text="WMI" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                                        </Border>
+                                        <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
+                                            <TextBlock Text="PSRemoting" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                                        </Border>
+                                        <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}">
+                                            <TextBlock Text="SMB" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock x:Name="LastQueryBadgeText"
+                                               Grid.Column="1"
+                                               Text="Queried 13:52"
+                                               Foreground="#64748B"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
                             </Grid>
                             <ContentPresenter ContentSource="SelectedContent"/>
                         </DockPanel>
@@ -388,48 +421,7 @@
             <TabControl x:Name="MainTabControl">
                 <TabItem x:Name="SystemTab"><TabItem.Header><TextBlock Text="System" Margin="0,0,8,0"/></TabItem.Header>
                     <Grid Background="Transparent">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Status row -->
-                        <Border Grid.Row="0" Background="Transparent" BorderBrush="#E3E8EF" BorderThickness="0,0,0,1" Padding="0,4,12,12" Margin="0,0,0,14">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Border Width="15" Height="15" Background="{StaticResource BlueBrush}" CornerRadius="2" Margin="0,0,8,0"/>
-                                    <TextBlock x:Name="SelectedDeviceText" Text="AO400568" Foreground="#0F5EA8" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
-                                    <Ellipse x:Name="DeviceOnlineDot" Width="5" Height="5" Fill="#16A34A" Margin="12,0,4,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="DeviceOnlineText" Text="Online" Foreground="#16A34A" FontSize="14" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="DeviceResponseTimeText" Text="(37 ms)" Foreground="#94A3B8" Margin="4,0,0,0" FontSize="14" VerticalAlignment="Center"/>
-                                    <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="12,0,6,0">
-                                        <TextBlock Text="WMI" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
-                                    </Border>
-                                    <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
-                                        <TextBlock Text="PSRemoting" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
-                                    </Border>
-                                    <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}">
-                                        <TextBlock Text="SMB" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
-                                    </Border>
-                                </StackPanel>
-
-                                <TextBlock x:Name="LastQueryBadgeText"
-                                           Grid.Column="1"
-                                           Text="Queried 13:52"
-                                           Foreground="#64748B"
-                                           FontWeight="SemiBold"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,34,0"/>
-                            </Grid>
-                        </Border>
-
-                        <Grid Grid.Row="1" Background="Transparent">
+                        <Grid Background="Transparent">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="382"/>

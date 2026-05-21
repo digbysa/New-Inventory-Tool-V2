@@ -744,9 +744,13 @@ function Find-SampleDevice {
     }
 
     $ui.QueryButton.Add_Click({
-$match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $script:AppState.Inventory
+        $searchTerm = $ui.SearchTextBox.Text
+        $match = Find-InventoryMatch -SearchTerm $searchTerm -Inventory $script:AppState.Inventory
         if ($null -eq $match) {
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'No matching device found'
+            if (-not [string]::IsNullOrWhiteSpace($searchTerm)) {
+                [System.Windows.MessageBox]::Show("No device was found for:`n$searchTerm", 'Device Not Found') | Out-Null
+            }
             return
         }
         $script:AppState.CurrentDevice = $match
@@ -764,6 +768,16 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
         $ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
         Start-OnlineStatusUpdateAsync -Ui $ui -HostName $match.Name
+    })
+
+    $ui.SearchTextBox.Add_TextChanged({
+        if ([string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) {
+            $script:AppState.CurrentDevice = $null
+            $script:AppState.SampleData = $null
+            $script:AppState.CurrentQueryToken = ''
+            Clear-WindowData -Ui $ui
+            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
+        }
     })
 
     $ui.SearchTextBox.Add_KeyDown({

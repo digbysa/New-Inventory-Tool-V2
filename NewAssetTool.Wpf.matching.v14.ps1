@@ -455,6 +455,125 @@ try {
         return ,$results
     }
 
+    function Normalize-AssocSearch {
+        param([string]$Raw)
+        if ([string]::IsNullOrWhiteSpace($Raw)) { return $null }
+        return (($Raw.Trim().ToUpper() -replace '\s','') -replace '-','')
+    }
+
+    function Resolve-AssociatedPeripheralLookup {
+        param([string]$Query,[pscustomobject]$Inventory)
+        $normalized = Normalize-AssocSearch -Raw $Query
+        $rawUpper = if ([string]::IsNullOrWhiteSpace($Query)) { $null } else { $Query.Trim().ToUpper() }
+        if ([string]::IsNullOrWhiteSpace($normalized) -and [string]::IsNullOrWhiteSpace($rawUpper)) {
+            return [pscustomobject]@{ NormalizedInput=$null; Candidate=$null }
+        }
+
+        $keys = New-Object System.Collections.ArrayList
+        $addKey = {
+            param([string]$Candidate)
+            if ([string]::IsNullOrWhiteSpace($Candidate)) { return }
+            $u = $Candidate.Trim().ToUpper()
+            if (-not [string]::IsNullOrWhiteSpace($u) -and -not $keys.Contains($u)) { [void]$keys.Add($u) }
+            $compact = ($u -replace '[-\s]','')
+            if (-not [string]::IsNullOrWhiteSpace($compact) -and -not $keys.Contains($compact)) { [void]$keys.Add($compact) }
+        }
+        & $addKey $normalized
+        & $addKey $rawUpper
+
+        foreach ($set in @(
+            @{ Rows=$Inventory.Monitors; Type='Monitor' },
+            @{ Rows=$Inventory.Carts; Type='Cart' },
+            @{ Rows=$Inventory.Mics; Type='Mic' },
+            @{ Rows=$Inventory.Scanners; Type='Scanner' }
+        )) {
+            foreach ($row in $set.Rows) {
+                $record = ConvertTo-DeviceRecord -Row $row -DetectedType $set.Type
+                $candidates = @($record.Name,$record.AssetTag,$record.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                foreach ($candidate in $candidates) {
+                    $candKey = (($candidate.Trim().ToUpper() -replace '\s','') -replace '-','')
+                    if ($keys -contains $candKey -or $keys -contains $candidate.Trim().ToUpper()) {
+                        $record | Add-Member -NotePropertyName Kind -NotePropertyValue 'Peripheral' -Force
+                        return [pscustomobject]@{ NormalizedInput=if($normalized){$normalized}else{$rawUpper}; Candidate=$record }
+                    }
+                }
+            }
+        }
+        return [pscustomobject]@{ NormalizedInput=if($normalized){$normalized}else{$rawUpper}; Candidate=$null }
+    }
+
+    function Show-AddPeripheralDialog {
+        param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory)
+        if (-not $ParentDevice) { return $false }
+        $window = New-Object System.Windows.Window
+        $window.Title = 'Add Peripheral (Name/Asset/Serial)'
+        $window.SizeToContent = 'WidthAndHeight'
+        $window.WindowStartupLocation = 'CenterOwner'
+        $window.ResizeMode = 'NoResize'
+        $window.Owner = [System.Windows.Window]::GetWindow($Ui.MainTabControl)
+
+        $panel = New-Object System.Windows.Controls.StackPanel
+        $panel.Margin = '12'
+        $window.Content = $panel
+        $panel.Children.Add((New-Object System.Windows.Controls.TextBlock -Property @{ Text='Universal Search (name / asset / serial):'; Margin='0,0,0,4' })) | Out-Null
+        $txt = New-Object System.Windows.Controls.TextBox
+        $txt.MinWidth = 320
+        $txt.Margin = '0,0,0,6'
+        $panel.Children.Add($txt) | Out-Null
+        $hint = New-Object System.Windows.Controls.TextBlock -Property @{ Text='Press Enter to search by cart name, asset tag, or serial number.'; Foreground='#64748B'; Margin='0,0,0,8' }
+        $panel.Children.Add($hint) | Out-Null
+        $preview = New-Object System.Windows.Controls.TextBlock -Property @{ Text=''; Margin='0,0,0,8'; TextWrapping='Wrap' }
+        $panel.Children.Add($preview) | Out-Null
+        $buttons = New-Object System.Windows.Controls.StackPanel -Property @{ Orientation='Horizontal'; HorizontalAlignment='Right' }
+        $addButton = New-Object System.Windows.Controls.Button -Property @{ Content='Add'; IsEnabled=$false; Margin='0,0,8,0'; MinWidth=90 }
+        $cancelButton = New-Object System.Windows.Controls.Button -Property @{ Content='Cancel'; MinWidth=90 }
+        $buttons.Children.Add($addButton) | Out-Null
+        $buttons.Children.Add($cancelButton) | Out-Null
+        $panel.Children.Add($buttons) | Out-Null
+
+        $lookupResult = $null
+        $updatePreview = {
+            param($result)
+            $lookupResult = $result
+            if (-not $result -or -not $result.Candidate) {
+                $preview.Text = if ($result -and $result.NormalizedInput) { 'Type: (not found)' } else { '' }
+                $addButton.IsEnabled = $false
+                return
+            }
+            $c = $result.Candidate
+            $preview.Text = "Type: $($c.DetectedType)`nName: $($c.Name)`nAsset Tag: $($c.AssetTag)`nSerial: $($c.Serial)`nRITM: $($c.RITM)`nRetire: $($c.RetireDate)`nParent: $($c.Parent)"
+            $addButton.IsEnabled = $true
+        }
+
+        $txt.Add_TextChanged({ $lookupResult = $null; $preview.Text = ''; $addButton.IsEnabled = $false })
+        $txt.Add_KeyDown({
+            if ($_.Key -eq [System.Windows.Input.Key]::Enter -or $_.Key -eq [System.Windows.Input.Key]::Return) {
+                $_.Handled = $true
+                $result = Resolve-AssociatedPeripheralLookup -Query $txt.Text -Inventory $Inventory
+                & $updatePreview $result
+            }
+        })
+        $cancelButton.Add_Click({ $window.DialogResult = $false; $window.Close() })
+        $addButton.Add_Click({
+            $result = $lookupResult
+            if (-not $result) { $result = Resolve-AssociatedPeripheralLookup -Query $txt.Text -Inventory $Inventory; & $updatePreview $result }
+            if (-not $result -or -not $result.Candidate) { return }
+            $target = $result.Candidate
+            foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
+                foreach ($row in $Inventory.$collectionName) {
+                    $at = Get-FieldValue -Row $row -Names @('asset_tag')
+                    if ($at -and $target.AssetTag -and $at.Trim().ToUpper() -eq $target.AssetTag.Trim().ToUpper()) {
+                        $row.u_parent_asset = $ParentDevice.AssetTag
+                    }
+                }
+            }
+            $window.DialogResult = $true
+            $window.Close()
+        })
+        $null = $window.ShowDialog()
+        return [bool]$window.DialogResult
+    }
+
     function Get-CmdbLink {
         param([string]$DeviceType,[string]$AssetTag)
         if ([string]::IsNullOrWhiteSpace($AssetTag)) { return '' }
@@ -853,6 +972,17 @@ function Find-SampleDevice {
         }
     })
 
+    $ui.AddPeripheralButton.Add_Click({
+        if (-not $script:AppState.CurrentDevice) { return }
+        $parent = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+        if (-not $parent) { $parent = $script:AppState.CurrentDevice }
+        $changed = Show-AddPeripheralDialog -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory
+        if ($changed) {
+            $associated = Build-AssociatedDevices -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+            $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
+            $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
+        }
+    })
     $ui.PingButton.Add_Click({ [System.Windows.MessageBox]::Show('Ping button clicked.', 'Ping') | Out-Null })
     $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })
     $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Monitor Label button clicked.', 'Monitor Label') | Out-Null })

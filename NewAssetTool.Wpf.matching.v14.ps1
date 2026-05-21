@@ -366,7 +366,7 @@ try {
 
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
-        $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate) })
+        $results = @([pscustomobject]@{ Role='Parent'; Type='Computer'; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType 'Computer' -AssetTag $Device.AssetTag) })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName
@@ -388,6 +388,7 @@ try {
                 Serial=(Get-FieldValue -Row $Row -Names @('serial_number'))
                 RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number')))
                 Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement')))
+                CmdbUrl=(Get-CmdbLink -DeviceType $Type -AssetTag (Get-FieldValue -Row $Row -Names @('asset_tag')))
             }
             $results = @($results + $record)
         }
@@ -412,6 +413,29 @@ try {
             }
         }
         return ,$results
+    }
+
+    function Get-CmdbLink {
+        param([string]$DeviceType,[string]$AssetTag)
+        if ([string]::IsNullOrWhiteSpace($AssetTag)) { return '' }
+
+        $assetValue = $AssetTag.Trim()
+        $innerPath = $null
+        $peripheralTypes = @('Monitor','Mic','Scanner','Microphone')
+        $computerTypes = @('Computer','Tangent','Desktop','Laptop','Thin Client')
+
+        if ($peripheralTypes -contains $DeviceType) {
+            $innerPath = 'cmdb_ci_peripheral_list.do?sysparm_first_row=1&sysparm_query=GOTOasset_tagLIKE{0}&sysparm_query_encoded=GOTOasset_tagLIKE{0}&sysparm_view='
+        } elseif ($computerTypes -contains $DeviceType) {
+            $innerPath = 'cmdb_ci_computer_list.do?sysparm_first_row=1&sysparm_query=companyINjavascript:new inccompanysearchChange().getFilter();^GOTOasset_tagLIKE{0}&sysparm_query_encoded=companyINjavascript:new inccompanysearchChange().getFilter();^GOTOasset_tagLIKE{0}&sysparm_view='
+        } elseif ($DeviceType -eq 'Cart') {
+            $innerPath = 'u_cmdb_ci_mobile_carts_list.do?sysparm_first_row=1&sysparm_query=companyINjavascript:new inccompanysearchChange().getFilter();^operational_status!=6^GOTOasset_tagLIKE{0}&sysparm_query_encoded=companyINjavascript:new inccompanysearchChange().getFilter();^operational_status!=6^GOTOasset_tagLIKE{0}&sysparm_view='
+        }
+
+        if (-not $innerPath) { return '' }
+        $expandedInnerPath = [string]::Format($innerPath,$assetValue)
+        $encodedInnerPath = [System.Uri]::EscapeDataString($expandedInnerPath)
+        return "https://healthbc.service-now.com/nav_to.do?uri=$encodedInnerPath"
     }
 
     function Build-QueryData {
@@ -809,6 +833,11 @@ function Find-SampleDevice {
     $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
     $ui.PingAllButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
     $ui.NearbySaveButton.Add_Click({ [System.Windows.MessageBox]::Show('Nearby logic is currently disabled.', 'Nearby Disabled') | Out-Null })
+    $ui.AssociatedDevicesDataGrid.AddHandler([System.Windows.Documents.Hyperlink]::RequestNavigateEvent, [System.Windows.Navigation.RequestNavigateEventHandler]{
+        param($sender,$e)
+        if ($e.Uri) { Start-Process $e.Uri.AbsoluteUri }
+        $e.Handled = $true
+    })
 
     $ui.MainTabControl.Add_SelectionChanged({
         if ($window.IsLoaded) {

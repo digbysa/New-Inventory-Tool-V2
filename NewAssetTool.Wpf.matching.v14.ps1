@@ -405,7 +405,7 @@ try {
         if (-not $Device) { return $null }
         if ($Device.DetectedType -eq 'Computer' -and $Device.Name -match '^(LD|PC|TD|AO)') { return $Device }
 
-        $tokens = @($Device.Parent) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+        $tokens = @(@($Device.Parent) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() })
         if (-not $tokens -or $tokens.Count -eq 0) { return $null }
 
         foreach ($row in $Inventory.Computers) {

@@ -708,7 +708,7 @@
 
                                     <Border Grid.Row="0" BorderBrush="#E4E9F0" BorderThickness="0,0,0,1" Padding="12,8">
                                         <StackPanel>
-                                            <TextBlock Text="DEVICE ROUNDING" Style="{StaticResource SectionTitleStyle}"/>
+                                            <TextBlock Text="Device Rounding" Style="{StaticResource SectionTitleStyle}"/>
                                             <TextBlock Text="Operational checklist and event capture" Style="{StaticResource SectionSubtitleStyle}"/>
                                         </StackPanel>
                                     </Border>
@@ -726,9 +726,10 @@
                                             <StackPanel>
                                                 <TextBlock Text="MAINTENANCE TYPE" Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
                                                 <ComboBox x:Name="MaintenanceTypeComboBox" Style="{StaticResource EditorComboStyle}" Margin="0,6,0,0">
-                                                    <ComboBoxItem Content="Mobile Cart" IsSelected="True"/>
-                                                    <ComboBoxItem Content="General Rounding"/>
-                                                    <ComboBoxItem Content="Computer"/>
+                                                    <ComboBoxItem Content="Excluded"/>
+                                                    <ComboBoxItem Content="General Rounding" IsSelected="True"/>
+                                                    <ComboBoxItem Content="Mobile Cart"/>
+                                                    <ComboBoxItem Content="Critical Clinical"/>
                                                 </ComboBox>
                                             </StackPanel>
                                         </Border>
@@ -738,8 +739,17 @@
                                                 <TextBlock Text="CHECK STATUS" Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
                                                 <ComboBox x:Name="CheckStatusComboBox" Style="{StaticResource EditorComboStyle}" Margin="0,6,0,0">
                                                     <ComboBoxItem Content="Complete" IsSelected="True"/>
-                                                    <ComboBoxItem Content="Incomplete"/>
-                                                    <ComboBoxItem Content="Needs Follow-up"/>
+                                                    <ComboBoxItem Content="Inaccessible - Asset not found"/>
+                                                    <ComboBoxItem Content="Inaccessible - In storage"/>
+                                                    <ComboBoxItem Content="Inaccessible - In use by Customer"/>
+                                                    <ComboBoxItem Content="Inaccessible - Laptop is not onsite"/>
+                                                    <ComboBoxItem Content="Inaccessible - Other"/>
+                                                    <ComboBoxItem Content="Inaccessible - Restricted area"/>
+                                                    <ComboBoxItem Content="Inaccessible - Room locked - Card Swipe"/>
+                                                    <ComboBoxItem Content="Inaccessible - Room locked - Key Lock"/>
+                                                    <ComboBoxItem Content="Inaccessible - Under renovation"/>
+                                                    <ComboBoxItem Content="Inaccessible - User working at home"/>
+                                                    <ComboBoxItem Content="Pending Repair"/>
                                                 </ComboBox>
                                             </StackPanel>
                                         </Border>
@@ -752,7 +762,7 @@
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="22"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBox x:Name="RoundingTimeTextBox" Grid.Column="0" Style="{StaticResource ValueBoxStyle}" FontSize="14" MinHeight="30" Height="30" HorizontalContentAlignment="Left" TextAlignment="Left" Text="3" IsReadOnly="False"/>
+                                                    <TextBox x:Name="RoundingTimeTextBox" Grid.Column="0" Style="{StaticResource ValueBoxStyle}" FontSize="14" MinHeight="30" Height="30" HorizontalContentAlignment="Left" TextAlignment="Left" Text="3" IsReadOnly="True"/>
                                                     <Grid Grid.Column="1" Margin="3,0,0,0" Height="30">
                                                         <Grid.RowDefinitions>
                                                             <RowDefinition Height="*"/>
@@ -814,7 +824,7 @@
                                                 <TextBlock Text="COMMENTS" Foreground="#64748B" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                             </Border>
                                             <Grid Grid.Row="1">
-                                                <TextBox x:Name="CommentsTextBox" BorderThickness="0" Background="White" Padding="10" FontSize="14" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" IsReadOnlyCaretVisible="False" Text=""/>
+                                                <TextBox x:Name="CommentsTextBox" BorderThickness="0" Background="White" Padding="10" FontSize="14" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="False" IsReadOnlyCaretVisible="True" Text=""/>
                                                 <TextBlock Text="Add issues found, cart problems, labelling notes, cable concerns, or follow-up actions here..."
                                                            Foreground="#94A3B8"
                                                            FontSize="14"

@@ -399,9 +399,33 @@ try {
         return $null
     }
 
+
+    function Resolve-ParentDevice {
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
+        if (-not $Device) { return $null }
+        if ($Device.DetectedType -eq 'Computer' -and $Device.Name -match '^(LD|PC|TD|AO)') { return $Device }
+
+        $tokens = @($Device.Parent) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+        if (-not $tokens -or $tokens.Count -eq 0) { return $null }
+
+        foreach ($row in $Inventory.Computers) {
+            $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
+            $name = if ($record.Name) { $record.Name.Trim().ToUpper() } else { '' }
+            if ($name -notmatch '^(LD|PC|TD|AO)') { continue }
+            $candidates = @($record.Name,$record.AssetTag,$record.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+            foreach ($token in $tokens) {
+                if ($candidates -contains $token) { return $record }
+            }
+        }
+        return $null
+    }
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
-        $results = @([pscustomobject]@{ Role='Parent'; Type=$Device.DetectedType; Name=$Device.Name; AssetTag=$Device.AssetTag; Serial=$Device.Serial; RITM=$Device.RITM; Retire=(Format-DateLong $Device.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $Device.DetectedType -AssetTag $Device.AssetTag) })
+        $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
+        $effectiveParent = if ($parentDevice) { $parentDevice } else { $Device }
+        $queryRole = if ($parentDevice) { 'Child' } else { 'Parent' }
+
+        $results = @([pscustomobject]@{ Role='Parent'; Type=$effectiveParent.DetectedType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag) })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName
@@ -416,35 +440,16 @@ try {
         }
         function Add-AssociatedRecord {
             param($Role,$Type,$Row)
-            $record = [pscustomobject]@{
-                Role=$Role; Type=$Type
-                Name=(Get-FieldValue -Row $Row -Names @('name'))
-                AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag'))
-                Serial=(Get-FieldValue -Row $Row -Names @('serial_number'))
-                RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number')))
-                Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement')))
-                CmdbUrl=(Get-CmdbLink -DeviceType $Type -AssetTag (Get-FieldValue -Row $Row -Names @('asset_tag')))
-            }
+            $record = [pscustomobject]@{ Role=$Role; Type=$Type; Name=(Get-FieldValue -Row $Row -Names @('name')); AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag')); Serial=(Get-FieldValue -Row $Row -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement'))); CmdbUrl=(Get-CmdbLink -DeviceType $Type -AssetTag (Get-FieldValue -Row $Row -Names @('asset_tag'))) }
             $results = @($results + $record)
         }
-        $parentTokens = @($Device.AssetTag,$Device.Name,$Device.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
-        $cartsForParent = @()
+        $parentTokens = @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
         foreach ($token in $parentTokens) {
             if (-not $childrenByParent.ContainsKey($token)) { continue }
             foreach ($row in $childrenByParent[$token]) {
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
-                Add-AssociatedRecord -Role 'Child' -Type $type -Row $row
-                if ($type -eq 'Cart') { $cartsForParent += ,$row }
-            }
-        }
-        foreach ($cart in $cartsForParent) {
-            $cartTokens = @((Get-FieldValue -Row $cart -Names @('asset_tag')),(Get-FieldValue -Row $cart -Names @('name'))) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
-            foreach ($token in $cartTokens) {
-                if (-not $childrenByParent.ContainsKey($token)) { continue }
-                foreach ($row in $childrenByParent[$token]) {
-                    $type = if ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
-                    Add-AssociatedRecord -Role 'Grandchild' -Type $type -Row $row
-                }
+                $role = if ($Device.AssetTag -and ((Get-FieldValue -Row $row -Names @('asset_tag')).Trim().ToUpper() -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
+                Add-AssociatedRecord -Role $role -Type $type -Row $row
             }
         }
         return ,$results
@@ -480,7 +485,10 @@ try {
 
 
     function Set-PrimaryDeviceBindings {
-        param([hashtable]$Ui,[pscustomobject]$Device)
+        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
+        $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
+        $summaryDevice = if ($parentDevice) { $parentDevice } else { $Device }
+
         $Ui.SelectedDeviceText.Text = $Device.Name
         Set-DisplayText -Ui $Ui -BaseName 'DetectedType' -Value $Device.DetectedType
         Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $Device.Name
@@ -489,13 +497,13 @@ try {
         Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $Device.Parent
         Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $Device.RITM
         Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value (Format-DateLong $Device.RetireDate)
-        Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $Device.LastRounded
-        $Ui.CityTextBox.Text = $Device.City
-        $Ui.LocationTextBox.Text = $Device.Location
-        $Ui.BuildingTextBox.Text = $Device.Building
-        $Ui.FloorTextBox.Text = $Device.Floor
-        $Ui.RoomTextBox.Text = $Device.Room
-        $Ui.DepartmentTextBox.Text = $Device.Department
+        Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $summaryDevice.LastRounded
+        $Ui.CityTextBox.Text = $summaryDevice.City
+        $Ui.LocationTextBox.Text = $summaryDevice.Location
+        $Ui.BuildingTextBox.Text = $summaryDevice.Building
+        $Ui.FloorTextBox.Text = $summaryDevice.Floor
+        $Ui.RoomTextBox.Text = $summaryDevice.Room
+        $Ui.DepartmentTextBox.Text = $summaryDevice.Department
     }
 
     function Start-QueryDataPopulationAsync {
@@ -816,7 +824,7 @@ function Find-SampleDevice {
         $associated = Build-AssociatedDevices -Device $match -Inventory $script:AppState.Inventory
         $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=@() }
         $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
-        Set-PrimaryDeviceBindings -Ui $ui -Device $match
+        Set-PrimaryDeviceBindings -Ui $ui -Device $match -Inventory $inventory
         $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
         $ui.NearbyDataGrid.ItemsSource = @()
         $ui.NearbyScopeSummaryText.Text = 'Nearby disabled'

@@ -466,11 +466,7 @@ try {
                 }
             }
         }
-        function Add-AssociatedRecord {
-            param($Role,$Type,$Row)
-            $record = [pscustomobject]@{ Role=$Role; Type=$Type; Name=(Get-FieldValue -Row $Row -Names @('name')); AssetTag=(Get-FieldValue -Row $Row -Names @('asset_tag')); Serial=(Get-FieldValue -Row $Row -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement'))); CmdbUrl=(Get-CmdbLink -DeviceType $Type -AssetTag (Get-FieldValue -Row $Row -Names @('asset_tag'))) }
-            $results = @($results + $record)
-        }
+
         $parentTokens = New-Object System.Collections.ArrayList
         foreach ($candidate in @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial,$Device.Parent)) {
             foreach ($variant in (Get-AssociationTokenVariants -Token $candidate)) {
@@ -486,7 +482,8 @@ try {
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag) -and $addedChildAssetTags.ContainsKey($childAssetTag)) { continue }
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
                 $role = if ($Device.AssetTag -and ($childAssetTag -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
-                Add-AssociatedRecord -Role $role -Type $type -Row $row
+                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=(Get-FieldValue -Row $row -Names @('name')); AssetTag=(Get-FieldValue -Row $row -Names @('asset_tag')); Serial=(Get-FieldValue -Row $row -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $row -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $row -Names @('u_scheduled_retirement'))); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag (Get-FieldValue -Row $row -Names @('asset_tag'))) }
+                $results += $record
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag)) { $addedChildAssetTags[$childAssetTag] = $true }
             }
         }

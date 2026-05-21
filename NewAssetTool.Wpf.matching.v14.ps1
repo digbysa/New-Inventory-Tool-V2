@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName System.Windows.Forms
 
 function Show-StartupError {
     param(
@@ -234,21 +235,94 @@ try {
         try { return @(Import-Csv -LiteralPath $Path -ErrorAction Stop) } catch { return @() }
     }
 
+    function Get-InventorySites {
+        param([string]$DataRoot)
+        if (-not (Test-Path -LiteralPath $DataRoot)) { return @() }
+        $sites = @()
+        foreach ($dir in Get-ChildItem -LiteralPath $DataRoot -Directory) {
+            $hasComputers = @(Get-ChildItem -LiteralPath $dir.FullName -File -Filter 'Computers - *.csv' -ErrorAction SilentlyContinue).Count -gt 0
+            $hasMonitors = @(Get-ChildItem -LiteralPath $dir.FullName -File -Filter 'Monitors - *.csv' -ErrorAction SilentlyContinue).Count -gt 0
+            if ($hasComputers -or $hasMonitors) {
+                $sites += [pscustomobject]@{ Name = $dir.Name; FolderPath = $dir.FullName }
+            }
+        }
+        return @($sites | Sort-Object Name)
+    }
+
+    function Select-InventorySite {
+        param([object[]]$Sites)
+        if (-not $Sites -or $Sites.Count -eq 0) { return $null }
+        if ($Sites.Count -eq 1) { return $Sites[0] }
+
+        $dialog = New-Object System.Windows.Forms.Form
+        $dialog.Text = 'Choose your site'
+        $dialog.Width = 420
+        $dialog.Height = 170
+        $dialog.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+        $dialog.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+        $dialog.MinimizeBox = $false
+        $dialog.MaximizeBox = $false
+        $dialog.TopMost = $true
+
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = 'Choose your site:'
+        $label.AutoSize = $true
+        $label.Left = 16
+        $label.Top = 20
+
+        $combo = New-Object System.Windows.Forms.ComboBox
+        $combo.Left = 16
+        $combo.Top = 46
+        $combo.Width = 370
+        $combo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+        [void]$combo.Items.AddRange(@($Sites.Name))
+        $combo.SelectedIndex = 0
+
+        $ok = New-Object System.Windows.Forms.Button
+        $ok.Text = 'OK'
+        $ok.Left = 230
+        $ok.Top = 84
+        $ok.Width = 75
+        $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dialog.AcceptButton = $ok
+
+        $cancel = New-Object System.Windows.Forms.Button
+        $cancel.Text = 'Cancel'
+        $cancel.Left = 311
+        $cancel.Top = 84
+        $cancel.Width = 75
+        $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dialog.CancelButton = $cancel
+
+        $dialog.Controls.AddRange(@($label,$combo,$ok,$cancel))
+        $result = $dialog.ShowDialog()
+        if ($result -ne [System.Windows.Forms.DialogResult]::OK -or $combo.SelectedIndex -lt 0) { return $null }
+        return $Sites[$combo.SelectedIndex]
+    }
+
     function Load-InventoryData {
-        param([string]$ResolvedXamlPath)
+        param([string]$ResolvedXamlPath,[string]$SiteFolderPath)
         $dataRoot = Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data'
         $computers = @(); $monitors = @(); $locations = @(); $carts = @(); $mics = @(); $scanners = @()
+        $pathsToLoad = @($dataRoot)
+        if (-not [string]::IsNullOrWhiteSpace($SiteFolderPath) -and (Test-Path -LiteralPath $SiteFolderPath)) {
+            $pathsToLoad = @($SiteFolderPath)
+        }
         if (Test-Path -LiteralPath $dataRoot) {
-            foreach ($file in Get-ChildItem -LiteralPath $dataRoot -Recurse -File -Filter '*.csv') {
-                if ($file.Name -like 'Computers - *.csv') { $computers += Import-InventoryCsv -Path $file.FullName }
-                elseif ($file.Name -like 'Monitors - *.csv') { $monitors += Import-InventoryCsv -Path $file.FullName }
-                elseif ($file.Name -like 'LocationMaster*.csv') { $locations += Import-InventoryCsv -Path $file.FullName }
-                elseif ($file.Name -eq 'Carts.csv') { $carts += Import-InventoryCsv -Path $file.FullName }
+            foreach ($file in Get-ChildItem -LiteralPath $dataRoot -File -Filter '*.csv') {
+                if ($file.Name -eq 'Carts.csv') { $carts += Import-InventoryCsv -Path $file.FullName }
                 elseif ($file.Name -eq 'Mics.csv') { $mics += Import-InventoryCsv -Path $file.FullName }
                 elseif ($file.Name -eq 'Scanners.csv') { $scanners += Import-InventoryCsv -Path $file.FullName }
             }
+            foreach ($path in $pathsToLoad) {
+                foreach ($file in Get-ChildItem -LiteralPath $path -Recurse -File -Filter '*.csv') {
+                    if ($file.Name -like 'Computers - *.csv') { $computers += Import-InventoryCsv -Path $file.FullName }
+                    elseif ($file.Name -like 'Monitors - *.csv') { $monitors += Import-InventoryCsv -Path $file.FullName }
+                    elseif ($file.Name -like 'LocationMaster*.csv') { $locations += Import-InventoryCsv -Path $file.FullName }
+                }
+            }
         }
-        return [pscustomobject]@{ DataRoot=$dataRoot; Computers=$computers; Monitors=$monitors; Carts=$carts; Mics=$mics; Scanners=$scanners; Locations=$locations }
+        return [pscustomobject]@{ DataRoot=$dataRoot; SiteFolderPath=$SiteFolderPath; Computers=$computers; Monitors=$monitors; Carts=$carts; Mics=$mics; Scanners=$scanners; Locations=$locations }
     }
 
     function ConvertTo-DeviceRecord {
@@ -645,15 +719,23 @@ function Find-SampleDevice {
         'DataPathText','OutputPathText','DaysPerWeekBadge','TodayBadge','ThisWeekBadge','RemainingPerDayBadge','StatusMessageBadge'
     )
 
-    $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory }
+    $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
+    $availableSites = Get-InventorySites -DataRoot $dataRoot
+    $selectedSite = Select-InventorySite -Sites $availableSites
+    if ($availableSites.Count -gt 0 -and $null -eq $selectedSite) { return }
+
+    $siteFolderPath = if ($selectedSite) { $selectedSite.FolderPath } else { $null }
+    $siteName = if ($selectedSite) { $selectedSite.Name } else { 'All Sites' }
+    $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName }
 
     Clear-WindowData -Ui $ui
     Increment-Fonts -Root $window
     Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
 
-    $ui.DataPathText.Text = "Data: $(Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data')"
+    $window.Title = "New Inventory Tool - $siteName"
+    $ui.DataPathText.Text = "Data: $dataRoot (Site: $siteName)"
     $ui.OutputPathText.Text = "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
 
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {

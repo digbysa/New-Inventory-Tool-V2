@@ -46,6 +46,47 @@ try {
         return [Windows.Markup.XamlReader]::Load($reader)
     }
 
+    function Find-ControlByName {
+        param(
+            [Parameter(Mandatory=$true)][System.Object]$Root,
+            [Parameter(Mandatory=$true)][string]$Name
+        )
+
+        if ($null -eq $Root) { return $null }
+
+        if ($Root -is [System.Windows.FrameworkElement] -and $Root.Name -eq $Name) {
+            return $Root
+        }
+
+        if ($Root -is [System.Windows.FrameworkElement]) {
+            $named = $Root.FindName($Name)
+            if ($null -ne $named) { return $named }
+        }
+
+        if ($Root -is [System.Windows.Controls.Control]) {
+            $Root.ApplyTemplate()
+            if ($Root.Template) {
+                $templated = $Root.Template.FindName($Name, $Root)
+                if ($null -ne $templated) { return $templated }
+            }
+        }
+
+        foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($Root)) {
+            $found = Find-ControlByName -Root $child -Name $Name
+            if ($null -ne $found) { return $found }
+        }
+
+        if ($Root -is [System.Windows.Media.Visual] -or $Root -is [System.Windows.Media.Media3D.Visual3D]) {
+            $count = [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($Root)
+            for ($i = 0; $i -lt $count; $i++) {
+                $found = Find-ControlByName -Root ([System.Windows.Media.VisualTreeHelper]::GetChild($Root, $i)) -Name $Name
+                if ($null -ne $found) { return $found }
+            }
+        }
+
+        return $null
+    }
+
     function Get-NamedControls {
         param(
             [Parameter(Mandatory=$true)][System.Windows.Window]$Window,
@@ -53,7 +94,7 @@ try {
         )
         $controls = @{}
         foreach ($name in $Names) {
-            $control = $Window.FindName($name)
+            $control = Find-ControlByName -Root $Window -Name $name
             if ($null -eq $control) { throw "Required control '$name' was not found in the XAML." }
             $controls[$name] = $control
         }

@@ -167,11 +167,9 @@ try {
     function Get-RoundingStatus {
         param([Nullable[datetime]]$RoundedDate)
         if (-not $RoundedDate) { return 'Red' }
-        $today = (Get-Date).Date
-        $dow = [int](Get-Date $today -UFormat %u)
-        $monday = $today.AddDays(-($dow - 1))
-        if ($RoundedDate -ge $monday) { return 'Green' }
-        if ($RoundedDate -ge $today.AddDays(-35)) { return 'Yellow' }
+        $daysAgo = [int](((Get-Date).Date - $RoundedDate.Date).TotalDays)
+        if ($daysAgo -lt 7) { return 'Green' }
+        if ($daysAgo -lt 35) { return 'Yellow' }
         return 'Red'
     }
 
@@ -190,10 +188,24 @@ try {
             $plural = if ($daysAgo -eq 1) { '' } else { 's' }
             $Ui.LastRoundedText.Text = ("{0} - {1} day{2} ago" -f $dateText, $daysAgo, $plural)
         }
-        switch (Get-RoundingStatus -RoundedDate $dt) {
-            'Green' { $Ui.LastRoundedText.Foreground = New-Brush '#15803D' }
-            'Yellow' { $Ui.LastRoundedText.Foreground = New-Brush '#B45309' }
-            default { $Ui.LastRoundedText.Foreground = New-Brush '#BE123C' }
+        $status = Get-RoundingStatus -RoundedDate $dt
+        switch ($status) {
+            'Green' {
+                $Ui.LastRoundedText.Foreground = New-Brush '#15803D'
+                $Ui.LastRoundedLabelText.Foreground = New-Brush '#15803D'
+                $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
+            }
+            'Yellow' {
+                $Ui.LastRoundedText.Foreground = New-Brush '#B45309'
+                $Ui.LastRoundedLabelText.Foreground = New-Brush '#B45309'
+                $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
+            }
+            default {
+                $Ui.LastRoundedText.Foreground = New-Brush '#BE123C'
+                $Ui.LastRoundedLabelText.Foreground = New-Brush '#BE123C'
+                $Ui.LastRoundedAttentionBadge.Visibility = 'Visible'
+                $Ui.LastRoundedAttentionText.Text = 'Attention needed'
+            }
         }
     }
 
@@ -357,7 +369,35 @@ try {
         $Ui.NearbyDataGrid.ItemsSource = $SampleData.Nearby
     }
 
-    function Find-SampleDevice {
+    
+    function Update-OnlineStatus {
+        param([hashtable]$Ui,[string]$HostName)
+        $isOnline = $false
+        $latencyMs = $null
+        try {
+            $result = Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop
+            if ($result) {
+                $isOnline = $true
+                $latencyMs = [int][Math]::Round(($result | Select-Object -First 1).ResponseTime)
+            }
+        } catch {}
+
+        if ($isOnline) {
+            $Ui.DeviceOnlineText.Text = 'Online'
+            $Ui.DeviceOnlineText.Foreground = New-Brush '#16A34A'
+            $Ui.DeviceOnlineDot.Fill = New-Brush '#16A34A'
+            $Ui.DeviceResponseTimeText.Text = "($latencyMs ms)"
+        }
+        else {
+            $Ui.DeviceOnlineText.Text = 'Offline'
+            $Ui.DeviceOnlineText.Foreground = New-Brush '#BE123C'
+            $Ui.DeviceOnlineDot.Fill = New-Brush '#BE123C'
+            $Ui.DeviceResponseTimeText.Text = '(No response)'
+        }
+
+        $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
+    }
+function Find-SampleDevice {
         param([string]$SearchTerm,[pscustomobject]$SampleData)
         $term = $SearchTerm.Trim()
         if ([string]::IsNullOrWhiteSpace($term)) { return $null }
@@ -443,9 +483,9 @@ try {
 
     $ui = Get-NamedControls -Window $window -Names @(
         'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton',
-        'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceOnlineText','LastQueryBadgeText',
+        'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
-        'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedText',
+        'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',
         'AssociatedDevicesDataGrid','FixNameButton',
         'AddPeripheralButton','RemovePeripheralButton','ValidateAssociatedButton',
         'CityTextBox','LocationTextBox','BuildingTextBox','FloorTextBox','RoomTextBox','DepartmentTextBox',
@@ -473,6 +513,7 @@ try {
     $script:AppState.CurrentDevice = $script:AppState.SampleData.Device
 
     Set-WindowDataBindings -Ui $ui -SampleData $script:AppState.SampleData
+    Update-OnlineStatus -Ui $ui -HostName $script:AppState.SampleData.Device.Name
     Set-StatusMessage -Ui $ui -Mode 'Found'
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
 
@@ -503,6 +544,7 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
         $script:AppState.SampleData = $queryData
         $script:AppState.CurrentDevice = $queryData.Device
         Set-WindowDataBindings -Ui $ui -SampleData $queryData
+        Update-OnlineStatus -Ui $ui -HostName $queryData.Device.Name
         Set-StatusMessage -Ui $ui -Mode 'Found'
     })
 

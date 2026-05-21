@@ -155,9 +155,16 @@ try {
     function Set-DisplayText {
         param([hashtable]$Ui,[string]$BaseName,[string]$Value)
         $display = $Ui["${BaseName}Display"]
-        if ($display) { $display.Text = $Value }
+        if ($display) { Set-ControlText -Control $display -Value $Value }
         $textbox = $Ui["${BaseName}TextBox"]
-        if ($textbox) { $textbox.Text = $Value }
+        if ($textbox) { Set-ControlText -Control $textbox -Value $Value }
+    }
+
+    function Set-ControlText {
+        param([object]$Control,[string]$Value)
+        if ($null -eq $Control) { return }
+        if ($Control.PSObject.Properties.Name -contains 'Text') { $Control.Text = $Value; return }
+        if ($Control.PSObject.Properties.Name -contains 'Content') { $Control.Content = $Value; return }
     }
 
     function Parse-DateLoose {
@@ -997,8 +1004,8 @@ function Find-SampleDevice {
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
 
     $window.Title = "New Inventory Tool - $siteName"
-    $ui.DataPathText.Text = "Data: $dataRoot (Site: $siteName)"
-    $ui.OutputPathText.Text = "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
+    Set-ControlText -Control $ui.DataPathText -Value "Data: $dataRoot (Site: $siteName)"
+    Set-ControlText -Control $ui.OutputPathText -Value "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
 
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         $combo.Items.Clear()

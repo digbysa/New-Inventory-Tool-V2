@@ -226,7 +226,7 @@ try {
         param([hashtable]$Ui,[string]$LastRoundedRaw)
         $dt = Parse-DateLoose -Value $LastRoundedRaw
         if (-not $dt) {
-            $Ui.LastRoundedText.Text = ''
+            Set-ControlText -Control $Ui.LastRoundedText -Value ''
             $Ui.LastRoundedText.Foreground = New-Brush '#BE123C'
             $Ui.LastRoundedContainer.Background = New-Brush '#FDF0F1'
             $Ui.LastRoundedContainer.BorderBrush = New-Brush '#F5C2C7'
@@ -716,7 +716,7 @@ try {
                 if ($script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 $Ui.AssociatedDevicesDataGrid.ItemsSource = $associated
                 $Ui.NearbyDataGrid.ItemsSource = @()
-                $Ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
+                Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
                 $script:AppState.SampleData = [pscustomobject]@{ Device=$Device; Associated=$associated; Nearby=@() }
             }) | Out-Null
         }) | Out-Null
@@ -777,7 +777,7 @@ try {
         $Ui.RoomTextBox.Text = $device.Room
         $Ui.DepartmentTextBox.Text = $device.Department
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm')"
-        $Ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = $SampleData.Associated
         $Ui.NearbyDataGrid.ItemsSource = $SampleData.Nearby
     }
@@ -866,22 +866,22 @@ try {
     function Clear-WindowData {
         param([hashtable]$Ui)
         foreach ($name in @('DetectedType','HostName','AssetTag','Serial','Parent','Ritm','Retire')) { Set-DisplayText -Ui $Ui -BaseName $name -Value '' }
-        $Ui.SelectedDeviceText.Text = ''
+        Set-ControlText -Control $Ui.SelectedDeviceText -Value ''
         $Ui.LastRoundedLabelText.Foreground = New-Brush '#64748B'
-        $Ui.LastRoundedText.Text = ''
+        Set-ControlText -Control $Ui.LastRoundedText -Value ''
         $Ui.LastRoundedText.Foreground = New-Brush '#64748B'
         $Ui.LastRoundedContainer.Background = New-Brush '#F8FAFC'
         $Ui.LastRoundedContainer.BorderBrush = New-Brush '#D9E1EA'
         $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
-        foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { $box.Text = '' }
-        $Ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
+        foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { Set-ControlText -Control $box -Value '' }
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
         $Ui.NearbyDataGrid.ItemsSource = @()
-        $Ui.DeviceOnlineText.Text = 'Ready'
+        Set-ControlText -Control $Ui.DeviceOnlineText -Value 'Ready'
         $Ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $Ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
-        $Ui.DeviceResponseTimeText.Text = ''
-        $Ui.LastQueryBadgeText.Text = 'Awaiting query'
+        Set-ControlText -Control $Ui.DeviceResponseTimeText -Value ''
+        Set-ControlText -Control $Ui.LastQueryBadgeText -Value 'Awaiting query'
     }
 function Find-SampleDevice {
         param([string]$SearchTerm,[pscustomobject]$SampleData)
@@ -956,12 +956,12 @@ function Find-SampleDevice {
     function Save-LocationValues {
         param([hashtable]$Ui)
 
-        $Ui.CityTextBox.Text = $Ui.CityComboBox.Text
-        $Ui.LocationTextBox.Text = $Ui.LocationComboBox.Text
-        $Ui.BuildingTextBox.Text = $Ui.BuildingComboBox.Text
-        $Ui.FloorTextBox.Text = $Ui.FloorComboBox.Text
-        $Ui.RoomTextBox.Text = $Ui.RoomComboBox.Text
-        $Ui.DepartmentTextBox.Text = $Ui.DepartmentComboBox.Text
+        Set-ControlText -Control $Ui.CityTextBox -Value $Ui.CityComboBox.Text
+        Set-ControlText -Control $Ui.LocationTextBox -Value $Ui.LocationComboBox.Text
+        Set-ControlText -Control $Ui.BuildingTextBox -Value $Ui.BuildingComboBox.Text
+        Set-ControlText -Control $Ui.FloorTextBox -Value $Ui.FloorComboBox.Text
+        Set-ControlText -Control $Ui.RoomTextBox -Value $Ui.RoomComboBox.Text
+        Set-ControlText -Control $Ui.DepartmentTextBox -Value $Ui.DepartmentComboBox.Text
     }
 
     $resolvedXamlPath = (Resolve-Path -LiteralPath $XamlPath).Path
@@ -1009,7 +1009,7 @@ function Find-SampleDevice {
 
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         $combo.Items.Clear()
-        $combo.Text = ''
+        Set-ControlText -Control $combo -Value ''
     }
 
     $ui.QueryButton.Add_Click({
@@ -1029,12 +1029,12 @@ function Find-SampleDevice {
         Set-PrimaryDeviceBindings -Ui $ui -Device $match -Inventory $inventory
         $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
         $ui.NearbyDataGrid.ItemsSource = @()
-        $ui.NearbyScopeSummaryText.Text = 'Nearby disabled'
-        $ui.DeviceOnlineText.Text = 'Checking...'
+        Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled'
+        Set-ControlText -Control $ui.DeviceOnlineText -Value 'Checking...'
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
-        $ui.DeviceResponseTimeText.Text = ''
-        $ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
+        Set-ControlText -Control $ui.DeviceResponseTimeText -Value ''
+        Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
         Start-OnlineStatusUpdateAsync -Ui $ui -HostName $match.Name
     })
@@ -1082,12 +1082,12 @@ function Find-SampleDevice {
     $ui.CancelEditLocationButton.Add_Click({ Toggle-LocationEditMode -Ui $ui -IsEditing:$false })
     $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1) })
     $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ([Math]::Max(0, (Get-RoundingMinutes -Ui $ui) - 1)) })
-    $ui.CheckCompleteButton.Add_Click({ $ui.CheckStatusComboBox.Text = 'Complete' })
+    $ui.CheckCompleteButton.Add_Click({ Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete' })
     $ui.SaveEventButton.Add_Click({ Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath })
     $ui.ManualRoundButton.Add_Click({ [System.Windows.MessageBox]::Show('Manual Round button clicked.', 'Manual Round') | Out-Null })
-    $ui.RebuildNearbyButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
-    $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
-    $ui.PingAllButton.Add_Click({ $ui.NearbyScopeSummaryText.Text = 'Nearby disabled' })
+    $ui.RebuildNearbyButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
+    $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
+    $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.NearbySaveButton.Add_Click({ [System.Windows.MessageBox]::Show('Nearby logic is currently disabled.', 'Nearby Disabled') | Out-Null })
     $ui.AssociatedDevicesDataGrid.AddHandler([System.Windows.Documents.Hyperlink]::RequestNavigateEvent, [System.Windows.Navigation.RequestNavigateEventHandler]{
         param($sender,$e)

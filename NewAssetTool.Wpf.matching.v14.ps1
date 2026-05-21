@@ -179,6 +179,8 @@ try {
         if (-not $dt) {
             $Ui.LastRoundedText.Text = ''
             $Ui.LastRoundedText.Foreground = New-Brush '#BE123C'
+            $Ui.LastRoundedContainer.Background = New-Brush '#FDF0F1'
+            $Ui.LastRoundedContainer.BorderBrush = New-Brush '#F5C2C7'
             return
         }
         $dateText = $dt.ToString('dd MMMM yyyy')
@@ -193,16 +195,22 @@ try {
             'Green' {
                 $Ui.LastRoundedText.Foreground = New-Brush '#15803D'
                 $Ui.LastRoundedLabelText.Foreground = New-Brush '#15803D'
+                $Ui.LastRoundedContainer.Background = New-Brush '#ECFDF3'
+                $Ui.LastRoundedContainer.BorderBrush = New-Brush '#BBF7D0'
                 $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
             }
             'Yellow' {
                 $Ui.LastRoundedText.Foreground = New-Brush '#B45309'
                 $Ui.LastRoundedLabelText.Foreground = New-Brush '#B45309'
+                $Ui.LastRoundedContainer.Background = New-Brush '#FEE7C3'
+                $Ui.LastRoundedContainer.BorderBrush = New-Brush '#FCD49B'
                 $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
             }
             default {
                 $Ui.LastRoundedText.Foreground = New-Brush '#BE123C'
                 $Ui.LastRoundedLabelText.Foreground = New-Brush '#BE123C'
+                $Ui.LastRoundedContainer.Background = New-Brush '#FDF0F1'
+                $Ui.LastRoundedContainer.BorderBrush = New-Brush '#F5C2C7'
                 $Ui.LastRoundedAttentionBadge.Visibility = 'Visible'
                 $Ui.LastRoundedAttentionText.Text = 'Attention needed'
             }
@@ -397,6 +405,79 @@ try {
 
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
+
+    function Set-OnlineStatusUi {
+        param([hashtable]$Ui,[bool]$IsOnline,[Nullable[int]]$LatencyMs)
+        if ($IsOnline) {
+            $Ui.DeviceOnlineText.Text = 'Online'
+            $Ui.DeviceOnlineText.Foreground = New-Brush '#16A34A'
+            $Ui.DeviceOnlineDot.Fill = New-Brush '#16A34A'
+            $Ui.DeviceResponseTimeText.Text = "($LatencyMs ms)"
+        }
+        else {
+            $Ui.DeviceOnlineText.Text = 'Offline'
+            $Ui.DeviceOnlineText.Foreground = New-Brush '#BE123C'
+            $Ui.DeviceOnlineDot.Fill = New-Brush '#BE123C'
+            $Ui.DeviceResponseTimeText.Text = '(No response)'
+        }
+        $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
+    }
+
+    function Start-OnlineStatusUpdateAsync {
+        param([hashtable]$Ui,[string]$HostName)
+        if ([string]::IsNullOrWhiteSpace($HostName)) {
+            Set-OnlineStatusUi -Ui $Ui -IsOnline:$false -LatencyMs $null
+            return
+        }
+        [System.Threading.Tasks.Task]::Run([Action]{
+            $isOnline = $false
+            $latencyMs = $null
+            try {
+                $result = Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop
+                if ($result) {
+                    $isOnline = $true
+                    $latencyMs = [int][Math]::Round(($result | Select-Object -First 1).ResponseTime)
+                }
+            } catch {}
+            $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
+                Set-OnlineStatusUi -Ui $Ui -IsOnline:$isOnline -LatencyMs $latencyMs
+            }) | Out-Null
+        }) | Out-Null
+    }
+
+    function Increment-Fonts {
+        param([System.Windows.DependencyObject]$Root)
+        if ($null -eq $Root) { return }
+        if ($Root -is [System.Windows.Controls.Control] -or $Root -is [System.Windows.Controls.TextBlock]) {
+            $skip = ($Root -is [System.Windows.Controls.TextBlock]) -and ($Root.Text -in @('System','Nearby'))
+            if (-not $skip) { $Root.FontSize = [Math]::Max(1, $Root.FontSize + 1) }
+        }
+        $count = [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($Root)
+        for ($i=0; $i -lt $count; $i++) {
+            Increment-Fonts -Root ([System.Windows.Media.VisualTreeHelper]::GetChild($Root, $i))
+        }
+    }
+
+    function Clear-WindowData {
+        param([hashtable]$Ui)
+        foreach ($name in @('DetectedType','HostName','AssetTag','Serial','Parent','Ritm','Retire')) { Set-DisplayText -Ui $Ui -BaseName $name -Value '' }
+        $Ui.SelectedDeviceText.Text = ''
+        $Ui.LastRoundedLabelText.Foreground = New-Brush '#64748B'
+        $Ui.LastRoundedText.Text = ''
+        $Ui.LastRoundedText.Foreground = New-Brush '#64748B'
+        $Ui.LastRoundedContainer.Background = New-Brush '#F8FAFC'
+        $Ui.LastRoundedContainer.BorderBrush = New-Brush '#D9E1EA'
+        $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
+        foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { $box.Text = '' }
+        $Ui.NearbyScopeSummaryText.Text = 'Nearby scopes (Location): 0 - Showing 0'
+        $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
+        $Ui.NearbyDataGrid.ItemsSource = @()
+        $Ui.DeviceOnlineText.Text = 'Ready'
+        $Ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
+        $Ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
+        $Ui.DeviceResponseTimeText.Text = ''
+        $Ui.LastQueryBadgeText.Text = 'Awaiting query'
+    }
 function Find-SampleDevice {
         param([string]$SearchTerm,[pscustomobject]$SampleData)
         $term = $SearchTerm.Trim()
@@ -503,35 +584,19 @@ function Find-SampleDevice {
     )
 
     $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath
-    $initialData = New-SampleData
-    if ($inventory.Computers.Count -gt 0) {
-        $initialDevice = ConvertTo-DeviceRecord -Row $inventory.Computers[0]
-        $initialData = Build-QueryData -Device $initialDevice -Inventory $inventory
-    }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; Inventory=$inventory }
 
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$initialData; CurrentDevice=$null; Inventory=$inventory }
-    $script:AppState.CurrentDevice = $script:AppState.SampleData.Device
-
-    Set-WindowDataBindings -Ui $ui -SampleData $script:AppState.SampleData
-    Update-OnlineStatus -Ui $ui -HostName $script:AppState.SampleData.Device.Name
-    Set-StatusMessage -Ui $ui -Mode 'Found'
+    Clear-WindowData -Ui $ui
+    Increment-Fonts -Root $window
+    Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
 
     $ui.DataPathText.Text = "Data: $(Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data')"
     $ui.OutputPathText.Text = "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
 
-    foreach ($pair in @(
-        @{ Combo=$ui.CityComboBox; Value=$script:AppState.CurrentDevice.City },
-        @{ Combo=$ui.LocationComboBox; Value=$script:AppState.CurrentDevice.Location },
-        @{ Combo=$ui.BuildingComboBox; Value=$script:AppState.CurrentDevice.Building },
-        @{ Combo=$ui.FloorComboBox; Value=$script:AppState.CurrentDevice.Floor },
-        @{ Combo=$ui.RoomComboBox; Value=$script:AppState.CurrentDevice.Room },
-        @{ Combo=$ui.DepartmentComboBox; Value=$script:AppState.CurrentDevice.Department }
-    )) {
-        $pair.Combo.Items.Clear()
-        [void]$pair.Combo.Items.Add($pair.Value)
-        [void]$pair.Combo.Items.Add('2nd Choice')
-        $pair.Combo.SelectedIndex = 0
+    foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
+        $combo.Items.Clear()
+        $combo.Text = ''
     }
 
     $ui.QueryButton.Add_Click({
@@ -544,8 +609,8 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
         $script:AppState.SampleData = $queryData
         $script:AppState.CurrentDevice = $queryData.Device
         Set-WindowDataBindings -Ui $ui -SampleData $queryData
-        Update-OnlineStatus -Ui $ui -HostName $queryData.Device.Name
         Set-StatusMessage -Ui $ui -Mode 'Found'
+        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $queryData.Device.Name
     })
 
     $ui.SearchTextBox.Add_KeyDown({

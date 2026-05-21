@@ -354,6 +354,7 @@ try {
 
         $isComputerName = $term -match '^(PC|LD|TD|AO)'
         $isAssetTag = $term -match '^(HSS|C)'
+        $isHssAssetTag = $term -match '^HSS-'
 
         function Find-InCollection {
             param([object[]]$Rows,[string[]]$Fields,[string]$DetectedType)
@@ -374,16 +375,26 @@ try {
         }
 
         if ($isAssetTag) {
-            $match = Find-InCollection -Rows $Inventory.Computers -Fields @('asset_tag') -DetectedType 'Computer'
-            if ($match) { return $match }
-            $match = Find-InCollection -Rows $Inventory.Monitors -Fields @('asset_tag') -DetectedType 'Monitor'
-            if ($match) { return $match }
-            $match = Find-InCollection -Rows $Inventory.Carts -Fields @('asset_tag') -DetectedType 'Cart'
-            if ($match) { return $match }
-            $match = Find-InCollection -Rows $Inventory.Mics -Fields @('asset_tag') -DetectedType 'Mic'
-            if ($match) { return $match }
-            $match = Find-InCollection -Rows $Inventory.Scanners -Fields @('asset_tag') -DetectedType 'Scanner'
-            if ($match) { return $match }
+            if ($isHssAssetTag) {
+                $match = Find-InCollection -Rows $Inventory.Monitors -Fields @('asset_tag') -DetectedType 'Monitor'
+                if ($match) { return $match }
+                $match = Find-InCollection -Rows $Inventory.Computers -Fields @('asset_tag') -DetectedType 'Computer'
+                if ($match) { return $match }
+                $match = Find-InCollection -Rows $Inventory.Carts -Fields @('asset_tag') -DetectedType 'Cart'
+                if ($match) { return $match }
+            }
+            else {
+                $match = Find-InCollection -Rows $Inventory.Computers -Fields @('asset_tag') -DetectedType 'Computer'
+                if ($match) { return $match }
+                $match = Find-InCollection -Rows $Inventory.Monitors -Fields @('asset_tag') -DetectedType 'Monitor'
+                if ($match) { return $match }
+                $match = Find-InCollection -Rows $Inventory.Carts -Fields @('asset_tag') -DetectedType 'Cart'
+                if ($match) { return $match }
+                $match = Find-InCollection -Rows $Inventory.Mics -Fields @('asset_tag') -DetectedType 'Mic'
+                if ($match) { return $match }
+                $match = Find-InCollection -Rows $Inventory.Scanners -Fields @('asset_tag') -DetectedType 'Scanner'
+                if ($match) { return $match }
+            }
         }
 
         foreach ($set in @(
@@ -440,7 +451,8 @@ try {
         $effectiveParent = if ($parentDevice) { $parentDevice } else { $Device }
         $queryRole = if ($parentDevice) { 'Child' } else { 'Parent' }
 
-        $results = @([pscustomobject]@{ Role='Parent'; Type=$effectiveParent.DetectedType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag) })
+        $parentType = if ($effectiveParent.DetectedType -eq 'Computer') { 'Desktop' } else { $effectiveParent.DetectedType }
+        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag) })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName

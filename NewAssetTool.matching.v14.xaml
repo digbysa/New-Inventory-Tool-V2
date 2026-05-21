@@ -168,7 +168,7 @@
         <Style x:Key="LocationValueBoxStyle" TargetType="TextBox" BasedOn="{StaticResource ValueBoxStyle}">
             <Setter Property="Background" Value="{StaticResource LocationFillBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource LocationBorderBrush}"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Template">

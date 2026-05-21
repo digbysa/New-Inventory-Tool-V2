@@ -431,7 +431,7 @@ try {
             $collection = $Inventory.$collectionName
             if (-not $collection) { continue }
             foreach ($row in $collection) {
-                $token = (Get-FieldValue -Row $row -Names @('u_parent_asset')).Trim()
+                $token = (Get-FieldValue -Row $row -Names @('u_parent_asset','Parent')).Trim()
                 if ([string]::IsNullOrWhiteSpace($token)) { continue }
                 $key = $token.ToUpper()
                 if (-not $childrenByParent.ContainsKey($key)) { $childrenByParent[$key] = @() }

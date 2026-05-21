@@ -317,6 +317,41 @@ try {
         return [pscustomobject]@{ Device=$Device; Associated=(Build-AssociatedDevices -Device $Device -Inventory $Inventory); Nearby=(Build-NearbyDevices -Device $Device -Inventory $Inventory) }
     }
 
+
+    function Set-PrimaryDeviceBindings {
+        param([hashtable]$Ui,[pscustomobject]$Device)
+        $Ui.SelectedDeviceText.Text = $Device.Name
+        Set-DisplayText -Ui $Ui -BaseName 'DetectedType' -Value $Device.DetectedType
+        Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $Device.Name
+        Set-DisplayText -Ui $Ui -BaseName 'AssetTag' -Value $Device.AssetTag
+        Set-DisplayText -Ui $Ui -BaseName 'Serial' -Value $Device.Serial
+        Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $Device.Parent
+        Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $Device.RITM
+        Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value (Format-DateLong $Device.RetireDate)
+        Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $Device.LastRounded
+        $Ui.CityTextBox.Text = $Device.City
+        $Ui.LocationTextBox.Text = $Device.Location
+        $Ui.BuildingTextBox.Text = $Device.Building
+        $Ui.FloorTextBox.Text = $Device.Floor
+        $Ui.RoomTextBox.Text = $Device.Room
+        $Ui.DepartmentTextBox.Text = $Device.Department
+    }
+
+    function Start-QueryDataPopulationAsync {
+        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory,[string]$QueryToken)
+        [System.Threading.Tasks.Task]::Run([Action]{
+            $associated = Build-AssociatedDevices -Device $Device -Inventory $Inventory
+            $nearby = Build-NearbyDevices -Device $Device -Inventory $Inventory
+            $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
+                if ($script:AppState.CurrentQueryToken -ne $QueryToken) { return }
+                $Ui.AssociatedDevicesDataGrid.ItemsSource = $associated
+                $Ui.NearbyDataGrid.ItemsSource = $nearby
+                $Ui.NearbyScopeSummaryText.Text = "Nearby scopes (Location): 1 - Showing $($nearby.Count)"
+                $script:AppState.SampleData = [pscustomobject]@{ Device=$Device; Associated=$associated; Nearby=$nearby }
+            }) | Out-Null
+        }) | Out-Null
+    }
+
     function New-SampleData {
         # fallback sample data when CSV sources are unavailable
         $device = [pscustomobject]@{
@@ -584,7 +619,7 @@ function Find-SampleDevice {
     )
 
     $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; Inventory=$inventory }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory }
 
     Clear-WindowData -Ui $ui
     Increment-Fonts -Root $window
@@ -605,12 +640,21 @@ $match = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $scri
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'No matching device found'
             return
         }
-        $queryData = Build-QueryData -Device $match -Inventory $script:AppState.Inventory
-        $script:AppState.SampleData = $queryData
-        $script:AppState.CurrentDevice = $queryData.Device
-        Set-WindowDataBindings -Ui $ui -SampleData $queryData
+        $script:AppState.CurrentDevice = $match
+        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=@(); Nearby=@() }
+        $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
+        Set-PrimaryDeviceBindings -Ui $ui -Device $match
+        $ui.AssociatedDevicesDataGrid.ItemsSource = @()
+        $ui.NearbyDataGrid.ItemsSource = @()
+        $ui.NearbyScopeSummaryText.Text = 'Nearby scopes (Location): 1 - Loading...'
+        $ui.DeviceOnlineText.Text = 'Checking...'
+        $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
+        $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
+        $ui.DeviceResponseTimeText.Text = ''
+        $ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $queryData.Device.Name
+        Start-QueryDataPopulationAsync -Ui $ui -Device $match -Inventory $script:AppState.Inventory -QueryToken $script:AppState.CurrentQueryToken
+        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $match.Name
     })
 
     $ui.SearchTextBox.Add_KeyDown({

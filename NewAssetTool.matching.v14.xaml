@@ -363,7 +363,7 @@
                         SnapsToDevicePixels="True"
                         Margin="0,0,18,2">
                     <TextBox x:Name="SearchTextBox"
-                             Text="AO400568"
+                             Text=""
                              Background="Transparent"
                              BorderThickness="0"
                              Foreground="White"
@@ -511,7 +511,7 @@
                                         <TextBlock Grid.Row="6" Grid.Column="1" x:Name="RetireDisplay" Text="31 May 2028" Foreground="#1F2937" FontWeight="SemiBold" FontSize="12" Margin="10,10,0,8"/>
                                         <TextBox x:Name="RetireDateTextBox" Visibility="Collapsed" Text="31 May 2028"/>
 
-                                        <Border Grid.Row="7" Grid.ColumnSpan="2" Background="#FDF0F1" BorderBrush="#F5C2C7" BorderThickness="1" CornerRadius="3" Margin="0,4,0,0" Padding="10,2,10,2">
+                                        <Border x:Name="LastRoundedContainer" Grid.Row="7" Grid.ColumnSpan="2" Background="#FDF0F1" BorderBrush="#F5C2C7" BorderThickness="1" CornerRadius="3" Margin="0,4,0,0" Padding="10,2,10,2">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>

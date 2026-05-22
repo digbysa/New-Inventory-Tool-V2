@@ -947,6 +947,22 @@ function Find-SampleDevice {
         return $null
     }
 
+    function Load-RoundingAssetMap {
+        param([string]$ResolvedXamlPath)
+        $map = @{}
+        $roundingMapPath = Get-RoundingMapPath -ResolvedXamlPath $ResolvedXamlPath
+        if (-not (Test-Path -LiteralPath $roundingMapPath)) { return $map }
+        try {
+            foreach ($r in (Import-Csv -LiteralPath $roundingMapPath)) {
+                $assetTag = [string]$r.'Asset Tag'
+                $deviceId = [string]$r.SlNo
+                if ([string]::IsNullOrWhiteSpace($assetTag) -or [string]::IsNullOrWhiteSpace($deviceId)) { continue }
+                $map[$assetTag.Trim().ToUpper()] = $deviceId.Trim()
+            }
+        } catch {}
+        return $map
+    }
+
     function Update-ManualRoundButtonState {
         param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
         $url = Get-RoundingUrlForDevice -CurrentDevice $CurrentDevice -RoundingByAssetTag $RoundingByAssetTag
@@ -1050,19 +1066,7 @@ function Find-SampleDevice {
     $siteFolderPath = if ($selectedSite) { $selectedSite.FolderPath } else { $null }
     $siteName = if ($selectedSite) { $selectedSite.Name } else { 'All Sites' }
     $inventory = Load-InventoryData -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $roundingByAssetTag = @{}
-    $roundingMapPath = Get-RoundingMapPath -ResolvedXamlPath $resolvedXamlPath
-    if (Test-Path $roundingMapPath) {
-        try {
-            foreach ($r in (Import-Csv -Path $roundingMapPath)) {
-                $at = [string]$r.'Asset Tag'
-                $id = [string]$r.SlNo
-                if (-not [string]::IsNullOrWhiteSpace($at) -and -not [string]::IsNullOrWhiteSpace($id)) {
-                    $roundingByAssetTag[$at.Trim().ToUpper()] = $id.Trim()
-                }
-            }
-        } catch {}
-    }
+    $roundingByAssetTag = Load-RoundingAssetMap -ResolvedXamlPath $resolvedXamlPath
     $script:ManualRoundUsed = $false
     $roundingTimer = New-Object System.Windows.Threading.DispatcherTimer
     $roundingTimer.Interval = [TimeSpan]::FromSeconds(1)
@@ -1097,6 +1101,9 @@ function Find-SampleDevice {
         $searchTerm = $ui.SearchTextBox.Text
         $match = Find-InventoryMatch -SearchTerm $searchTerm -Inventory $script:AppState.Inventory
         if ($null -eq $match) {
+            $script:AppState.CurrentDevice = $null
+            $script:ManualRoundUsed = $false
+            Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'No matching device found'
             if (-not [string]::IsNullOrWhiteSpace($searchTerm)) {
                 [System.Windows.MessageBox]::Show("No device was found for:`n$searchTerm", 'Device Not Found') | Out-Null

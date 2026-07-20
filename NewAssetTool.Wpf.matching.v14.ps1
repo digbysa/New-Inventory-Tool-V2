@@ -533,7 +533,7 @@ try {
         $queryRole = if ($parentDevice) { 'Child' } else { 'Parent' }
 
         $parentType = if ($effectiveParent.DetectedType -eq 'Computer') { 'Desktop' } else { $effectiveParent.DetectedType }
-        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag) })
+        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName
@@ -563,7 +563,8 @@ try {
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag) -and $addedChildAssetTags.ContainsKey($childAssetTag)) { continue }
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
                 $role = if ($Device.AssetTag -and ($childAssetTag -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
-                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=(Get-FieldValue -Row $row -Names @('name')); AssetTag=(Get-FieldValue -Row $row -Names @('asset_tag')); Serial=(Get-FieldValue -Row $row -Names @('serial_number')); RITM=(Extract-Ritm (Get-FieldValue -Row $row -Names @('po_number'))); Retire=(Format-DateLong (Get-FieldValue -Row $row -Names @('u_scheduled_retirement'))); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag (Get-FieldValue -Row $row -Names @('asset_tag'))) }
+                $childDevice = ConvertTo-DeviceRecord -Row $row -DetectedType $type
+                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
                 $results += $record
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag)) { $addedChildAssetTags[$childAssetTag] = $true }
             }
@@ -813,11 +814,58 @@ try {
     }
 
 
-    function Set-PrimaryDeviceBindings {
-        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
-        $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
-        $summaryDevice = if ($parentDevice) { $parentDevice } else { $Device }
 
+    function Get-ExpectedDeviceName {
+        param([pscustomobject]$Device,[pscustomobject]$ParentDevice)
+        if (-not $Device -or -not $ParentDevice) { return $null }
+        switch ($Device.DetectedType) {
+            'Monitor' { return $ParentDevice.Name }
+            'Mic' { return "$($ParentDevice.Name)-Mic" }
+            'Scanner' { return "$($ParentDevice.Name)-SCN" }
+            'Cart' { return "$($ParentDevice.Name)-CRT" }
+            default { return $null }
+        }
+    }
+
+    function Test-DeviceNameNeedsFix {
+        param([pscustomobject]$Device,[pscustomobject]$ParentDevice)
+        $expected = Get-ExpectedDeviceName -Device $Device -ParentDevice $ParentDevice
+        if ([string]::IsNullOrWhiteSpace($expected) -or [string]::IsNullOrWhiteSpace($Device.Name)) { return $false }
+        return ($Device.Name.Trim().ToUpper() -ne $expected.Trim().ToUpper())
+    }
+
+    function Update-FixNameButtonState {
+        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$ParentDevice)
+        if (-not $Ui.FixNameButton) { return }
+        if (Test-DeviceNameNeedsFix -Device $Device -ParentDevice $ParentDevice) {
+            $Ui.FixNameButton.Visibility = 'Visible'
+            $Ui.FixNameButton.IsEnabled = $true
+        }
+        else {
+            $Ui.FixNameButton.Visibility = 'Collapsed'
+            $Ui.FixNameButton.IsEnabled = $false
+        }
+    }
+
+    function Update-InventoryDeviceName {
+        param([pscustomobject]$Inventory,[pscustomobject]$Device,[string]$NewName)
+        if (-not $Inventory -or -not $Device -or [string]::IsNullOrWhiteSpace($Device.AssetTag)) { return }
+        foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
+            foreach ($row in $Inventory.$collectionName) {
+                $assetTag = Get-FieldValue -Row $row -Names @('asset_tag','AssetTag')
+                if ($assetTag -and $assetTag.Trim().ToUpper() -eq $Device.AssetTag.Trim().ToUpper()) {
+                    Set-RowFieldValue -Row $row -Name 'name' -Value $NewName
+                    return
+                }
+            }
+        }
+    }
+
+    function Set-SelectedSummaryDevice {
+        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
+        if (-not $Device) { return }
+        $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
+        $locationDevice = if ($parentDevice) { $parentDevice } else { $Device }
         $Ui.SelectedDeviceText.Text = $Device.Name
         Set-DisplayText -Ui $Ui -BaseName 'DetectedType' -Value $Device.DetectedType
         Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $Device.Name
@@ -826,13 +874,21 @@ try {
         Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $Device.Parent
         Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $Device.RITM
         Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value (Format-DateLong $Device.RetireDate)
-        Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $summaryDevice.LastRounded
-        $Ui.CityTextBox.Text = $summaryDevice.City
-        $Ui.LocationTextBox.Text = $summaryDevice.Location
-        $Ui.BuildingTextBox.Text = $summaryDevice.Building
-        $Ui.FloorTextBox.Text = $summaryDevice.Floor
-        $Ui.RoomTextBox.Text = $summaryDevice.Room
-        $Ui.DepartmentTextBox.Text = $summaryDevice.Department
+        Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $locationDevice.LastRounded
+        $Ui.CityTextBox.Text = $locationDevice.City
+        $Ui.LocationTextBox.Text = $locationDevice.Location
+        $Ui.BuildingTextBox.Text = $locationDevice.Building
+        $Ui.FloorTextBox.Text = $locationDevice.Floor
+        $Ui.RoomTextBox.Text = $locationDevice.Room
+        $Ui.DepartmentTextBox.Text = $locationDevice.Department
+        $script:AppState.SelectedSummaryDevice = $Device
+        $script:AppState.SelectedSummaryParent = $parentDevice
+        Update-FixNameButtonState -Ui $Ui -Device $Device -ParentDevice $parentDevice
+    }
+
+    function Set-PrimaryDeviceBindings {
+        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
+        Set-SelectedSummaryDevice -Ui $Ui -Device $Device -Inventory $Inventory
     }
 
     function Start-QueryDataPopulationAsync {
@@ -1009,6 +1065,7 @@ try {
         $Ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
         Set-ControlText -Control $Ui.DeviceResponseTimeText -Value ''
         Set-ControlText -Control $Ui.LastQueryBadgeText -Value 'Awaiting query'
+        Update-FixNameButtonState -Ui $Ui -Device $null -ParentDevice $null
     }
 function Find-SampleDevice {
         param([string]$SearchTerm,[pscustomobject]$SampleData)
@@ -1182,7 +1239,7 @@ function Find-SampleDevice {
         if ($elapsedMinutes -ge $script:RoundingBaseMinutes) { $target = [Math]::Min(120, $elapsedMinutes) }
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -1245,6 +1302,8 @@ function Find-SampleDevice {
             $script:AppState.CurrentDevice = $null
             $script:AppState.SampleData = $null
             $script:AppState.CurrentQueryToken = ''
+            $script:AppState.SelectedSummaryDevice = $null
+            $script:AppState.SelectedSummaryParent = $null
             Clear-WindowData -Ui $ui
             Set-RoundingMinutes -Ui $ui -Minutes 3
             Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
@@ -1272,7 +1331,29 @@ function Find-SampleDevice {
     $ui.PingButton.Add_Click({ [System.Windows.MessageBox]::Show('Ping button clicked.', 'Ping') | Out-Null })
     $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })
     $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Monitor Label button clicked.', 'Monitor Label') | Out-Null })
-    $ui.FixNameButton.Add_Click({ [System.Windows.MessageBox]::Show('Fix Name button clicked.', 'Fix Name') | Out-Null })
+    $ui.FixNameButton.Add_Click({
+        $device = $script:AppState.SelectedSummaryDevice
+        $parent = $script:AppState.SelectedSummaryParent
+        if (-not $device) { return }
+        if (-not $parent) { [System.Windows.MessageBox]::Show('No parent computer found for this device. Scan a device with a valid parent first.', 'Fix Name') | Out-Null; return }
+        $expected = Get-ExpectedDeviceName -Device $device -ParentDevice $parent
+        if ([string]::IsNullOrWhiteSpace($expected)) { [System.Windows.MessageBox]::Show('Could not compute the expected name for this device type.', 'Fix Name') | Out-Null; return }
+        if ($device.Name -and $device.Name.Trim().ToUpper() -eq $expected.Trim().ToUpper()) {
+            Update-FixNameButtonState -Ui $ui -Device $device -ParentDevice $parent
+            return
+        }
+        $oldName = $device.Name
+        $device.Name = $expected
+        Update-InventoryDeviceName -Inventory $script:AppState.Inventory -Device $device -NewName $expected
+        Add-CmdbAssociationUpdate -ResolvedXamlPath $resolvedXamlPath -Candidate $device -OldParent $device.Parent -NewParent $device.Parent -OldName $oldName -NewName $expected
+        Build-InventoryIndices -Inventory $script:AppState.Inventory
+        Set-SelectedSummaryDevice -Ui $ui -Device $device -Inventory $script:AppState.Inventory
+        if ($script:AppState.CurrentDevice) {
+            $associated = Build-AssociatedDevices -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+            $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
+            $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
+        }
+    })
     $ui.EditLocationButton.Add_Click({
         if ($ui.EditLocationButton.Content -eq 'Save') {
             Save-LocationValues -Ui $ui
@@ -1321,6 +1402,20 @@ function Find-SampleDevice {
     $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.NearbySaveButton.Add_Click({ [System.Windows.MessageBox]::Show('Nearby logic is currently disabled.', 'Nearby Disabled') | Out-Null })
+    $ui.AssociatedDevicesDataGrid.Add_MouseDoubleClick({
+        $row = $ui.AssociatedDevicesDataGrid.SelectedItem
+        if (-not $row) { return }
+        $device = $null
+        if ($row.PSObject.Properties.Name -contains 'Device') { $device = $row.Device }
+        if (-not $device) {
+            $device = [pscustomobject]@{
+                DetectedType=$row.Type; Name=$row.Name; AssetTag=$row.AssetTag; Serial=$row.Serial; Parent='(n/a)'; RITM=$row.RITM; RetireDate=$row.Retire
+                LastRounded=''; City=''; Location=''; Building=''; Floor=''; Room=''; Department=''
+            }
+        }
+        Set-SelectedSummaryDevice -Ui $ui -Device $device -Inventory $script:AppState.Inventory
+    })
+
     $ui.AssociatedDevicesDataGrid.AddHandler([System.Windows.Documents.Hyperlink]::RequestNavigateEvent, [System.Windows.Navigation.RequestNavigateEventHandler]{
         param($sender,$e)
         if ($e.Uri) { Start-Process $e.Uri.AbsoluteUri }

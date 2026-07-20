@@ -702,6 +702,76 @@ try {
         try { return [bool](Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -ErrorAction SilentlyContinue) } catch { return $false }
     }
 
+    function Convert-IPv4AddressToUInt64 {
+        param([Parameter(Mandatory=$true)][string]$IpAddress)
+        $parsed = [System.Net.IPAddress]::Parse($IpAddress)
+        $bytes = $parsed.GetAddressBytes()
+        if ($bytes.Count -ne 4) { throw "IPv4 address expected: $IpAddress" }
+        return ([uint64]$bytes[0] -shl 24) -bor ([uint64]$bytes[1] -shl 16) -bor ([uint64]$bytes[2] -shl 8) -bor [uint64]$bytes[3]
+    }
+
+    function Resolve-SubnetName {
+        param([string]$IpAddress,[string]$DataRoot)
+        if ([string]::IsNullOrWhiteSpace($IpAddress)) { return 'Unknown' }
+        if ($IpAddress -match '^10\.64\.') { return 'VPN' }
+
+        $subnetPath = Join-Path $DataRoot 'SiteSubnets.csv'
+        if (-not (Test-Path -LiteralPath $subnetPath)) { return 'Unknown' }
+
+        try { $ipValue = Convert-IPv4AddressToUInt64 -IpAddress $IpAddress } catch { return 'Unknown' }
+        foreach ($line in Get-Content -LiteralPath $subnetPath) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line.Split(',')
+            if ($parts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($parts[0])) { continue }
+            $cidrParts = $parts[0].Trim().Split('/')
+            if ($cidrParts.Count -ne 2) { continue }
+            $subnetName = $parts[1].Trim()
+            try {
+                $prefix = [int]$cidrParts[1]
+                if ($prefix -lt 0 -or $prefix -gt 32) { continue }
+                $networkValue = Convert-IPv4AddressToUInt64 -IpAddress $cidrParts[0].Trim()
+                $mask = if ($prefix -eq 0) { [uint64]0 } else { ([uint64]0xFFFFFFFF) -shl (32 - $prefix) }
+                if (($ipValue -band $mask) -eq ($networkValue -band $mask)) {
+                    if ([string]::IsNullOrWhiteSpace($subnetName)) { return $parts[0].Trim() }
+                    return $subnetName
+                }
+            } catch { continue }
+        }
+        return 'Unknown'
+    }
+
+    function Invoke-DevicePing {
+        param([string]$ComputerName,[string]$DataRoot)
+        if ([string]::IsNullOrWhiteSpace($ComputerName)) { throw 'Enter or query a device before using Ping.' }
+
+        $reply = $null
+        try {
+            $results = @(Test-Connection -ComputerName $ComputerName -Count 1 -ErrorAction Stop)
+            if ($results.Count -gt 0) { $reply = $results[0] }
+        } catch {
+            return [pscustomobject]@{ HostName=$ComputerName; Success=$false; IpAddress='Unknown'; ResponseTime='Timed out'; Subnet='Unknown'; ErrorMessage=$_.Exception.Message }
+        }
+
+        $ipAddress = Get-FieldValue -Row $reply -Names @('Address','IPV4Address','ProtocolAddress')
+        if ($ipAddress -eq $ComputerName) {
+            $protocolAddress = Get-FieldValue -Row $reply -Names @('ProtocolAddress','IPV4Address')
+            if (-not [string]::IsNullOrWhiteSpace($protocolAddress)) { $ipAddress = $protocolAddress }
+        }
+        if ([string]::IsNullOrWhiteSpace($ipAddress)) { $ipAddress = 'Unknown' }
+
+        $responseMs = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
+        if ([string]::IsNullOrWhiteSpace($responseMs)) { $responseMs = 'Unknown' } else { $responseMs = "$responseMs ms" }
+
+        return [pscustomobject]@{ HostName=$ComputerName; Success=$true; IpAddress=$ipAddress; ResponseTime=$responseMs; Subnet=(Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot); ErrorMessage='' }
+    }
+
+    function Show-PingResultDialog {
+        param([object]$PingResult)
+        $message = "Device: $($PingResult.HostName)`nIP Address: $($PingResult.IpAddress)`nPing Time: $($PingResult.ResponseTime)`nSubnet: $($PingResult.Subnet)"
+        if (-not $PingResult.Success -and -not [string]::IsNullOrWhiteSpace($PingResult.ErrorMessage)) { $message += "`n`nError: $($PingResult.ErrorMessage)" }
+        [System.Windows.MessageBox]::Show($message, 'Ping Result') | Out-Null
+    }
+
     function Get-RemoteDeviceSerials {
         param([string]$ComputerName,[Nullable[bool]]$PingSucceeded=$null)
         $result = [pscustomobject]@{ ComputerSerial=$null; MonitorSerials=@(); Offline=$false }
@@ -1521,7 +1591,18 @@ function Find-SampleDevice {
         if (-not $parent) { $parent = $script:AppState.CurrentDevice }
         Validate-AssociatedDevices -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
     })
-    $ui.PingButton.Add_Click({ [System.Windows.MessageBox]::Show('Ping button clicked.', 'Ping') | Out-Null })
+    $ui.PingButton.Add_Click({
+        $target = $null
+        if ($script:AppState.CurrentDevice -and -not [string]::IsNullOrWhiteSpace($script:AppState.CurrentDevice.Name)) { $target = $script:AppState.CurrentDevice.Name }
+        elseif (-not [string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) { $target = $ui.SearchTextBox.Text.Trim() }
+        try {
+            $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
+            Show-PingResultDialog -PingResult $pingResult
+            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText $(if ($pingResult.Success) { "Ping complete: $($pingResult.ResponseTime)" } else { 'Ping failed' })
+        } catch {
+            [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null
+        }
+    })
     $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })
     $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Monitor Label button clicked.', 'Monitor Label') | Out-Null })
     $ui.FixNameButton.Add_Click({

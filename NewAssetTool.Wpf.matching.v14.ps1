@@ -154,6 +154,33 @@ try {
         else { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation }
     }
 
+    $script:RoundingEventColumns = @(
+        'Timestamp','AssetTag','Name','Serial','City','Location','Building','Floor','Room',
+        'CheckStatus','RoundingMinutes','CableMgmtOK','CablingNeeded','LabelOK','CartOK',
+        'PeripheralsOK','MaintenanceType','Department','RoundingUrl','Comments','Rounded'
+    )
+
+    function Convert-ToRoundingEventRecord {
+        param([psobject]$Row)
+        $record = [ordered]@{}
+        foreach ($column in $script:RoundingEventColumns) {
+            $value = ''
+            if ($Row -and ($Row.PSObject.Properties.Name -contains $column)) { $value = $Row.$column }
+            $record[$column] = $value
+        }
+        return [pscustomobject]$record
+    }
+
+    function Add-RoundingCsvRow {
+        param([string]$Path,[psobject]$Row)
+        $rows = @()
+        if (Test-Path -LiteralPath $Path) {
+            try { $rows = @(Import-Csv -LiteralPath $Path) } catch { $rows = @() }
+        }
+        $rows += $Row
+        $rows | ForEach-Object { Convert-ToRoundingEventRecord -Row $_ } | Export-Csv -LiteralPath $Path -NoTypeInformation
+    }
+
     function Set-RowFieldValue {
         param([object]$Row,[string]$Name,[object]$Value)
         if (-not $Row -or [string]::IsNullOrWhiteSpace($Name)) { return }
@@ -1495,7 +1522,8 @@ function Find-SampleDevice {
         param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[string]$ResolvedXamlPath)
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
-        $row = [pscustomobject]@{
+        $row = [pscustomobject]([ordered]@{
+            Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
             AssetTag=$CurrentDevice.AssetTag; Name=$CurrentDevice.Name; Serial=$CurrentDevice.Serial
             City=$CurrentDevice.City; Location=$CurrentDevice.Location; Building=$CurrentDevice.Building
             Floor=$CurrentDevice.Floor; Room=$CurrentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
@@ -1506,9 +1534,8 @@ function Find-SampleDevice {
             MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$CurrentDevice.Department
             RoundingUrl=$Ui.ManualRoundButton.Tag; Comments=$Ui.CommentsTextBox.Text
             Rounded=$(if($script:ManualRoundUsed){'Yes'}else{'No'})
-            Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-        }
-        Add-CsvRow -Path $csvPath -Row $row
+        })
+        Add-RoundingCsvRow -Path $csvPath -Row $row
         $script:ManualRoundUsed = $false
         [System.Windows.MessageBox]::Show("Saved event to:`n$csvPath", 'Save Event') | Out-Null
     }
@@ -1523,13 +1550,14 @@ function Find-SampleDevice {
             return
         }
         foreach ($item in $selectedRows) {
-            $row = [pscustomobject]@{
+            $row = [pscustomobject]([ordered]@{
+                Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                 AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
                 CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -eq '-') { 'Complete' } else { $item.Status })
-                RoundingMinutes=3; CableMgmtOK=$true; LabelOK=$true; CartOK=$true; PeripheralsOK=$true
-                Comments='Saved from Nearby tab'; SavedAt=(Get-Date).ToString('s'); SavedFrom='Nearby'
-            }
-            Add-CsvRow -Path $csvPath -Row $row
+                RoundingMinutes=3; CableMgmtOK='Yes'; CablingNeeded='No'; LabelOK=$true; CartOK=$true; PeripheralsOK='Yes'
+                MaintenanceType='Nearby'; Department=''; RoundingUrl=''; Comments='Saved from Nearby tab'; Rounded='No'
+            })
+            Add-RoundingCsvRow -Path $csvPath -Row $row
         }
         [System.Windows.MessageBox]::Show("Saved $($selectedRows.Count) nearby row(s) to:`n$csvPath", 'Nearby Save') | Out-Null
     }
@@ -1656,6 +1684,18 @@ function Find-SampleDevice {
         Set-StatusMessage -Ui $ui -Mode 'Found'
         Start-OnlineStatusUpdateAsync -Ui $ui -HostName $match.Name
     })
+
+    function Reset-RoundingFormForNextScan {
+        param([hashtable]$Ui)
+        foreach ($cb in @($Ui.ValidateCableCheckBox,$Ui.LabelMonitorCheckBox,$Ui.ValidatePeripheralsCheckBox,$Ui.CablingNeededCheckBox,$Ui.PhysicalCartCheckBox,$Ui.AddDeviceToTrackerCheckBox)) { $cb.IsChecked = $false }
+        Set-ControlText -Control $Ui.CheckStatusComboBox -Value 'Complete'
+        Set-ControlText -Control $Ui.MaintenanceTypeComboBox -Value 'General Rounding'
+        Set-ControlText -Control $Ui.CommentsTextBox -Value ''
+        Set-ControlText -Control $Ui.SearchTextBox -Value ''
+        Set-RoundingMinutes -Ui $Ui -Minutes 3
+        $Ui.SearchTextBox.Focus() | Out-Null
+        $Ui.SearchTextBox.CaretIndex = $Ui.SearchTextBox.Text.Length
+    }
 
     $ui.SearchTextBox.Add_TextChanged({
         if ([string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) {
@@ -1788,9 +1828,8 @@ function Find-SampleDevice {
             return
         }
         Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath
-        Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete'
         $script:RoundingBaseMinutes = 3
-        Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes
+        Reset-RoundingFormForNextScan -Ui $ui
     })
     $ui.ManualRoundButton.Add_Click({
         if ([string]::IsNullOrWhiteSpace($ui.ManualRoundButton.Tag)) {

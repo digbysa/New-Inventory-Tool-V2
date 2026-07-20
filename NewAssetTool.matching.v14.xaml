@@ -709,7 +709,7 @@
 
                                     <Border Grid.Row="0" BorderBrush="#E4E9F0" BorderThickness="0,0,0,1" Padding="12,8">
                                         <StackPanel>
-                                            <TextBlock Text="Device Rounding" Style="{StaticResource SectionTitleStyle}"/>
+                                            <TextBlock Text="DEVICE ROUNDING" Style="{StaticResource SectionTitleStyle}"/>
                                             <TextBlock Text="Operational checklist and event capture" Style="{StaticResource SectionSubtitleStyle}"/>
                                         </StackPanel>
                                     </Border>

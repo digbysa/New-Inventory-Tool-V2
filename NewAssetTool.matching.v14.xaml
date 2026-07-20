@@ -457,7 +457,7 @@
                                                 <TextBlock Text="DEVICE SUMMARY" Style="{StaticResource SectionTitleStyle}"/>
                                                 <TextBlock Text="Core identity, lifecycle, and rounding state" Style="{StaticResource SectionSubtitleStyle}"/>
                                             </StackPanel>
-                                            <Button x:Name="FixNameButton" Grid.Column="1" Content="Fix Name" Style="{StaticResource SecondaryButtonStyle}" FontSize="13" Padding="10,5" VerticalAlignment="Center"/>
+                                            <Button x:Name="FixNameButton" Grid.Column="1" Content="Fix Name" Visibility="Collapsed" Style="{StaticResource SecondaryButtonStyle}" FontSize="13" Padding="10,5" VerticalAlignment="Center"/>
                                         </Grid>
                                     </Border>
 

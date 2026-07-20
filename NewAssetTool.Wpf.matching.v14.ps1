@@ -719,25 +719,46 @@ try {
         if (-not (Test-Path -LiteralPath $subnetPath)) { return 'Unknown' }
 
         try { $ipValue = Convert-IPv4AddressToUInt64 -IpAddress $IpAddress } catch { return 'Unknown' }
-        foreach ($line in Get-Content -LiteralPath $subnetPath) {
-            if ([string]::IsNullOrWhiteSpace($line)) { continue }
-            $parts = $line.Split(',')
-            if ($parts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($parts[0])) { continue }
-            $cidrParts = $parts[0].Trim().Split('/')
+        foreach ($row in Import-Csv -LiteralPath $subnetPath -Header 'Cidr','SubnetName','Notes') {
+            if (-not $row -or [string]::IsNullOrWhiteSpace($row.Cidr)) { continue }
+            $cidrParts = $row.Cidr.Trim().Split('/')
             if ($cidrParts.Count -ne 2) { continue }
-            $subnetName = $parts[1].Trim()
+            $subnetName = if ($row.PSObject.Properties.Name -contains 'SubnetName') { [string]$row.SubnetName } else { '' }
             try {
                 $prefix = [int]$cidrParts[1]
                 if ($prefix -lt 0 -or $prefix -gt 32) { continue }
                 $networkValue = Convert-IPv4AddressToUInt64 -IpAddress $cidrParts[0].Trim()
-                $mask = if ($prefix -eq 0) { [uint64]0 } else { ([uint64]0xFFFFFFFF) -shl (32 - $prefix) }
+                $mask = if ($prefix -eq 0) { [uint64]0 } elseif ($prefix -eq 32) { [uint64]0xFFFFFFFF } else { ([uint64]0xFFFFFFFF) -shr $prefix -bxor [uint64]0xFFFFFFFF }
                 if (($ipValue -band $mask) -eq ($networkValue -band $mask)) {
-                    if ([string]::IsNullOrWhiteSpace($subnetName)) { return $parts[0].Trim() }
-                    return $subnetName
+                    if ([string]::IsNullOrWhiteSpace($subnetName)) { return $row.Cidr.Trim() }
+                    return $subnetName.Trim()
                 }
             } catch { continue }
         }
         return 'Unknown'
+    }
+
+    function Get-IPv4AddressFromPingReply {
+        param([object]$Reply,[string]$ComputerName)
+        foreach ($name in @('IPV4Address','ProtocolAddress','Address')) {
+            $value = Get-FieldValue -Row $Reply -Names @($name)
+            if ($value -match '^\d{1,3}(\.\d{1,3}){3}$') { return $value }
+        }
+        try {
+            $addresses = [System.Net.Dns]::GetHostAddresses($ComputerName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork }
+            if ($addresses) { return [string]$addresses[0] }
+        } catch {}
+        return ''
+    }
+
+    function Start-ContinuousPingWindow {
+        param([string]$Target)
+        if ([string]::IsNullOrWhiteSpace($Target)) { return }
+        try {
+            if ([Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+                Start-Process -FilePath 'cmd.exe' -ArgumentList @('/k','ping','-t',$Target) | Out-Null
+            }
+        } catch {}
     }
 
     function Invoke-DevicePing {
@@ -752,11 +773,7 @@ try {
             return [pscustomobject]@{ HostName=$ComputerName; Success=$false; IpAddress='Unknown'; ResponseTime='Timed out'; Subnet='Unknown'; ErrorMessage=$_.Exception.Message }
         }
 
-        $ipAddress = Get-FieldValue -Row $reply -Names @('Address','IPV4Address','ProtocolAddress')
-        if ($ipAddress -eq $ComputerName) {
-            $protocolAddress = Get-FieldValue -Row $reply -Names @('ProtocolAddress','IPV4Address')
-            if (-not [string]::IsNullOrWhiteSpace($protocolAddress)) { $ipAddress = $protocolAddress }
-        }
+        $ipAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $ComputerName
         if ([string]::IsNullOrWhiteSpace($ipAddress)) { $ipAddress = 'Unknown' }
 
         $responseMs = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
@@ -1597,6 +1614,7 @@ function Find-SampleDevice {
         elseif (-not [string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) { $target = $ui.SearchTextBox.Text.Trim() }
         try {
             $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
+            Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
             Show-PingResultDialog -PingResult $pingResult
             Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText $(if ($pingResult.Success) { "Ping complete: $($pingResult.ResponseTime)" } else { 'Ping failed' })
         } catch {

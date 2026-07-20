@@ -1706,9 +1706,11 @@ function Find-SampleDevice {
         param([hashtable]$Ui,[bool]$IsEditing,[pscustomobject]$Inventory)
         $readOnlyControls = @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)
         $comboControls = @($Ui.CityComboBox,$Ui.LocationComboBox,$Ui.BuildingComboBox,$Ui.FloorComboBox,$Ui.RoomComboBox,$Ui.DepartmentComboBox)
-        foreach ($control in $readOnlyControls) { $control.Visibility = if ($IsEditing) { 'Collapsed' } else { 'Visible' } }
-        foreach ($control in $comboControls) { $control.Visibility = if ($IsEditing) { 'Visible' } else { 'Collapsed' } }
-        $Ui.CancelEditLocationButton.Visibility = if ($IsEditing) { 'Visible' } else { 'Collapsed' }
+        $visible = [System.Windows.Visibility]::Visible
+        $collapsed = [System.Windows.Visibility]::Collapsed
+        foreach ($control in $readOnlyControls) { if ($control) { $control.Visibility = if ($IsEditing) { $collapsed } else { $visible } } }
+        foreach ($control in $comboControls) { if ($control) { $control.Visibility = if ($IsEditing) { $visible } else { $collapsed } } }
+        $Ui.CancelEditLocationButton.Visibility = if ($IsEditing) { $visible } else { $collapsed }
         $Ui.EditLocationButton.Content = if ($IsEditing) { 'Save' } else { 'Edit Location' }
         if ($IsEditing -and $Inventory) {
             foreach ($pair in @(@($Ui.CityComboBox,$Ui.CityTextBox),@($Ui.LocationComboBox,$Ui.LocationTextBox),@($Ui.BuildingComboBox,$Ui.BuildingTextBox),@($Ui.FloorComboBox,$Ui.FloorTextBox),@($Ui.RoomComboBox,$Ui.RoomTextBox),@($Ui.DepartmentComboBox,$Ui.DepartmentTextBox))) { $pair[0].IsEditable = $true; $pair[0].Text = $pair[1].Text }
@@ -1957,16 +1959,29 @@ function Find-SampleDevice {
             $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
         }
     })
-    $ui.EditLocationButton.Add_Click({
-        if ($ui.EditLocationButton.Content -eq 'Save') {
-            Save-LocationValues -Ui $ui
-            Toggle-LocationEditMode -Ui $ui -IsEditing:$false
-        }
-        else {
-            Toggle-LocationEditMode -Ui $ui -IsEditing:$true -Inventory $script:AppState.Inventory
+    $ui.EditLocationButton.Add_Click([System.Windows.RoutedEventHandler]{
+        param($sender,$e)
+        try {
+            if ([string]$ui.EditLocationButton.Content -eq 'Save') {
+                Save-LocationValues -Ui $ui
+                Toggle-LocationEditMode -Ui $ui -IsEditing:$false
+            }
+            else {
+                Toggle-LocationEditMode -Ui $ui -IsEditing:$true -Inventory $script:AppState.Inventory
+            }
+        } catch {
+            [System.Windows.MessageBox]::Show($_.Exception.Message, 'Edit Location') | Out-Null
         }
     })
-    $ui.CancelEditLocationButton.Add_Click({ Toggle-LocationEditMode -Ui $ui -IsEditing:$false; Set-LocationValidationStyle -Ui $ui -Inventory $script:AppState.Inventory })
+    $ui.CancelEditLocationButton.Add_Click([System.Windows.RoutedEventHandler]{
+        param($sender,$e)
+        try {
+            Toggle-LocationEditMode -Ui $ui -IsEditing:$false
+            Set-LocationValidationStyle -Ui $ui -Inventory $script:AppState.Inventory
+        } catch {
+            [System.Windows.MessageBox]::Show($_.Exception.Message, 'Edit Location') | Out-Null
+        }
+    })
     $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
     $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) - 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
     $ui.CheckCompleteButton.Add_Click({

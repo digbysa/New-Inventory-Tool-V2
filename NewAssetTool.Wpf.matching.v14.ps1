@@ -793,8 +793,8 @@ try {
         $items = @($Ui.AssociatedDevicesDataGrid.ItemsSource)
         Apply-AssociatedDeviceValidation -Items $items -WmiData $wmiData
         $Ui.AssociatedDevicesDataGrid.Items.Refresh()
-        $missingMonitors = Get-UnlinkedMonitorSerials -Items $items -MonitorSerials @($wmiData.MonitorSerials)
-        if ($missingMonitors -and $missingMonitors.Count -gt 0) {
+        $missingMonitors = @(Get-UnlinkedMonitorSerials -Items $items -MonitorSerials @($wmiData.MonitorSerials))
+        if ($missingMonitors.Count -gt 0) {
             $serialToLink = $missingMonitors | Select-Object -First 1
             $changed = Show-AddPeripheralDialog -Ui $Ui -ParentDevice $ParentDevice -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath -DefaultSearchText $serialToLink -InfoMessage 'This monitor is connected but not linked. Click Add to link.'
             if ($changed) { $Ui.AssociatedDevicesDataGrid.ItemsSource = Build-AssociatedDevices -Device $ParentDevice -Inventory $Inventory }

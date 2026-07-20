@@ -452,7 +452,7 @@ try {
         $term = $SearchTerm.Trim().ToUpper()
         if ([string]::IsNullOrWhiteSpace($term)) { return $null }
 
-        $isComputerName = $term -match '^(PC|LD|TD|AO)'
+        $isComputerName = $term -match '^(PC|LD|TD|AO|WT)'
         $isAssetTag = $term -match '^(HSS|C)'
         $isHssAssetTag = $term -match '^HSS-'
 
@@ -495,7 +495,7 @@ try {
     function Resolve-ParentDevice {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
         if (-not $Device) { return $null }
-        if ($Device.DetectedType -eq 'Computer' -and $Device.Name -match '^(LD|PC|TD|AO)') { return $Device }
+        if ($Device.DetectedType -eq 'Computer' -and $Device.Name -match '^(LD|PC|TD|AO|WT)') { return $Device }
 
         $tokens = @(@($Device.Parent) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() })
         if (-not $tokens -or $tokens.Count -eq 0) { return $null }
@@ -503,7 +503,7 @@ try {
         foreach ($row in $Inventory.Computers) {
             $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
             $name = if ($record.Name) { $record.Name.Trim().ToUpper() } else { '' }
-            if ($name -notmatch '^(LD|PC|TD|AO)') { continue }
+            if ($name -notmatch '^(LD|PC|TD|AO|WT)') { continue }
             $candidates = @($record.Name,$record.AssetTag,$record.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
             foreach ($token in $tokens) {
                 if ($candidates -contains $token) { return $record }
@@ -526,13 +526,35 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($baseCompact) -and -not $variants.Contains($baseCompact)) { [void]$variants.Add($baseCompact) }
         return ,$variants
     }
+    function Get-ComputerTypeFromName {
+        param([string]$Name,[string]$FallbackType='Computer')
+        if ([string]::IsNullOrWhiteSpace($Name)) { return $FallbackType }
+        switch -Regex ($Name.Trim()) {
+            '(?i)^LD' { return 'Laptop' }
+            '(?i)^PC' { return 'Desktop' }
+            '(?i)^AO' { return 'Tangent' }
+            '(?i)^WT' { return 'Thin Client' }
+            '(?i)^TD' { return 'Tablet' }
+            default { return $FallbackType }
+        }
+    }
+
+    function Get-AssociatedDeviceDisplayType {
+        param([pscustomobject]$Device)
+        if (-not $Device) { return '' }
+        if ($Device.DetectedType -eq 'Computer') {
+            return Get-ComputerTypeFromName -Name $Device.Name -FallbackType $Device.DetectedType
+        }
+        return $Device.DetectedType
+    }
+
     function Build-AssociatedDevices {
         param([pscustomobject]$Device,[pscustomobject]$Inventory)
         $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
         $effectiveParent = if ($parentDevice) { $parentDevice } else { $Device }
         $queryRole = if ($parentDevice) { 'Child' } else { 'Parent' }
 
-        $parentType = if ($effectiveParent.DetectedType -eq 'Computer') { 'Desktop' } else { $effectiveParent.DetectedType }
+        $parentType = Get-AssociatedDeviceDisplayType -Device $effectiveParent
         $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
@@ -1432,7 +1454,7 @@ function Find-SampleDevice {
     function Get-MaintenanceTypeOrDefault {
         param([string]$MaintenanceType,[string]$DeviceName)
         if (-not [string]::IsNullOrWhiteSpace($MaintenanceType)) { return $MaintenanceType.Trim() }
-        if (-not [string]::IsNullOrWhiteSpace($DeviceName) -and $DeviceName.Trim() -match '^(?i)AO') { return 'Mobile Cart' }
+        if (-not [string]::IsNullOrWhiteSpace($DeviceName) -and $DeviceName.Trim() -match '(?i)^AO') { return 'Mobile Cart' }
         return 'General Rounding'
     }
 

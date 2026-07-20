@@ -305,9 +305,11 @@ try {
 
     function Get-FieldValue {
         param([object]$Row,[string[]]$Names)
+        if (-not $Row) { return '' }
         foreach ($name in $Names) {
-            if ($Row.PSObject.Properties.Name -contains $name) {
-                $value = $Row.$name
+            $property = $Row.PSObject.Properties[$name]
+            if ($property) {
+                $value = $property.Value
                 if (-not [string]::IsNullOrWhiteSpace([string]$value)) { return [string]$value }
             }
         }

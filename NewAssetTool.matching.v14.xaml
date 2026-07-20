@@ -798,12 +798,12 @@
 
                                         <StackPanel Grid.Column="2">
                                             <Border Style="{StaticResource CheckRowBorderStyle}">
-                                                <CheckBox x:Name="CablingNeededCheckBox" Style="{StaticResource RoundingCheckBoxStyle}" Content="Cabling needed"/>
-                                            </Border>
-                                            <Border Style="{StaticResource CheckRowBorderStyle}">
                                                 <CheckBox x:Name="PhysicalCartCheckBox" Style="{StaticResource RoundingCheckBoxStyle}" Content="Check physical cart is working"/>
                                             </Border>
-                                            <Border Style="{StaticResource CheckRowBorderStyle}">
+                                            <Border Style="{StaticResource CheckRowBorderStyle}" Background="{StaticResource LightButtonBrush}">
+                                                <CheckBox x:Name="CablingNeededCheckBox" Style="{StaticResource RoundingCheckBoxStyle}" Content="Cabling needed"/>
+                                            </Border>
+                                            <Border Style="{StaticResource CheckRowBorderStyle}" Background="{StaticResource LightButtonBrush}">
                                                 <CheckBox x:Name="AddDeviceToTrackerCheckBox" Style="{StaticResource RoundingCheckBoxStyle}" Content="Add device to device tracker"/>
                                             </Border>
                                         </StackPanel>

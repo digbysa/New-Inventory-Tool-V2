@@ -804,6 +804,67 @@ try {
         [System.Windows.MessageBox]::Show($message, 'Ping Result') | Out-Null
     }
 
+
+    function Show-MonitorLabelDialog {
+        param([hashtable]$Ui,[pscustomobject]$ParentDevice)
+        if (-not $ParentDevice) { return }
+
+        $assetTag = ''
+        $hostName = ''
+        try { if ($ParentDevice.AssetTag) { $assetTag = ('' + $ParentDevice.AssetTag).Trim() } } catch {}
+        try { if ($ParentDevice.Name) { $hostName = ('' + $ParentDevice.Name).Trim() } } catch {}
+        if ([string]::IsNullOrWhiteSpace($assetTag)) { $assetTag = '(blank)' }
+        if ([string]::IsNullOrWhiteSpace($hostName)) { $hostName = '(blank)' }
+
+        $window = New-Object System.Windows.Window
+        $window.Title = 'Monitor Label'
+        $window.SizeToContent = 'WidthAndHeight'
+        $window.WindowStartupLocation = 'CenterOwner'
+        $window.ResizeMode = 'NoResize'
+        $window.ShowInTaskbar = $false
+        $window.Owner = [System.Windows.Window]::GetWindow($Ui.MainTabControl)
+
+        $panel = New-Object System.Windows.Controls.StackPanel
+        $panel.Margin = '16'
+        $window.Content = $panel
+
+        $grid = New-Object System.Windows.Controls.Grid
+        $grid.Margin = '0,0,0,18'
+        $grid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='Auto' })) | Out-Null
+        $grid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='Auto' })) | Out-Null
+        $grid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' })) | Out-Null
+        $grid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' })) | Out-Null
+        $panel.Children.Add($grid) | Out-Null
+
+        $labelFontSize = 30
+        $valueFontSize = 30
+        $labelMargin = New-Object System.Windows.Thickness(0,0,14,10)
+        $valueMargin = New-Object System.Windows.Thickness(0,0,0,10)
+
+        $assetLabel = New-Object System.Windows.Controls.TextBlock -Property @{ Text='Asset:'; FontSize=$labelFontSize; Margin=$labelMargin; VerticalAlignment='Center' }
+        $assetValue = New-Object System.Windows.Controls.TextBlock -Property @{ Text=$assetTag; FontSize=$valueFontSize; FontWeight='Bold'; Margin=$valueMargin; VerticalAlignment='Center' }
+        $hostLabel = New-Object System.Windows.Controls.TextBlock -Property @{ Text='Hostname:'; FontSize=$labelFontSize; Margin=$labelMargin; VerticalAlignment='Center' }
+        $hostValue = New-Object System.Windows.Controls.TextBlock -Property @{ Text=$hostName; FontSize=$valueFontSize; FontWeight='Bold'; Margin=$valueMargin; VerticalAlignment='Center' }
+
+        [System.Windows.Controls.Grid]::SetRow($assetLabel, 0); [System.Windows.Controls.Grid]::SetColumn($assetLabel, 0)
+        [System.Windows.Controls.Grid]::SetRow($assetValue, 0); [System.Windows.Controls.Grid]::SetColumn($assetValue, 1)
+        [System.Windows.Controls.Grid]::SetRow($hostLabel, 1); [System.Windows.Controls.Grid]::SetColumn($hostLabel, 0)
+        [System.Windows.Controls.Grid]::SetRow($hostValue, 1); [System.Windows.Controls.Grid]::SetColumn($hostValue, 1)
+        $grid.Children.Add($assetLabel) | Out-Null
+        $grid.Children.Add($assetValue) | Out-Null
+        $grid.Children.Add($hostLabel) | Out-Null
+        $grid.Children.Add($hostValue) | Out-Null
+
+        $buttonPanel = New-Object System.Windows.Controls.StackPanel -Property @{ Orientation='Horizontal'; HorizontalAlignment='Right' }
+        $closeButton = New-Object System.Windows.Controls.Button -Property @{ Content='Close'; MinWidth=86; Padding='14,6'; IsCancel=$true }
+        $closeButton.Add_Click({ $window.Close() })
+        $buttonPanel.Children.Add($closeButton) | Out-Null
+        $panel.Children.Add($buttonPanel) | Out-Null
+
+        $window.Add_ContentRendered({ $closeButton.Focus() | Out-Null })
+        $window.ShowDialog() | Out-Null
+    }
+
     function Get-RemoteDeviceSerials {
         param([string]$ComputerName,[Nullable[bool]]$PingSucceeded=$null)
         $result = [pscustomobject]@{ ComputerSerial=$null; MonitorSerials=@(); Offline=$false }
@@ -1637,7 +1698,19 @@ function Find-SampleDevice {
         }
     })
     $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })
-    $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Monitor Label button clicked.', 'Monitor Label') | Out-Null })
+    $ui.MonitorLabelButton.Add_Click({
+        $device = $script:AppState.CurrentDevice
+        if (-not $device -and -not [string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) {
+            $device = Find-InventoryMatch -SearchTerm $ui.SearchTextBox.Text -Inventory $script:AppState.Inventory
+        }
+        $parent = if ($device) { Resolve-ParentDevice -Device $device -Inventory $script:AppState.Inventory } else { $null }
+        if (-not $parent) { $parent = $device }
+        if (-not $parent) {
+            [System.Windows.MessageBox]::Show('No parent device available to show.', 'Monitor Label') | Out-Null
+            return
+        }
+        Show-MonitorLabelDialog -Ui $ui -ParentDevice $parent
+    })
     $ui.FixNameButton.Add_Click({
         $device = $script:AppState.SelectedSummaryDevice
         $parent = $script:AppState.SelectedSummaryParent

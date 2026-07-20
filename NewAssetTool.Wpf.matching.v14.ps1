@@ -1250,6 +1250,142 @@ try {
         return $changed
     }
 
+
+    function Normalize-LocationValue {
+        param([string]$Value)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+        return (($Value -replace ([char]0xFEFF), '').Trim().ToUpperInvariant())
+    }
+
+    function Sort-LocationFloors {
+        param([object[]]$Floors)
+        return @($Floors | Sort-Object { if ($_ -match '^-?\d+$') { '{0:D8}' -f [int]$_ } else { [string]$_ } } -Unique)
+    }
+
+    function Get-LocationFieldValue {
+        param([object]$Row,[string]$Name)
+        return Get-FieldValue -Row $Row -Names @($Name,(([char]0xFEFF) + $Name))
+    }
+
+    function Get-LocationRows {
+        param([pscustomobject]$Inventory)
+        $rows = New-Object System.Collections.Generic.List[object]
+        $seen = @{}
+        $add = {
+            param($city,$location,$building,$floor,$room,$department)
+            $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
+            if (-not $seen.ContainsKey($key)) {
+                $seen[$key] = $true
+                [void]$rows.Add([pscustomobject]@{ City=[string]$city; Location=[string]$location; Building=[string]$building; Floor=[string]$floor; Room=[string]$room; Department=[string]$department })
+            }
+        }
+        foreach ($row in @($Inventory.Locations)) {
+            & $add (Get-LocationFieldValue $row 'City') (Get-LocationFieldValue $row 'Location') (Get-LocationFieldValue $row 'Building') (Get-LocationFieldValue $row 'Floor') (Get-LocationFieldValue $row 'Room') (Get-LocationFieldValue $row 'Department')
+        }
+        foreach ($row in @($Inventory.Computers)) {
+            & $add (Get-FieldValue $row @('location.city','City')) (Get-FieldValue $row @('location','Location')) (Get-FieldValue $row @('u_building','Building')) (Get-FieldValue $row @('u_floor','Floor')) (Get-FieldValue $row @('u_room','Room')) (Get-FieldValue $row @('u_department_location','Department'))
+        }
+        return @($rows)
+    }
+
+    function Test-LocationColumnValue {
+        param([pscustomobject]$Inventory,[string]$Value,[string]$Column)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+        $n = Normalize-LocationValue $Value
+        foreach ($row in @($Inventory.Locations)) {
+            if ((Normalize-LocationValue (Get-LocationFieldValue $row $Column)) -eq $n) { return $true }
+        }
+        return $false
+    }
+
+    function Extract-RoomCode {
+        param([string]$Value)
+        $n = Normalize-LocationValue $Value
+        $m = [regex]::Match($n, '^[A-Z0-9]+')
+        if ($m.Success) { return $m.Value }
+        return ''
+    }
+
+    function Test-LocationRoomValue {
+        param([pscustomobject]$Inventory,[string]$Value)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+        $n = Normalize-LocationValue $Value
+        $code = Extract-RoomCode $Value
+        foreach ($row in @($Inventory.Locations)) {
+            $room = Get-LocationFieldValue $row 'Room'
+            if ((Normalize-LocationValue $room) -eq $n) { return $true }
+            if ($code -and (Extract-RoomCode $room) -eq $code) { return $true }
+        }
+        return $false
+    }
+
+    function Set-LocationValidationStyle {
+        param([hashtable]$Ui,[pscustomobject]$Inventory)
+        $validBrush = New-Brush '#CCF2D3'; $validBorder = New-Brush '#7CE0A6'
+        $badBrush = New-Brush '#FCE3E5'; $badBorder = New-Brush '#F5A3AA'
+        $checks = @(
+            @($Ui.CityTextBox,       (Test-LocationColumnValue $Inventory $Ui.CityTextBox.Text 'City')),
+            @($Ui.LocationTextBox,   (Test-LocationColumnValue $Inventory $Ui.LocationTextBox.Text 'Location')),
+            @($Ui.BuildingTextBox,   (Test-LocationColumnValue $Inventory $Ui.BuildingTextBox.Text 'Building')),
+            @($Ui.FloorTextBox,      (Test-LocationColumnValue $Inventory $Ui.FloorTextBox.Text 'Floor')),
+            @($Ui.RoomTextBox,       (Test-LocationRoomValue $Inventory $Ui.RoomTextBox.Text)),
+            @($Ui.DepartmentTextBox, (Test-LocationColumnValue $Inventory $Ui.DepartmentTextBox.Text 'Department'))
+        )
+        foreach ($item in $checks) {
+            $box = $item[0]; $ok = [bool]$item[1]
+            $box.Background = if ($ok) { $validBrush } else { $badBrush }
+            $box.BorderBrush = if ($ok) { $validBorder } else { $badBorder }
+        }
+    }
+
+    function Get-ValidLocationSelection {
+        param([string]$Value,[object[]]$Items)
+        $n = Normalize-LocationValue $Value
+        if (-not $n) { return $null }
+        foreach ($item in @($Items)) { if ((Normalize-LocationValue $item) -eq $n) { return [string]$item } }
+        return $null
+    }
+
+    function Set-ComboItems {
+        param([System.Windows.Controls.ComboBox]$Combo,[object[]]$Items,[string]$Text)
+        $Combo.Items.Clear()
+        foreach ($item in @($Items)) { [void]$Combo.Items.Add([string]$item) }
+        $Combo.Text = $Text
+    }
+
+    function Populate-LocationCombos {
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ChangedLevel='')
+        $script:IsPopulatingLocationCombos = $true
+        try {
+            $rows = Get-LocationRows -Inventory $Inventory
+            $city = $Ui.CityComboBox.Text; $loc = $Ui.LocationComboBox.Text; $building = $Ui.BuildingComboBox.Text; $floor = $Ui.FloorComboBox.Text
+            $cities = @($rows | ForEach-Object City | Where-Object { $_ } | Sort-Object -Unique)
+            Set-ComboItems $Ui.CityComboBox $cities $city
+            $validCity = Get-ValidLocationSelection $Ui.CityComboBox.Text $cities
+            if ($ChangedLevel -eq 'City') { $loc=''; $building=''; $floor=''; $Ui.RoomComboBox.Text='' }
+            $locRows = @($rows | Where-Object { -not $validCity -or (Normalize-LocationValue $_.City) -eq (Normalize-LocationValue $validCity) })
+            $locs = @($locRows | ForEach-Object Location | Where-Object { $_ } | Sort-Object -Unique)
+            Set-ComboItems $Ui.LocationComboBox $locs $loc
+            $validLoc = Get-ValidLocationSelection $Ui.LocationComboBox.Text $locs
+            if ($ChangedLevel -eq 'Location') { $building=''; $floor=''; $Ui.RoomComboBox.Text='' }
+            $bldRows = @($locRows | Where-Object { $validLoc -and (Normalize-LocationValue $_.Location) -eq (Normalize-LocationValue $validLoc) })
+            $buildings = @($bldRows | ForEach-Object Building | Where-Object { $_ } | Sort-Object -Unique)
+            Set-ComboItems $Ui.BuildingComboBox $buildings $building
+            $validBuilding = Get-ValidLocationSelection $Ui.BuildingComboBox.Text $buildings
+            if ($ChangedLevel -eq 'Building') { $floor=''; $Ui.RoomComboBox.Text='' }
+            $floorRows = @($bldRows | Where-Object { $validBuilding -and (Normalize-LocationValue $_.Building) -eq (Normalize-LocationValue $validBuilding) })
+            $floors = Sort-LocationFloors @($floorRows | ForEach-Object Floor | Where-Object { $_ })
+            Set-ComboItems $Ui.FloorComboBox $floors $floor
+            $validFloor = Get-ValidLocationSelection $Ui.FloorComboBox.Text $floors
+            if ($ChangedLevel -eq 'Floor') { $Ui.RoomComboBox.Text='' }
+            $roomRows = @($floorRows | Where-Object { $validFloor -and (Normalize-LocationValue $_.Floor) -eq (Normalize-LocationValue $validFloor) })
+            $rooms = @($roomRows | ForEach-Object Room | Where-Object { $_ } | Sort-Object -Unique)
+            Set-ComboItems $Ui.RoomComboBox $rooms $Ui.RoomComboBox.Text
+            $departments = @($rows | ForEach-Object Department | Where-Object { $_ } | Sort-Object -Unique)
+            Set-ComboItems $Ui.DepartmentComboBox $departments $Ui.DepartmentComboBox.Text
+        } finally { $script:IsPopulatingLocationCombos = $false }
+    }
+
     function Set-SelectedSummaryDevice {
         param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
         if (-not $Device) { return }
@@ -1270,6 +1406,7 @@ try {
         $Ui.FloorTextBox.Text = $locationDevice.Floor
         $Ui.RoomTextBox.Text = $locationDevice.Room
         $Ui.DepartmentTextBox.Text = $locationDevice.Department
+        Set-LocationValidationStyle -Ui $Ui -Inventory $Inventory
         $script:AppState.SelectedSummaryDevice = $Device
         $script:AppState.SelectedSummaryParent = $parentDevice
         Update-FixNameButtonState -Ui $Ui -Device $Device -ParentDevice $parentDevice
@@ -1348,6 +1485,7 @@ try {
         $Ui.FloorTextBox.Text = $device.Floor
         $Ui.RoomTextBox.Text = $device.Room
         $Ui.DepartmentTextBox.Text = $device.Department
+        if ($script:AppState -and $script:AppState.Inventory) { Set-LocationValidationStyle -Ui $Ui -Inventory $script:AppState.Inventory }
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm')"
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = $SampleData.Associated
@@ -1445,7 +1583,7 @@ try {
         $Ui.LastRoundedContainer.Background = New-Brush '#F8FAFC'
         $Ui.LastRoundedContainer.BorderBrush = New-Brush '#D9E1EA'
         $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
-        foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { Set-ControlText -Control $box -Value '' }
+        foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { Set-ControlText -Control $box -Value ''; $box.Background = New-Brush '#CCF2D3'; $box.BorderBrush = New-Brush '#7CE0A6' }
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
         $Ui.NearbyDataGrid.ItemsSource = @()
@@ -1563,13 +1701,17 @@ function Find-SampleDevice {
     }
 
     function Toggle-LocationEditMode {
-        param([hashtable]$Ui,[bool]$IsEditing)
+        param([hashtable]$Ui,[bool]$IsEditing,[pscustomobject]$Inventory)
         $readOnlyControls = @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)
         $comboControls = @($Ui.CityComboBox,$Ui.LocationComboBox,$Ui.BuildingComboBox,$Ui.FloorComboBox,$Ui.RoomComboBox,$Ui.DepartmentComboBox)
         foreach ($control in $readOnlyControls) { $control.Visibility = if ($IsEditing) { 'Collapsed' } else { 'Visible' } }
         foreach ($control in $comboControls) { $control.Visibility = if ($IsEditing) { 'Visible' } else { 'Collapsed' } }
         $Ui.CancelEditLocationButton.Visibility = if ($IsEditing) { 'Visible' } else { 'Collapsed' }
         $Ui.EditLocationButton.Content = if ($IsEditing) { 'Save' } else { 'Edit Location' }
+        if ($IsEditing -and $Inventory) {
+            foreach ($pair in @(@($Ui.CityComboBox,$Ui.CityTextBox),@($Ui.LocationComboBox,$Ui.LocationTextBox),@($Ui.BuildingComboBox,$Ui.BuildingTextBox),@($Ui.FloorComboBox,$Ui.FloorTextBox),@($Ui.RoomComboBox,$Ui.RoomTextBox),@($Ui.DepartmentComboBox,$Ui.DepartmentTextBox))) { $pair[0].IsEditable = $true; $pair[0].Text = $pair[1].Text }
+            Populate-LocationCombos -Ui $Ui -Inventory $Inventory
+        }
     }
 
     function Save-LocationValues {
@@ -1581,6 +1723,18 @@ function Find-SampleDevice {
         Set-ControlText -Control $Ui.FloorTextBox -Value $Ui.FloorComboBox.Text
         Set-ControlText -Control $Ui.RoomTextBox -Value $Ui.RoomComboBox.Text
         Set-ControlText -Control $Ui.DepartmentTextBox -Value $Ui.DepartmentComboBox.Text
+        if ($script:AppState) {
+            $targets = @($script:AppState.SelectedSummaryParent,$script:AppState.SelectedSummaryDevice,$script:AppState.CurrentDevice) | Where-Object { $_ }
+            foreach ($target in $targets) {
+                $target.City = $Ui.CityTextBox.Text
+                $target.Location = $Ui.LocationTextBox.Text
+                $target.Building = $Ui.BuildingTextBox.Text
+                $target.Floor = $Ui.FloorTextBox.Text
+                $target.Room = $Ui.RoomTextBox.Text
+                $target.Department = $Ui.DepartmentTextBox.Text
+            }
+            if ($script:AppState.Inventory) { Set-LocationValidationStyle -Ui $Ui -Inventory $script:AppState.Inventory }
+        }
     }
 
     $resolvedXamlPath = (Resolve-Path -LiteralPath $XamlPath).Path
@@ -1645,6 +1799,11 @@ function Find-SampleDevice {
         $combo.Items.Clear()
         Set-ControlText -Control $combo -Value ''
     }
+
+    $ui.CityComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'City' } })
+    $ui.LocationComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Location' } })
+    $ui.BuildingComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Building' } })
+    $ui.FloorComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Floor' } })
 
     $ui.QueryButton.Add_Click({
         $searchTerm = $ui.SearchTextBox.Text
@@ -1802,10 +1961,10 @@ function Find-SampleDevice {
             Toggle-LocationEditMode -Ui $ui -IsEditing:$false
         }
         else {
-            Toggle-LocationEditMode -Ui $ui -IsEditing:$true
+            Toggle-LocationEditMode -Ui $ui -IsEditing:$true -Inventory $script:AppState.Inventory
         }
     })
-    $ui.CancelEditLocationButton.Add_Click({ Toggle-LocationEditMode -Ui $ui -IsEditing:$false })
+    $ui.CancelEditLocationButton.Add_Click({ Toggle-LocationEditMode -Ui $ui -IsEditing:$false; Set-LocationValidationStyle -Ui $ui -Inventory $script:AppState.Inventory })
     $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
     $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) - 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
     $ui.CheckCompleteButton.Add_Click({

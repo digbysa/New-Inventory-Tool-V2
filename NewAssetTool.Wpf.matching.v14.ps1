@@ -533,7 +533,7 @@ try {
         $queryRole = if ($parentDevice) { 'Child' } else { 'Parent' }
 
         $parentType = if ($effectiveParent.DetectedType -eq 'Computer') { 'Desktop' } else { $effectiveParent.DetectedType }
-        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
+        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName
@@ -564,7 +564,7 @@ try {
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
                 $role = if ($Device.AssetTag -and ($childAssetTag -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
                 $childDevice = ConvertTo-DeviceRecord -Row $row -DetectedType $type
-                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
+                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
                 $results += $record
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag)) { $addedChildAssetTags[$childAssetTag] = $true }
             }
@@ -684,8 +684,125 @@ try {
         })
     }
 
-    function Show-AddPeripheralDialog {
+    function Convert-WmiIdToString {
+        param([UInt16[]]$Id)
+        if (-not $Id) { return $null }
+        $chars = @()
+        foreach ($code in $Id) {
+            if ($code -le 0) { break }
+            if ($code -gt 0 -and $code -lt 256) { $chars += [char]$code }
+        }
+        if ($chars.Count -eq 0) { return $null }
+        return (-join $chars).Trim()
+    }
+
+    function Test-ComputerPingable {
+        param([string]$ComputerName)
+        if ([string]::IsNullOrWhiteSpace($ComputerName)) { return $false }
+        try { return [bool](Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -ErrorAction SilentlyContinue) } catch { return $false }
+    }
+
+    function Get-RemoteDeviceSerials {
+        param([string]$ComputerName,[Nullable[bool]]$PingSucceeded=$null)
+        $result = [pscustomobject]@{ ComputerSerial=$null; MonitorSerials=@(); Offline=$false }
+        if ([string]::IsNullOrWhiteSpace($ComputerName)) { return $result }
+        $online = if ($null -ne $PingSucceeded) { [bool]$PingSucceeded } else { Test-ComputerPingable -ComputerName $ComputerName }
+        if (-not $online) { $result.Offline = $true; return $result }
+        try {
+            $bios = Get-CimInstance -ClassName Win32_BIOS -ComputerName $ComputerName -ErrorAction Stop
+            if ($bios -and $bios.SerialNumber) { $result.ComputerSerial = $bios.SerialNumber.Trim() }
+        } catch {}
+        if (-not $result.ComputerSerial) {
+            try {
+                $csprod = Get-CimInstance -ClassName Win32_ComputerSystemProduct -ComputerName $ComputerName -ErrorAction Stop
+                if ($csprod -and $csprod.IdentifyingNumber) { $result.ComputerSerial = $csprod.IdentifyingNumber.Trim() }
+            } catch {}
+        }
+        try {
+            $monitorData = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ComputerName $ComputerName -ErrorAction Stop
+            foreach ($m in $monitorData) {
+                $serial = Convert-WmiIdToString -Id $m.SerialNumberID
+                if (-not [string]::IsNullOrWhiteSpace($serial)) { $result.MonitorSerials += $serial.Trim() }
+            }
+        } catch {}
+        return $result
+    }
+
+    function Reset-AssociatedSerialValidation {
+        param([object[]]$Items)
+        foreach ($item in @($Items)) {
+            if (-not $item) { continue }
+            $item.SerialForeground = '#1F2937'
+            $item.SerialToolTip = ''
+        }
+    }
+
+    function Apply-AssociatedDeviceValidation {
+        param([object[]]$Items,[pscustomobject]$WmiData)
+        if (-not $WmiData) { return }
+        $computerTypes = @('COMPUTER','DESKTOP','LAPTOP','TABLET','THIN CLIENT','TANGENT')
+        $monitorSerials = @()
+        try { if ($WmiData.MonitorSerials) { $monitorSerials = @($WmiData.MonitorSerials) } } catch {}
+        $computerSerial = ''
+        try { if ($WmiData.ComputerSerial) { $computerSerial = $WmiData.ComputerSerial.Trim() } } catch {}
+        Reset-AssociatedSerialValidation -Items $Items
+        foreach ($item in @($Items)) {
+            if (-not $item -or [string]::IsNullOrWhiteSpace($item.Serial)) { continue }
+            $targets = @()
+            $tooltip = ''
+            $type = if ($item.Type) { $item.Type.Trim().ToUpper() } else { '' }
+            if ($computerTypes -contains $type) {
+                if ($computerSerial) { $targets = @($computerSerial.Trim().ToUpper()); $tooltip = "Detected computer serial: $computerSerial" }
+                else { $tooltip = 'No computer serial retrieved from WMI.' }
+            } elseif ($type -eq 'MONITOR') {
+                foreach ($m in $monitorSerials) { if ($m) { $targets += $m.Trim().ToUpper() } }
+                if ($targets.Count -gt 0) { $tooltip = 'Detected monitor serials: ' + ($monitorSerials -join ', ') }
+                else { $tooltip = 'No monitor serials retrieved from WMI/EDID.' }
+            } else { continue }
+            $isMatch = $false
+            foreach ($target in $targets) { if ($item.Serial.Trim().ToUpper() -eq $target) { $isMatch = $true; break } }
+            $item.SerialForeground = if ($isMatch) { '#228B22' } else { '#CD5C5C' }
+            $item.SerialToolTip = $tooltip
+        }
+    }
+
+    function Get-UnlinkedMonitorSerials {
+        param([object[]]$Items,[object[]]$MonitorSerials)
+        $linked = New-Object System.Collections.ArrayList
+        foreach ($item in @($Items)) {
+            if (-not $item -or $item.Type -ne 'Monitor' -or [string]::IsNullOrWhiteSpace($item.Serial)) { continue }
+            $normalized = $item.Serial.Trim().ToUpper()
+            if (-not $linked.Contains($normalized)) { [void]$linked.Add($normalized) }
+        }
+        $missing = New-Object System.Collections.ArrayList
+        foreach ($serial in @($MonitorSerials)) {
+            if ([string]::IsNullOrWhiteSpace($serial)) { continue }
+            $normalized = $serial.Trim().ToUpper()
+            if (-not $linked.Contains($normalized) -and -not $missing.Contains($normalized)) { [void]$missing.Add($normalized) }
+        }
+        return $missing
+    }
+
+    function Validate-AssociatedDevices {
         param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath)
+        if (-not $ParentDevice -or [string]::IsNullOrWhiteSpace($ParentDevice.Name)) { [System.Windows.MessageBox]::Show('Enter a device name before validating.','Validate Devices') | Out-Null; return }
+        $pingable = Test-ComputerPingable -ComputerName $ParentDevice.Name
+        if (-not $pingable) { [System.Windows.MessageBox]::Show('Device is not pingable.','Validate Devices') | Out-Null; return }
+        $wmiData = Get-RemoteDeviceSerials -ComputerName $ParentDevice.Name -PingSucceeded $pingable
+        if ($wmiData.Offline) { [System.Windows.MessageBox]::Show('Device is not pingable.','Validate Devices') | Out-Null; return }
+        $items = @($Ui.AssociatedDevicesDataGrid.ItemsSource)
+        Apply-AssociatedDeviceValidation -Items $items -WmiData $wmiData
+        $Ui.AssociatedDevicesDataGrid.Items.Refresh()
+        $missingMonitors = Get-UnlinkedMonitorSerials -Items $items -MonitorSerials @($wmiData.MonitorSerials)
+        if ($missingMonitors -and $missingMonitors.Count -gt 0) {
+            $serialToLink = $missingMonitors | Select-Object -First 1
+            $changed = Show-AddPeripheralDialog -Ui $Ui -ParentDevice $ParentDevice -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath -DefaultSearchText $serialToLink -InfoMessage 'This monitor is connected but not linked. Click Add to link.'
+            if ($changed) { $Ui.AssociatedDevicesDataGrid.ItemsSource = Build-AssociatedDevices -Device $ParentDevice -Inventory $Inventory }
+        }
+    }
+
+    function Show-AddPeripheralDialog {
+        param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath,[string]$DefaultSearchText='',[string]$InfoMessage='')
         if (-not $ParentDevice) { return $false }
         $window = New-Object System.Windows.Window
         $window.Title = 'Add Peripheral (Name/Asset/Serial)'
@@ -698,8 +815,10 @@ try {
         $panel.Margin = '12'
         $window.Content = $panel
         $panel.Children.Add((New-Object System.Windows.Controls.TextBlock -Property @{ Text='Universal Search (name / asset / serial):'; Margin='0,0,0,4' })) | Out-Null
+        if (-not [string]::IsNullOrWhiteSpace($InfoMessage)) { $panel.Children.Add((New-Object System.Windows.Controls.TextBlock -Property @{ Text=$InfoMessage; Foreground='#B45309'; TextWrapping='Wrap'; Margin='0,0,0,8' })) | Out-Null }
         $txt = New-Object System.Windows.Controls.TextBox
         $txt.MinWidth = 320
+        $txt.Text = $DefaultSearchText
         $txt.Margin = '0,0,0,6'
         $panel.Children.Add($txt) | Out-Null
         $hint = New-Object System.Windows.Controls.TextBlock -Property @{ Text='Press Enter to search by cart name, asset tag, or serial number.'; Foreground='#64748B'; Margin='0,0,0,8' }
@@ -795,6 +914,7 @@ try {
             $window.DialogResult = $true
             $window.Close()
         })
+        if (-not [string]::IsNullOrWhiteSpace($DefaultSearchText)) { $result = Resolve-AssociatedPeripheralLookup -Query $DefaultSearchText -Inventory $Inventory; & $updatePreview $result }
         $null = $window.ShowDialog()
         return [bool]$window.DialogResult
     }
@@ -983,8 +1103,8 @@ try {
         }
 
         $associated = @(
-            [pscustomobject]@{ Role='Parent'; Type='Tangent'; Name='AO400568'; AssetTag='HSS-8093577'; Serial='C24102M031'; RITM='TRP - 26 May 2025'; Retire='31 May 2028' },
-            [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; RITM='-'; Retire='-' }
+            [pscustomobject]@{ Role='Parent'; Type='Tangent'; Name='AO400568'; AssetTag='HSS-8093577'; Serial='C24102M031'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='TRP - 26 May 2025'; Retire='31 May 2028' },
+            [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='-'; Retire='-' }
         )
 
         $nearby = @(
@@ -1394,6 +1514,12 @@ function Find-SampleDevice {
             $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
             Set-SelectedSummaryDevice -Ui $ui -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
         }
+    })
+    $ui.ValidateAssociatedButton.Add_Click({
+        if (-not $script:AppState.CurrentDevice) { return }
+        $parent = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+        if (-not $parent) { $parent = $script:AppState.CurrentDevice }
+        Validate-AssociatedDevices -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
     })
     $ui.PingButton.Add_Click({ [System.Windows.MessageBox]::Show('Ping button clicked.', 'Ping') | Out-Null })
     $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })

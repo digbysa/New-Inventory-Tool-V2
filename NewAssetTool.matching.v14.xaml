@@ -367,6 +367,7 @@
                              Background="Transparent"
                              BorderThickness="0"
                              Foreground="White"
+                             CaretBrush="White"
                              Padding="10,3,10,4"
                              VerticalContentAlignment="Center"/>
                 </Border>

@@ -645,6 +645,18 @@ try {
         return $trimmed
     }
 
+    function Resolve-ParentAssetTag {
+        param([string]$Token,[pscustomobject]$Inventory)
+        if ([string]::IsNullOrWhiteSpace($Token)) { return '' }
+        $trimmed = $Token.Trim()
+        if (-not $Inventory) { return $trimmed }
+        foreach ($key in (Get-AssociationTokenVariants -Token $trimmed)) {
+            if ($Inventory.IndexByAsset -and $Inventory.IndexByAsset.ContainsKey($key)) { return $Inventory.IndexByAsset[$key].AssetTag }
+            if ($Inventory.IndexByName -and $Inventory.IndexByName.ContainsKey($key)) { return $Inventory.IndexByName[$key].AssetTag }
+        }
+        return $trimmed
+    }
+
     function Add-CmdbAssociationUpdate {
         param(
             [string]$ResolvedXamlPath,
@@ -652,18 +664,20 @@ try {
             [string]$OldParent,
             [string]$NewParent,
             [string]$OldName,
-            [string]$NewName
+            [string]$NewName,
+            [string]$Action = 'Link',
+            [pscustomobject]$Inventory
         )
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $cmdbLink = Get-CmdbLink -DeviceType $Candidate.DetectedType -AssetTag $Candidate.AssetTag
         $cmdbHyperlink = if ([string]::IsNullOrWhiteSpace($cmdbLink)) { '' } else { "=HYPERLINK(`"$cmdbLink`",`"$($Candidate.AssetTag)`")" }
         Add-CsvRow -Path (Get-CmdbUpdatesPath -ResolvedXamlPath $ResolvedXamlPath) -Row ([pscustomobject]@{
             Timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-            Action = 'Link'
+            Action = $Action
             DeviceType = $Candidate.DetectedType
             AssetTag = $Candidate.AssetTag
-            OldParent = $OldParent
-            NewParent = $NewParent
+            OldParent = Resolve-ParentAssetTag -Token $OldParent -Inventory $Inventory
+            NewParent = Resolve-ParentAssetTag -Token $NewParent -Inventory $Inventory
             OldName = $OldName
             NewName = $NewName
             CMDBLink = $cmdbHyperlink
@@ -776,7 +790,7 @@ try {
                     }
                 }
             }
-            Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $target -OldParent $oldParent -NewParent $ParentDevice.AssetTag -OldName $oldName -NewName $newName
+            Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $target -OldParent $oldParent -NewParent $ParentDevice.AssetTag -OldName $oldName -NewName $newName -Action 'Link' -Inventory $Inventory
             Build-InventoryIndices -Inventory $Inventory
             $window.DialogResult = $true
             $window.Close()
@@ -859,6 +873,49 @@ try {
                 }
             }
         }
+    }
+
+    function Remove-SelectedPeripheralAssociations {
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath)
+        if (-not $Ui.AssociatedDevicesDataGrid -or -not $Inventory) { return $false }
+        $selectedRows = @($Ui.AssociatedDevicesDataGrid.SelectedItems)
+        if ($selectedRows.Count -eq 0) { return $false }
+
+        $changed = $false
+        foreach ($selected in $selectedRows) {
+            if (-not $selected) { continue }
+            $role = [string]$selected.Role
+            if (($role -ne 'Child') -and ($role -ne 'Grandchild')) { continue }
+            if ([string]::IsNullOrWhiteSpace($selected.AssetTag)) { continue }
+
+            $found = $false
+            foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
+                foreach ($row in $Inventory.$collectionName) {
+                    $assetTag = Get-FieldValue -Row $row -Names @('asset_tag','AssetTag')
+                    if ([string]::IsNullOrWhiteSpace($assetTag) -or $assetTag.Trim().ToUpper() -ne $selected.AssetTag.Trim().ToUpper()) { continue }
+
+                    $deviceType = if ($collectionName -eq 'Carts') { 'Cart' } elseif ($collectionName -eq 'Mics') { 'Mic' } elseif ($collectionName -eq 'Scanners') { 'Scanner' } else { 'Monitor' }
+                    $device = ConvertTo-DeviceRecord -Row $row -DetectedType $deviceType
+                    $oldParent = $device.Parent
+                    $oldName = $device.Name
+                    $newName = if ([string]::IsNullOrWhiteSpace($device.Serial)) { $device.Name } else { $device.Serial }
+
+                    Set-RowFieldValue -Row $row -Name 'u_parent_asset' -Value $null
+                    Set-RowFieldValue -Row $row -Name 'name' -Value $newName
+                    $device.Parent = $null
+                    $device.Name = $newName
+
+                    Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $device -OldParent $oldParent -NewParent $null -OldName $oldName -NewName $newName -Action 'Unlink' -Inventory $Inventory
+                    $changed = $true
+                    $found = $true
+                    break
+                }
+                if ($found) { break }
+            }
+        }
+
+        if ($changed) { Build-InventoryIndices -Inventory $Inventory }
+        return $changed
     }
 
     function Set-SelectedSummaryDevice {
@@ -1328,6 +1385,16 @@ function Find-SampleDevice {
             $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
         }
     })
+    $ui.RemovePeripheralButton.Add_Click({
+        if (-not $script:AppState.CurrentDevice) { return }
+        $changed = Remove-SelectedPeripheralAssociations -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+        if ($changed) {
+            $associated = Build-AssociatedDevices -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+            $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
+            $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
+            Set-SelectedSummaryDevice -Ui $ui -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+        }
+    })
     $ui.PingButton.Add_Click({ [System.Windows.MessageBox]::Show('Ping button clicked.', 'Ping') | Out-Null })
     $ui.LiveDetailsButton.Add_Click({ [System.Windows.MessageBox]::Show('Live Details button clicked.', 'Live Details') | Out-Null })
     $ui.MonitorLabelButton.Add_Click({ [System.Windows.MessageBox]::Show('Monitor Label button clicked.', 'Monitor Label') | Out-Null })
@@ -1345,7 +1412,7 @@ function Find-SampleDevice {
         $oldName = $device.Name
         $device.Name = $expected
         Update-InventoryDeviceName -Inventory $script:AppState.Inventory -Device $device -NewName $expected
-        Add-CmdbAssociationUpdate -ResolvedXamlPath $resolvedXamlPath -Candidate $device -OldParent $device.Parent -NewParent $device.Parent -OldName $oldName -NewName $expected
+        Add-CmdbAssociationUpdate -ResolvedXamlPath $resolvedXamlPath -Candidate $device -OldParent $device.Parent -NewParent $device.Parent -OldName $oldName -NewName $expected -Action 'Link' -Inventory $script:AppState.Inventory
         Build-InventoryIndices -Inventory $script:AppState.Inventory
         Set-SelectedSummaryDevice -Ui $ui -Device $device -Inventory $script:AppState.Inventory
         if ($script:AppState.CurrentDevice) {

@@ -702,38 +702,53 @@ try {
         try { return [bool](Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -ErrorAction SilentlyContinue) } catch { return $false }
     }
 
-    function Convert-IPv4AddressToUInt64 {
-        param([Parameter(Mandatory=$true)][string]$IpAddress)
-        $parsed = [System.Net.IPAddress]::Parse($IpAddress)
-        $bytes = $parsed.GetAddressBytes()
-        if ($bytes.Count -ne 4) { throw "IPv4 address expected: $IpAddress" }
-        return ([uint64]$bytes[0] -shl 24) -bor ([uint64]$bytes[1] -shl 16) -bor ([uint64]$bytes[2] -shl 8) -bor [uint64]$bytes[3]
+    function ConvertTo-IPv4Bytes {
+        param([string]$IpAddress)
+        if ([string]::IsNullOrWhiteSpace($IpAddress)) { return $null }
+        try {
+            $parsed = [System.Net.IPAddress]::Parse($IpAddress.Trim())
+            $bytes = $parsed.GetAddressBytes()
+            if ($bytes.Length -ne 4) { return $null }
+            return $bytes
+        } catch {
+            return $null
+        }
     }
 
     function Resolve-SubnetName {
         param([string]$IpAddress,[string]$DataRoot)
         if ([string]::IsNullOrWhiteSpace($IpAddress)) { return 'Unknown' }
-        if ($IpAddress -match '^10\.64\.') { return 'VPN' }
+        $ip = $IpAddress.Trim()
+        if ($ip -match '^10\.64\.') { return 'VPN' }
 
         $subnetPath = Join-Path $DataRoot 'SiteSubnets.csv'
         if (-not (Test-Path -LiteralPath $subnetPath)) { return 'Unknown' }
 
-        try { $ipValue = Convert-IPv4AddressToUInt64 -IpAddress $IpAddress } catch { return 'Unknown' }
-        foreach ($row in Import-Csv -LiteralPath $subnetPath -Header 'Cidr','SubnetName','Notes') {
-            if (-not $row -or [string]::IsNullOrWhiteSpace($row.Cidr)) { continue }
-            $cidrParts = $row.Cidr.Trim().Split('/')
+        $ipBytes = ConvertTo-IPv4Bytes -IpAddress $ip
+        if (-not $ipBytes) { return 'Unknown' }
+
+        foreach ($line in (Get-Content -LiteralPath $subnetPath)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line.Split(',')
+            if ($parts.Count -lt 2) { continue }
+            $cidr = $parts[0].Trim()
+            $subnetName = $parts[1].Trim()
+            if ([string]::IsNullOrWhiteSpace($cidr) -or [string]::IsNullOrWhiteSpace($subnetName)) { continue }
+            $cidrParts = $cidr.Split('/')
             if ($cidrParts.Count -ne 2) { continue }
-            $subnetName = if ($row.PSObject.Properties.Name -contains 'SubnetName') { [string]$row.SubnetName } else { '' }
-            try {
-                $prefix = [int]$cidrParts[1]
-                if ($prefix -lt 0 -or $prefix -gt 32) { continue }
-                $networkValue = Convert-IPv4AddressToUInt64 -IpAddress $cidrParts[0].Trim()
-                $mask = if ($prefix -eq 0) { [uint64]0 } elseif ($prefix -eq 32) { [uint64]0xFFFFFFFF } else { ([uint64]0xFFFFFFFF) -shr $prefix -bxor [uint64]0xFFFFFFFF }
-                if (($ipValue -band $mask) -eq ($networkValue -band $mask)) {
-                    if ([string]::IsNullOrWhiteSpace($subnetName)) { return $row.Cidr.Trim() }
-                    return $subnetName.Trim()
-                }
-            } catch { continue }
+
+            $networkBytes = ConvertTo-IPv4Bytes -IpAddress $cidrParts[0]
+            if (-not $networkBytes) { continue }
+            try { $prefix = [int]$cidrParts[1] } catch { continue }
+            if ($prefix -lt 0 -or $prefix -gt 32) { continue }
+
+            $matches = $true
+            for ($i = 0; $i -lt 4; $i++) {
+                $bits = [Math]::Min([Math]::Max($prefix - (8 * $i), 0), 8)
+                $mask = if ($bits -ge 8) { [byte]255 } elseif ($bits -le 0) { [byte]0 } else { [byte]((0xFF -shl (8 - $bits)) -band 0xFF) }
+                if (($ipBytes[$i] -band $mask) -ne ($networkBytes[$i] -band $mask)) { $matches = $false; break }
+            }
+            if ($matches) { return $subnetName }
         }
         return 'Unknown'
     }

@@ -1870,7 +1870,7 @@ function Find-SampleDevice {
         }
     })
 
-    $ui.ValidatePeripheralsCheckBox.IsChecked = $true
+    $ui.ValidatePeripheralsCheckBox.IsChecked = $false
     $ui.LabelMonitorCheckBox.IsChecked = $false
     $ui.ValidateCableCheckBox.IsChecked = $false
     $ui.CablingNeededCheckBox.IsChecked = $false

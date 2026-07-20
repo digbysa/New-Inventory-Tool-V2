@@ -139,6 +139,7 @@ try {
 
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
+    function Get-CmdbUpdatesPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'CMDBUpdates.csv' }
     function Get-RoundingMapPath { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data/Rounding.csv' }
 
     function Ensure-OutputFolder {
@@ -151,6 +152,13 @@ try {
         param([string]$Path,[psobject]$Row)
         if (Test-Path -LiteralPath $Path) { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation -Append }
         else { $Row | Export-Csv -LiteralPath $Path -NoTypeInformation }
+    }
+
+    function Set-RowFieldValue {
+        param([object]$Row,[string]$Name,[object]$Value)
+        if (-not $Row -or [string]::IsNullOrWhiteSpace($Name)) { return }
+        if ($Row.PSObject.Properties.Name -contains $Name) { $Row.$Name = $Value }
+        else { $Row | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
     }
 
     function Set-DisplayText {
@@ -610,8 +618,59 @@ try {
         return [pscustomobject]@{ NormalizedInput=if($normalized){$normalized}else{$rawUpper}; Candidate=$null }
     }
 
+    function Get-ProposedPeripheralName {
+        param([pscustomobject]$Candidate,[pscustomobject]$ParentDevice)
+        if (-not $Candidate -or -not $ParentDevice) { return $null }
+        switch ($Candidate.DetectedType) {
+            'Monitor' { return $ParentDevice.Name }
+            'Mic' { return "$($ParentDevice.Name)-Mic" }
+            'Scanner' { return "$($ParentDevice.Name)-SCN" }
+            'Cart' { return "$($ParentDevice.Name)-CRT" }
+            default { return $Candidate.Name }
+        }
+    }
+
+    function Get-ParentPreviewDisplay {
+        param([string]$Token,[pscustomobject]$FallbackParent,[pscustomobject]$Inventory)
+        if ([string]::IsNullOrWhiteSpace($Token)) { return '(none)' }
+        $trimmed = $Token.Trim()
+        if ($FallbackParent -and $FallbackParent.AssetTag -and $trimmed.ToUpper() -eq $FallbackParent.AssetTag.Trim().ToUpper()) { return $FallbackParent.Name }
+        if ($Inventory) {
+            foreach ($key in (Get-AssociationTokenVariants -Token $trimmed)) {
+                if ($Inventory.IndexByAsset -and $Inventory.IndexByAsset.ContainsKey($key)) { return $Inventory.IndexByAsset[$key].Name }
+                if ($Inventory.IndexByName -and $Inventory.IndexByName.ContainsKey($key)) { return $Inventory.IndexByName[$key].Name }
+            }
+        }
+        return $trimmed
+    }
+
+    function Add-CmdbAssociationUpdate {
+        param(
+            [string]$ResolvedXamlPath,
+            [pscustomobject]$Candidate,
+            [string]$OldParent,
+            [string]$NewParent,
+            [string]$OldName,
+            [string]$NewName
+        )
+        Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
+        $cmdbLink = Get-CmdbLink -DeviceType $Candidate.DetectedType -AssetTag $Candidate.AssetTag
+        $cmdbHyperlink = if ([string]::IsNullOrWhiteSpace($cmdbLink)) { '' } else { "=HYPERLINK(`"$cmdbLink`",`"$($Candidate.AssetTag)`")" }
+        Add-CsvRow -Path (Get-CmdbUpdatesPath -ResolvedXamlPath $ResolvedXamlPath) -Row ([pscustomobject]@{
+            Timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+            Action = 'Link'
+            DeviceType = $Candidate.DetectedType
+            AssetTag = $Candidate.AssetTag
+            OldParent = $OldParent
+            NewParent = $NewParent
+            OldName = $OldName
+            NewName = $NewName
+            CMDBLink = $cmdbHyperlink
+        })
+    }
+
     function Show-AddPeripheralDialog {
-        param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory)
+        param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath)
         if (-not $ParentDevice) { return $false }
         $window = New-Object System.Windows.Window
         $window.Title = 'Add Peripheral (Name/Asset/Serial)'
@@ -630,8 +689,32 @@ try {
         $panel.Children.Add($txt) | Out-Null
         $hint = New-Object System.Windows.Controls.TextBlock -Property @{ Text='Press Enter to search by cart name, asset tag, or serial number.'; Foreground='#64748B'; Margin='0,0,0,8' }
         $panel.Children.Add($hint) | Out-Null
-        $preview = New-Object System.Windows.Controls.TextBlock -Property @{ Text=''; Margin='0,0,0,8'; TextWrapping='Wrap' }
-        $panel.Children.Add($preview) | Out-Null
+        $previewGroup = New-Object System.Windows.Controls.GroupBox -Property @{ Header='Peripheral Preview'; Margin='0,0,0,10'; Padding='10' }
+        $previewGrid = New-Object System.Windows.Controls.Grid
+        $previewGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='Auto' })) | Out-Null
+        $previewGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='*' })) | Out-Null
+        $previewGroup.Content = $previewGrid
+        $panel.Children.Add($previewGroup) | Out-Null
+
+        $previewValues = @{}
+        $addPreviewRow = {
+            param([int]$Row,[string]$Label,[string]$Key)
+            $previewGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' })) | Out-Null
+            $lbl = New-Object System.Windows.Controls.TextBlock -Property @{ Text=$Label; Margin='0,0,28,4' }
+            [System.Windows.Controls.Grid]::SetRow($lbl,$Row); [System.Windows.Controls.Grid]::SetColumn($lbl,0)
+            $previewGrid.Children.Add($lbl) | Out-Null
+            $val = New-Object System.Windows.Controls.TextBlock -Property @{ Text=''; Margin='0,0,0,4' }
+            [System.Windows.Controls.Grid]::SetRow($val,$Row); [System.Windows.Controls.Grid]::SetColumn($val,1)
+            $previewGrid.Children.Add($val) | Out-Null
+            $previewValues[$Key] = $val
+        }
+        & $addPreviewRow 0 'Type:' 'Type'
+        & $addPreviewRow 1 'Name:' 'Name'
+        & $addPreviewRow 2 'Parent:' 'Parent'
+        & $addPreviewRow 3 'Asset Tag:' 'AssetTag'
+        & $addPreviewRow 4 'Serial Number:' 'Serial'
+        & $addPreviewRow 5 'RITM:' 'RITM'
+        & $addPreviewRow 6 'Retire:' 'Retire'
         $buttons = New-Object System.Windows.Controls.StackPanel -Property @{ Orientation='Horizontal'; HorizontalAlignment='Right' }
         $addButton = New-Object System.Windows.Controls.Button -Property @{ Content='Add'; IsEnabled=$false; Margin='0,0,8,0'; MinWidth=90 }
         $cancelButton = New-Object System.Windows.Controls.Button -Property @{ Content='Cancel'; MinWidth=90 }
@@ -643,17 +726,29 @@ try {
         $updatePreview = {
             param($result)
             $lookupResult = $result
+            foreach ($value in $previewValues.Values) { $value.Text = '' }
             if (-not $result -or -not $result.Candidate) {
-                $preview.Text = if ($result -and $result.NormalizedInput) { 'Type: (not found)' } else { '' }
+                $previewValues.Type.Text = if ($result -and $result.NormalizedInput) { '(not found)' } else { '' }
                 $addButton.IsEnabled = $false
                 return
             }
             $c = $result.Candidate
-            $preview.Text = "Type: $($c.DetectedType)`nName: $($c.Name)`nAsset Tag: $($c.AssetTag)`nSerial: $($c.Serial)`nRITM: $($c.RITM)`nRetire: $($c.RetireDate)`nParent: $($c.Parent)"
+            $proposedName = Get-ProposedPeripheralName -Candidate $c -ParentDevice $ParentDevice
+            if ([string]::IsNullOrWhiteSpace($proposedName)) { $proposedName = $c.Name }
+            $proposedParent = $ParentDevice.AssetTag
+            $currentParentDisplay = Get-ParentPreviewDisplay -Token $c.Parent -FallbackParent $ParentDevice -Inventory $Inventory
+            $proposedParentDisplay = Get-ParentPreviewDisplay -Token $proposedParent -FallbackParent $ParentDevice -Inventory $Inventory
+            $previewValues.Type.Text = $c.DetectedType
+            $previewValues.Name.Text = if ($c.Name -ne $proposedName) { "$($c.Name)     ---->     $proposedName" } else { $c.Name }
+            $previewValues.Parent.Text = if ($currentParentDisplay -ne $proposedParentDisplay) { "$currentParentDisplay     ---->     $proposedParentDisplay" } else { $currentParentDisplay }
+            $previewValues.AssetTag.Text = $c.AssetTag
+            $previewValues.Serial.Text = $c.Serial
+            $previewValues.RITM.Text = $c.RITM
+            $previewValues.Retire.Text = $c.RetireDate
             $addButton.IsEnabled = $true
         }
 
-        $txt.Add_TextChanged({ $lookupResult = $null; $preview.Text = ''; $addButton.IsEnabled = $false })
+        $txt.Add_TextChanged({ $lookupResult = $null; foreach ($value in $previewValues.Values) { $value.Text = '' }; $addButton.IsEnabled = $false })
         $txt.Add_KeyDown({
             if ($_.Key -eq [System.Windows.Input.Key]::Enter -or $_.Key -eq [System.Windows.Input.Key]::Return) {
                 $_.Handled = $true
@@ -667,14 +762,21 @@ try {
             if (-not $result) { $result = Resolve-AssociatedPeripheralLookup -Query $txt.Text -Inventory $Inventory; & $updatePreview $result }
             if (-not $result -or -not $result.Candidate) { return }
             $target = $result.Candidate
+            $oldParent = $target.Parent
+            $oldName = $target.Name
+            $newName = Get-ProposedPeripheralName -Candidate $target -ParentDevice $ParentDevice
+            if ([string]::IsNullOrWhiteSpace($newName)) { $newName = $target.Name }
             foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
                 foreach ($row in $Inventory.$collectionName) {
                     $at = Get-FieldValue -Row $row -Names @('asset_tag')
                     if ($at -and $target.AssetTag -and $at.Trim().ToUpper() -eq $target.AssetTag.Trim().ToUpper()) {
-                        $row.u_parent_asset = $ParentDevice.AssetTag
+                        Set-RowFieldValue -Row $row -Name 'u_parent_asset' -Value $ParentDevice.AssetTag
+                        Set-RowFieldValue -Row $row -Name 'name' -Value $newName
                     }
                 }
             }
+            Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $target -OldParent $oldParent -NewParent $ParentDevice.AssetTag -OldName $oldName -NewName $newName
+            Build-InventoryIndices -Inventory $Inventory
             $window.DialogResult = $true
             $window.Close()
         })
@@ -1160,7 +1262,7 @@ function Find-SampleDevice {
         if (-not $script:AppState.CurrentDevice) { return }
         $parent = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
         if (-not $parent) { $parent = $script:AppState.CurrentDevice }
-        $changed = Show-AddPeripheralDialog -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory
+        $changed = Show-AddPeripheralDialog -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
         if ($changed) {
             $associated = Build-AssociatedDevices -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
             $ui.AssociatedDevicesDataGrid.ItemsSource = $associated

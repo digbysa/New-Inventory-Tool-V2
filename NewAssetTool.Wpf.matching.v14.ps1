@@ -1857,28 +1857,17 @@ try {
         param([System.Windows.Controls.ComboBox]$Combo,[object[]]$Items,[string]$Text)
         if (-not $Combo) { return }
         $targetText = if ($null -ne $Text) { [string]$Text } else { '' }
-        $Combo.Items.Clear()
+        $values = New-Object 'System.Collections.ObjectModel.ObservableCollection[string]'
         foreach ($item in @($Items)) {
             if ($null -eq $item) { continue }
             $itemText = [string]$item
             if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
-            [void]$Combo.Items.Add($itemText)
+            [void]$values.Add($itemText)
         }
-        if ($Combo.Text -ne $targetText) { $Combo.Text = $targetText }
-        if ([string]::IsNullOrWhiteSpace($targetText)) {
-            $Combo.SelectedIndex = -1
-            return
-        }
-        try {
-            $matchIndex = -1
-            for ($i = 0; $i -lt $Combo.Items.Count; $i++) {
-                if ((Normalize-LocationValue $Combo.Items[$i]) -eq (Normalize-LocationValue $targetText)) {
-                    $matchIndex = $i
-                    break
-                }
-            }
-            if ($matchIndex -ge 0) { $Combo.SelectedIndex = $matchIndex }
-        } catch {}
+        $Combo.SelectedIndex = -1
+        $Combo.ItemsSource = $null
+        $Combo.ItemsSource = $values
+        $Combo.Text = $targetText
     }
 
     function Filter-LocationRows {
@@ -1940,7 +1929,7 @@ try {
             $validBuilding = Get-ValidLocationSelection $Ui.BuildingComboBox.Text $buildings
 
             $floorRows = if ($validBuilding) { Filter-LocationRows -Rows $bldRows -Building $validBuilding } else { @($bldRows) }
-            $floors = Sort-LocationFloors @($floorRows | ForEach-Object { $_.Floor } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+            $floors = Sort-LocationFloors -Floors @($floorRows | ForEach-Object { $_.Floor } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
             Set-ComboItems $Ui.FloorComboBox $floors $floor
             $validFloor = Get-ValidLocationSelection $Ui.FloorComboBox.Text $floors
 

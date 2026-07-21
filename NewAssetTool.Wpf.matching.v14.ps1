@@ -212,16 +212,31 @@ try {
         return [pscustomobject]@{ Today=$todayCount; Week=$weekCount }
     }
 
+    function Get-RemainingRoundingDays {
+        param([DateTime[]]$Dates,[DateTime]$Today)
+        return @($Dates | Where-Object { $_.Date -ge $Today.Date }).Count
+    }
+
+    function Get-TodayRoundingTarget {
+        param([int]$WeekRemaining,[int]$RemainingDays)
+        if ($WeekRemaining -le 0 -or $RemainingDays -le 0) { return 0 }
+        return [int][Math]::Ceiling($WeekRemaining / [double]$RemainingDays)
+    }
+
     function Update-RoundingPlanBadges {
         param([hashtable]$Ui,[string]$ResolvedXamlPath,[pscustomobject]$Plan)
         $days = @($Plan.Dates)
+        $today = (Get-Date).Date
         $dailyTarget = 30
         $weekTarget = $dailyTarget * $days.Count
         $counts = Get-RoundingEventCounts -ResolvedXamlPath $ResolvedXamlPath -Dates $days
+        $weekRemaining = [Math]::Max(0, $weekTarget - $counts.Week)
+        $remainingDays = Get-RemainingRoundingDays -Dates $days -Today $today
+        $todayTarget = Get-TodayRoundingTarget -WeekRemaining $weekRemaining -RemainingDays $remainingDays
         Set-ControlText -Control $Ui.DaysPerWeekBadgeText -Value "Days/week $($days.Count)"
-        Set-ControlText -Control $Ui.TodayBadgeText -Value "Today $($counts.Today) / $dailyTarget"
+        Set-ControlText -Control $Ui.TodayBadgeText -Value "Today $($counts.Today) / $todayTarget"
         Set-ControlText -Control $Ui.ThisWeekBadgeText -Value "This week $($counts.Week) / $weekTarget"
-        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $([Math]::Max(0, $weekTarget - $counts.Week))"
+        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $weekRemaining"
     }
 
     function Ensure-RoundingPlan {

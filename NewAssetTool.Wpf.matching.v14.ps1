@@ -1857,17 +1857,30 @@ try {
         param([System.Windows.Controls.ComboBox]$Combo,[object[]]$Items,[string]$Text)
         if (-not $Combo) { return }
         $targetText = if ($null -ne $Text) { [string]$Text } else { '' }
-        $values = New-Object 'System.Collections.ObjectModel.ObservableCollection[string]'
+        $values = New-Object System.Collections.Generic.List[string]
         foreach ($item in @($Items)) {
             if ($null -eq $item) { continue }
             $itemText = [string]$item
             if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
             [void]$values.Add($itemText)
         }
-        $Combo.SelectedIndex = -1
         $Combo.ItemsSource = $null
-        $Combo.ItemsSource = $values
-        $Combo.Text = $targetText
+        $Combo.ItemsSource = [string[]]$values.ToArray()
+        if ($Combo.Text -ne $targetText) { $Combo.Text = $targetText }
+        if ([string]::IsNullOrWhiteSpace($targetText)) {
+            $Combo.SelectedIndex = -1
+            return
+        }
+        try {
+            $matchIndex = -1
+            for ($i = 0; $i -lt $Combo.Items.Count; $i++) {
+                if ((Normalize-LocationValue $Combo.Items[$i]) -eq (Normalize-LocationValue $targetText)) {
+                    $matchIndex = $i
+                    break
+                }
+            }
+            if ($matchIndex -ge 0) { $Combo.SelectedIndex = $matchIndex }
+        } catch {}
     }
 
     function Filter-LocationRows {

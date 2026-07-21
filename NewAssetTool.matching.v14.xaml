@@ -408,8 +408,8 @@
                                     <Ellipse x:Name="DeviceOnlineDot" Width="5" Height="5" Fill="#16A34A" Margin="12,0,4,0" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="DeviceOnlineText" Text="Online" Foreground="#16A34A" FontSize="14" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="DeviceResponseTimeText" Text="(37 ms)" Foreground="#94A3B8" Margin="4,0,0,0" FontSize="14" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="DeviceIpText" Text="IP: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="DeviceSubnetText" Text="Subnet: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="DeviceIpText" Text="IP: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                    <TextBlock x:Name="DeviceSubnetText" Text="Subnet: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 </StackPanel>
 
                                 <TextBlock x:Name="LastQueryBadgeText"

@@ -1066,14 +1066,6 @@ try {
         return [pscustomobject]@{ HostName=$ComputerName; Success=$true; IpAddress=$ipAddress; ResponseTime=$responseMs; Subnet=(Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot); ErrorMessage='' }
     }
 
-    function Show-PingResultDialog {
-        param([object]$PingResult)
-        $message = "Device: $($PingResult.HostName)`nIP Address: $($PingResult.IpAddress)`nPing Time: $($PingResult.ResponseTime)`nSubnet: $($PingResult.Subnet)"
-        if (-not $PingResult.Success -and -not [string]::IsNullOrWhiteSpace($PingResult.ErrorMessage)) { $message += "`n`nError: $($PingResult.ErrorMessage)" }
-        [System.Windows.MessageBox]::Show($message, 'Ping Result') | Out-Null
-    }
-
-
     function Show-MonitorLabelDialog {
         param([hashtable]$Ui,[pscustomobject]$ParentDevice)
         if (-not $ParentDevice) { return }
@@ -1820,19 +1812,10 @@ try {
             [bool]$IsOnline,
             [Nullable[int]]$LatencyMs,
             [string]$IpAddress='',
-            [bool]$WmiAvailable=$false,
-            [bool]$PsRemotingAvailable=$false,
-            [bool]$SmbAvailable=$false,
+            [string]$Subnet='Unknown',
             [string]$CheckedHost=''
         )
-        $isVpn = (-not [string]::IsNullOrWhiteSpace($IpAddress)) -and ($IpAddress.Trim() -match '^10\.64\.')
-        if ($isVpn) {
-            $Ui.DeviceOnlineText.Text = 'VPN'
-            $Ui.DeviceOnlineText.Foreground = New-Brush '#7C3AED'
-            $Ui.DeviceOnlineDot.Fill = New-Brush '#7C3AED'
-            if ($Ui.DeviceStatusIcon) { $Ui.DeviceStatusIcon.Background = New-Brush '#7C3AED' }
-        }
-        elseif ($IsOnline) {
+        if ($IsOnline) {
             $Ui.DeviceOnlineText.Text = 'Online'
             $Ui.DeviceOnlineText.Foreground = New-Brush '#16A34A'
             $Ui.DeviceOnlineDot.Fill = New-Brush '#16A34A'
@@ -1847,20 +1830,20 @@ try {
         if ($IsOnline -and $LatencyMs -ne $null) { $Ui.DeviceResponseTimeText.Text = "($LatencyMs ms)" }
         elseif (-not [string]::IsNullOrWhiteSpace($CheckedHost)) { $Ui.DeviceResponseTimeText.Text = "($CheckedHost)" }
         else { $Ui.DeviceResponseTimeText.Text = '(No response)' }
-        Set-ConnectivityBadgeUi -Badge $Ui.WmiStatusBadge -IsAvailable:$WmiAvailable
-        Set-ConnectivityBadgeUi -Badge $Ui.PsRemotingStatusBadge -IsAvailable:$PsRemotingAvailable
-        Set-ConnectivityBadgeUi -Badge $Ui.SmbStatusBadge -IsAvailable:$SmbAvailable
+        if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
+        if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
 
     function Test-RemoteConnectivity {
-        param([string]$HostName,[object]$KnownPingResult=$null)
-        $result = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Wmi=$false; PsRemoting=$false; Smb=$false }
+        param([string]$HostName,[object]$KnownPingResult=$null,[string]$DataRoot='')
+        $result = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Subnet='Unknown' }
         if ([string]::IsNullOrWhiteSpace($HostName)) { return $result }
         if ($KnownPingResult) {
             $result.IsOnline = [bool]$KnownPingResult.Success
             if ($KnownPingResult.IpAddress -and $KnownPingResult.IpAddress -ne 'Unknown') { $result.IpAddress = [string]$KnownPingResult.IpAddress }
             if ($KnownPingResult.ResponseTime -match '^(\d+(?:\.\d+)?)') { $result.LatencyMs = [int][Math]::Round([double]$Matches[1]) }
+            if ($KnownPingResult.Subnet) { $result.Subnet = [string]$KnownPingResult.Subnet }
         }
         if (-not $KnownPingResult) {
             try {
@@ -1874,10 +1857,8 @@ try {
             } catch {
                 try { $result.IpAddress = ([System.Net.Dns]::GetHostAddresses($HostName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1).ToString() } catch {}
             }
+            if (-not [string]::IsNullOrWhiteSpace($result.IpAddress) -and -not [string]::IsNullOrWhiteSpace($DataRoot)) { $result.Subnet = Resolve-SubnetName -IpAddress $result.IpAddress -DataRoot $DataRoot }
         }
-        try { $result.Smb = [bool](Test-NetConnection -ComputerName $HostName -Port 445 -InformationLevel Quiet -WarningAction SilentlyContinue -ErrorAction SilentlyContinue) } catch {}
-        try { Test-WSMan -ComputerName $HostName -ErrorAction Stop | Out-Null; $result.PsRemoting = $true } catch {}
-        try { Get-CimInstance -ClassName Win32_OperatingSystem -ComputerName $HostName -OperationTimeoutSec 3 -ErrorAction Stop | Out-Null; $result.Wmi = $true } catch {}
         return $result
     }
 
@@ -1888,11 +1869,11 @@ try {
             return
         }
         [System.Threading.Tasks.Task]::Run([Action]{
-            try { $connectivity = Test-RemoteConnectivity -HostName $HostName }
-            catch { $connectivity = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Wmi=$false; PsRemoting=$false; Smb=$false } }
+            try { $connectivity = Test-RemoteConnectivity -HostName $HostName -DataRoot $script:AppState.DataRoot }
+            catch { $connectivity = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Subnet='Unknown' } }
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
-                Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -WmiAvailable:$connectivity.Wmi -PsRemotingAvailable:$connectivity.PsRemoting -SmbAvailable:$connectivity.Smb -CheckedHost $connectivity.HostName
+                Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
             }) | Out-Null
         }) | Out-Null
     }
@@ -2098,7 +2079,7 @@ function Find-SampleDevice {
         'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','ClearNearbyButton',
         'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
-        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','WmiStatusBadge','WmiStatusText','PsRemotingStatusBadge','PsRemotingStatusText','SmbStatusBadge','SmbStatusText'
+        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DeviceIpText','DeviceSubnetText'
     )
 
     $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
@@ -2123,7 +2104,7 @@ function Find-SampleDevice {
         if ($elapsedMinutes -ge $script:RoundingBaseMinutes) { $target = [Math]::Min(120, $elapsedMinutes) }
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -2180,10 +2161,9 @@ function Find-SampleDevice {
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
         if ($ui.DeviceStatusIcon) { $ui.DeviceStatusIcon.Background = New-Brush '#94A3B8' }
-        Set-ConnectivityBadgeUi -Badge $ui.WmiStatusBadge -IsAvailable:$false
-        Set-ConnectivityBadgeUi -Badge $ui.PsRemotingStatusBadge -IsAvailable:$false
-        Set-ConnectivityBadgeUi -Badge $ui.SmbStatusBadge -IsAvailable:$false
         Set-ControlText -Control $ui.DeviceResponseTimeText -Value ''
+        Set-ControlText -Control $ui.DeviceIpText -Value 'IP: Checking...'
+        Set-ControlText -Control $ui.DeviceSubnetText -Value 'Subnet: Checking...'
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
         $connectivityTarget = Resolve-ParentDevice -Device $match -Inventory $script:AppState.Inventory
@@ -2259,10 +2239,9 @@ function Find-SampleDevice {
         try {
             $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
-            Show-PingResultDialog -PingResult $pingResult
-            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult
-            Set-OnlineStatusUi -Ui $ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -WmiAvailable:$connectivity.Wmi -PsRemotingAvailable:$connectivity.PsRemoting -SmbAvailable:$connectivity.Smb -CheckedHost $connectivity.HostName
-            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText $(if ($pingResult.Success) { "Ping complete: $($pingResult.ResponseTime)" } else { 'Ping failed' })
+            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $dataRoot
+            Set-OnlineStatusUi -Ui $ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
+            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText 'Continuous ping started'
         } catch {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null
         }

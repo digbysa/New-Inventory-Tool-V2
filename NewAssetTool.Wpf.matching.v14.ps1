@@ -138,6 +138,20 @@ try {
     }
 
 
+
+    function Set-WindowIconFromFile {
+        param(
+            [Parameter(Mandatory=$true)][System.Windows.Window]$Window,
+            [Parameter(Mandatory=$true)][string]$ResolvedXamlPath
+        )
+
+        $iconPath = Join-Path (Split-Path -Parent $ResolvedXamlPath) 'icon.ico'
+        if (-not (Test-Path -LiteralPath $iconPath)) { return }
+
+        $iconUri = New-Object System.Uri($iconPath, [System.UriKind]::Absolute)
+        $Window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create($iconUri)
+    }
+
     function New-CalendarWindowIcon {
         $group = New-Object System.Windows.Media.DrawingGroup
         $outline = New-Object System.Windows.Media.GeometryDrawing
@@ -2120,6 +2134,7 @@ function Find-SampleDevice {
 
     $resolvedXamlPath = (Resolve-Path -LiteralPath $XamlPath).Path
     $window = ConvertFrom-XamlFile -Path $resolvedXamlPath
+    Set-WindowIconFromFile -Window $window -ResolvedXamlPath $resolvedXamlPath
 
     $ui = Get-NamedControls -Window $window -Names @(
         'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton',

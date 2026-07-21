@@ -101,6 +101,17 @@ try {
         return $controls
     }
 
+
+    function Invoke-WpfShowDialog {
+        param([Parameter(Mandatory=$true)][System.Windows.Window]$Window)
+
+        # PowerShell's dynamic method binder can occasionally fail to resolve the
+        # parameterless WPF Window.ShowDialog() overload from event-driven nested
+        # dialogs. Calling the CLR method explicitly avoids that binder path while
+        # preserving the nullable Boolean return value.
+        return [System.Windows.Window].GetMethod('ShowDialog', [System.Type[]]@()).Invoke($Window, @())
+    }
+
     function New-Brush {
         param([Parameter(Mandatory=$true)][string]$Hex)
         $converter = New-Object System.Windows.Media.BrushConverter
@@ -296,7 +307,7 @@ try {
         $buttons.Children.Add($ok) | Out-Null; $buttons.Children.Add($cancel) | Out-Null
         [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
         $dialog.Content = $root
-        [void]$dialog.ShowDialog()
+        [void](Invoke-WpfShowDialog -Window $dialog)
         if ($roundingDaysDialogState.Accepted) { return @($calendar.SelectedDates | ForEach-Object { $_.Date } | Sort-Object) }
         return $null
     }
@@ -852,7 +863,7 @@ try {
         $null = $panel.Children.Add($ok)
 
         $dialog.Content = $panel
-        $dialog.ShowDialog() | Out-Null
+        Invoke-WpfShowDialog -Window $dialog | Out-Null
     }
 
     function Update-DataFileBadge {
@@ -1371,7 +1382,7 @@ try {
         $panel.Children.Add($buttonPanel) | Out-Null
 
         $window.Add_ContentRendered({ $closeButton.Focus() | Out-Null })
-        $window.ShowDialog() | Out-Null
+        Invoke-WpfShowDialog -Window $window | Out-Null
     }
 
     function Get-RemoteDeviceSerials {
@@ -1637,7 +1648,7 @@ try {
             $window.Close()
         })
         if (-not [string]::IsNullOrWhiteSpace($DefaultSearchText)) { $result = Resolve-AssociatedPeripheralLookup -Query $DefaultSearchText -Inventory $Inventory; & $updatePreview $result }
-        $null = $window.ShowDialog()
+        $null = Invoke-WpfShowDialog -Window $window
         return [bool]$addPeripheralDialogState.Accepted
     }
 
@@ -2835,7 +2846,7 @@ function Find-SampleDevice {
     $ui.ManualRoundButton.IsEnabled = $false
     $window.Add_Loaded({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$false })
 
-    [void]$window.ShowDialog()
+    [void](Invoke-WpfShowDialog -Window $window)
 }
 catch {
     Show-StartupError -Exception $_.Exception -ScriptPath $PSCommandPath

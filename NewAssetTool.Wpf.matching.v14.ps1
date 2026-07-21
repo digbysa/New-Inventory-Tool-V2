@@ -290,12 +290,14 @@ try {
         $ok.Foreground = [System.Windows.Media.Brushes]::White; $ok.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $ok.BorderBrush = $ok.Background; $ok.FontWeight = 'SemiBold'; $ok.FontSize = 11; $ok.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $ok -CornerRadius 8
         $cancel = New-Object System.Windows.Controls.Button; $cancel.Content = 'Cancel'; $cancel.MinWidth = 104; $cancel.Height = 32
         $cancel.Foreground = [System.Windows.Media.Brushes]::White; $cancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2A44'); $cancel.BorderBrush = $cancel.Background; $cancel.FontWeight = 'SemiBold'; $cancel.FontSize = 11; $cancel.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $cancel -CornerRadius 8
-        $ok.Add_Click({ if ($calendar.SelectedDates.Count -eq 0) { [System.Windows.MessageBox]::Show('Choose at least one rounding day.', 'Rounding days') | Out-Null; return }; $dialog.DialogResult = $true })
-        $cancel.Add_Click({ $dialog.DialogResult = $false })
+        $roundingDaysDialogState = @{ Accepted = $false }
+        $ok.Add_Click({ if ($calendar.SelectedDates.Count -eq 0) { [System.Windows.MessageBox]::Show('Choose at least one rounding day.', 'Rounding days') | Out-Null; return }; $roundingDaysDialogState.Accepted = $true; $dialog.Close() })
+        $cancel.Add_Click({ $roundingDaysDialogState.Accepted = $false; $dialog.Close() })
         $buttons.Children.Add($ok) | Out-Null; $buttons.Children.Add($cancel) | Out-Null
         [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
         $dialog.Content = $root
-        if ($dialog.ShowDialog()) { return @($calendar.SelectedDates | ForEach-Object { $_.Date } | Sort-Object) }
+        [void]$dialog.ShowDialog()
+        if ($roundingDaysDialogState.Accepted) { return @($calendar.SelectedDates | ForEach-Object { $_.Date } | Sort-Object) }
         return $null
     }
 
@@ -1609,7 +1611,8 @@ try {
                 & $updatePreview $result
             }
         })
-        $cancelButton.Add_Click({ $window.DialogResult = $false; $window.Close() })
+        $addPeripheralDialogState = @{ Accepted = $false }
+        $cancelButton.Add_Click({ $addPeripheralDialogState.Accepted = $false; $window.Close() })
         $addButton.Add_Click({
             $result = $lookupResult
             if (-not $result) { $result = Resolve-AssociatedPeripheralLookup -Query $txt.Text -Inventory $Inventory; & $updatePreview $result }
@@ -1630,12 +1633,12 @@ try {
             }
             Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $target -OldParent $oldParent -NewParent $ParentDevice.AssetTag -OldName $oldName -NewName $newName -Action 'Link' -Inventory $Inventory
             Build-InventoryIndices -Inventory $Inventory
-            $window.DialogResult = $true
+            $addPeripheralDialogState.Accepted = $true
             $window.Close()
         })
         if (-not [string]::IsNullOrWhiteSpace($DefaultSearchText)) { $result = Resolve-AssociatedPeripheralLookup -Query $DefaultSearchText -Inventory $Inventory; & $updatePreview $result }
         $null = $window.ShowDialog()
-        return [bool]$window.DialogResult
+        return [bool]$addPeripheralDialogState.Accepted
     }
 
     function Get-CmdbLink {

@@ -139,6 +139,105 @@ try {
 
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
+
+    function Get-RoundingPlanPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingPlan.json' }
+
+    function Read-RoundingPlan {
+        param([string]$ResolvedXamlPath)
+        $path = Get-RoundingPlanPath -ResolvedXamlPath $ResolvedXamlPath
+        if (-not (Test-Path -LiteralPath $path)) { return $null }
+        try {
+            $plan = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            $dates = @($plan.Dates | ForEach-Object { [DateTime]::ParseExact([string]$_, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture).Date })
+            if ($dates.Count -eq 0) { return $null }
+            return [pscustomobject]@{ Dates=($dates | Sort-Object); DailyTarget=30 }
+        } catch { return $null }
+    }
+
+    function Save-RoundingPlan {
+        param([string]$ResolvedXamlPath,[DateTime[]]$Dates)
+        Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
+        $path = Get-RoundingPlanPath -ResolvedXamlPath $ResolvedXamlPath
+        [pscustomobject]@{ Dates=@($Dates | Sort-Object | ForEach-Object { $_.ToString('yyyy-MM-dd') }); DailyTarget=30 } |
+            ConvertTo-Json | Set-Content -LiteralPath $path -Encoding UTF8
+    }
+
+    function Show-RoundingPlanDialog {
+        param([System.Windows.Window]$Owner,[DateTime[]]$SelectedDates)
+        $dialog = New-Object System.Windows.Window
+        $dialog.Title = 'Choose rounding days'
+        $dialog.Width = 360; $dialog.Height = 420; $dialog.WindowStartupLocation = 'CenterOwner'; $dialog.ResizeMode = 'NoResize'
+        if ($Owner) { $dialog.Owner = $Owner }
+        $panel = New-Object System.Windows.Controls.DockPanel
+        $panel.Margin = New-Object System.Windows.Thickness(12)
+        $text = New-Object System.Windows.Controls.TextBlock
+        $text.Text = 'Select each day you plan to round devices for this work period. Target is 30 devices per selected day.'
+        $text.TextWrapping = 'Wrap'; $text.Margin = New-Object System.Windows.Thickness(0,0,0,8)
+        [System.Windows.Controls.DockPanel]::SetDock($text, 'Top'); $panel.Children.Add($text) | Out-Null
+        $calendar = New-Object System.Windows.Controls.Calendar
+        $calendar.SelectionMode = 'MultipleRange'; $calendar.Margin = New-Object System.Windows.Thickness(0,0,0,8)
+        $calendar.DisplayDate = Get-Date
+        foreach ($d in @($SelectedDates)) { if ($d) { $calendar.SelectedDates.Add($d.Date) } }
+        [System.Windows.Controls.DockPanel]::SetDock($calendar, 'Top'); $panel.Children.Add($calendar) | Out-Null
+        $buttons = New-Object System.Windows.Controls.StackPanel
+        $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'
+        $ok = New-Object System.Windows.Controls.Button; $ok.Content = 'Save'; $ok.MinWidth = 80; $ok.Margin = New-Object System.Windows.Thickness(0,0,8,0)
+        $cancel = New-Object System.Windows.Controls.Button; $cancel.Content = 'Cancel'; $cancel.MinWidth = 80
+        $ok.Add_Click({ if ($calendar.SelectedDates.Count -eq 0) { [System.Windows.MessageBox]::Show('Choose at least one rounding day.', 'Rounding days') | Out-Null; return }; $dialog.DialogResult = $true })
+        $cancel.Add_Click({ $dialog.DialogResult = $false })
+        $buttons.Children.Add($ok) | Out-Null; $buttons.Children.Add($cancel) | Out-Null
+        [System.Windows.Controls.DockPanel]::SetDock($buttons, 'Bottom'); $panel.Children.Add($buttons) | Out-Null
+        $dialog.Content = $panel
+        if ($dialog.ShowDialog()) { return @($calendar.SelectedDates | ForEach-Object { $_.Date } | Sort-Object) }
+        return $null
+    }
+
+    function Get-RoundingEventCounts {
+        param([string]$ResolvedXamlPath,[DateTime[]]$Dates)
+        $today = (Get-Date).Date
+        $selected = @{}
+        foreach ($d in @($Dates)) { $selected[$d.ToString('yyyy-MM-dd')] = $true }
+        $todayCount = 0; $weekCount = 0
+        $path = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
+        if (Test-Path -LiteralPath $path) {
+            foreach ($row in @(Import-Csv -LiteralPath $path)) {
+                $dt = [DateTime]::MinValue
+                if ([DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) {
+                    $key = $dt.Date.ToString('yyyy-MM-dd')
+                    if ($selected.ContainsKey($key)) { $weekCount++ }
+                    if ($dt.Date -eq $today) { $todayCount++ }
+                }
+            }
+        }
+        return [pscustomobject]@{ Today=$todayCount; Week=$weekCount }
+    }
+
+    function Update-RoundingPlanBadges {
+        param([hashtable]$Ui,[string]$ResolvedXamlPath,[pscustomobject]$Plan)
+        $days = @($Plan.Dates)
+        $dailyTarget = 30
+        $weekTarget = $dailyTarget * $days.Count
+        $counts = Get-RoundingEventCounts -ResolvedXamlPath $ResolvedXamlPath -Dates $days
+        Set-ControlText -Control $Ui.DaysPerWeekBadgeText -Value "Days/week $($days.Count)"
+        Set-ControlText -Control $Ui.TodayBadgeText -Value "Today $($counts.Today) / $dailyTarget"
+        Set-ControlText -Control $Ui.ThisWeekBadgeText -Value "This week $($counts.Week) / $weekTarget"
+        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $([Math]::Max(0, $weekTarget - $counts.Week))"
+    }
+
+    function Ensure-RoundingPlan {
+        param([hashtable]$Ui,[System.Windows.Window]$Window,[string]$ResolvedXamlPath,[bool]$Force)
+        $plan = Read-RoundingPlan -ResolvedXamlPath $ResolvedXamlPath
+        $today = (Get-Date).Date
+        $needsPrompt = $Force -or -not $plan -or $today -lt @($plan.Dates)[0].Date -or $today -gt @($plan.Dates)[@($plan.Dates).Count - 1].Date
+        if ($needsPrompt) {
+            $existing = if ($plan) { @($plan.Dates) } else { @($today) }
+            $chosen = Show-RoundingPlanDialog -Owner $Window -SelectedDates $existing
+            if ($chosen) { Save-RoundingPlan -ResolvedXamlPath $ResolvedXamlPath -Dates $chosen; $plan = Read-RoundingPlan -ResolvedXamlPath $ResolvedXamlPath }
+        }
+        if (-not $plan) { $plan = [pscustomobject]@{ Dates=@($today); DailyTarget=30 } }
+        $script:RoundingPlan = $plan
+        Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $plan
+    }
     function Get-CmdbUpdatesPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'CMDBUpdates.csv' }
     function Get-RoundingMapPath { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data/Rounding.csv' }
 
@@ -1741,6 +1840,7 @@ function Find-SampleDevice {
             Rounded=$(if($script:ManualRoundUsed){'Yes'}else{'No'})
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
+        if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
         $script:ManualRoundUsed = $false
         [System.Windows.MessageBox]::Show("Saved event to:`n$csvPath", 'Save Event') | Out-Null
     }
@@ -1827,7 +1927,7 @@ function Find-SampleDevice {
         'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','ClearNearbyButton',
         'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
-        'DataPathText','OutputPathText','DaysPerWeekBadge','TodayBadge','ThisWeekBadge','RemainingPerDayBadge','StatusMessageBadge'
+        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge'
     )
 
     $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
@@ -1863,6 +1963,7 @@ function Find-SampleDevice {
     $window.Title = "New Inventory Tool - $siteName"
     Set-ControlText -Control $ui.DataPathText -Value "Data: $dataRoot (Site: $siteName)"
     Set-ControlText -Control $ui.OutputPathText -Value "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
+    $ui.DaysPerWeekBadge.Add_MouseLeftButtonUp({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$true })
 
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         $combo.Items.Clear()
@@ -2118,6 +2219,7 @@ function Find-SampleDevice {
     $ui.PhysicalCartCheckBox.IsChecked = $false
     $ui.AddDeviceToTrackerCheckBox.IsChecked = $false
     $ui.ManualRoundButton.IsEnabled = $false
+    $window.Add_Loaded({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$false })
 
     [void]$window.ShowDialog()
 }

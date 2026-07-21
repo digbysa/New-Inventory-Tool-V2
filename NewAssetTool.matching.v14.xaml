@@ -941,17 +941,17 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border x:Name="DaysPerWeekBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource BlueBadgeBrush}" Margin="0,0,6,0">
-                        <TextBlock Text="Days/week 5" Foreground="{StaticResource BlueBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                    <Border x:Name="DaysPerWeekBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource BlueBadgeBrush}" Margin="0,0,6,0" Cursor="Hand" ToolTip="Click to adjust rounding days">
+                        <TextBlock x:Name="DaysPerWeekBadgeText" Text="Days/week 0" Foreground="{StaticResource BlueBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="TodayBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource AmberBadgeBrush}" Margin="0,0,6,0">
-                        <TextBlock Text="Today 9 / 30" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock x:Name="TodayBadgeText" Text="Today 0 / 30" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="ThisWeekBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource AmberBadgeBrush}" Margin="0,0,6,0">
-                        <TextBlock Text="This week 9 / 150" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock x:Name="ThisWeekBadgeText" Text="This week 0 / 0" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="RemainingPerDayBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
-                        <TextBlock Text="Remaining per day 36" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock x:Name="RemainingPerDayBadgeText" Text="Week remaining 0" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="StatusMessageBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource RedBadgeBrush}">
                         <TextBlock Text="Found Computer / Computer" Foreground="{StaticResource RedBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>

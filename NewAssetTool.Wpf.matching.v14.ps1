@@ -1154,7 +1154,7 @@ try {
 
     function Get-RemoteDeviceSerials {
         param([string]$ComputerName,[Nullable[bool]]$PingSucceeded=$null)
-        $result = [pscustomobject]@{ ComputerSerial=$null; MonitorSerials=@(); Offline=$false }
+        $result = [pscustomobject]@{ ComputerSerial=$null; MonitorSerials=@(); MonitorDetails=@(); Offline=$false }
         if ([string]::IsNullOrWhiteSpace($ComputerName)) { return $result }
         $online = if ($null -ne $PingSucceeded) { [bool]$PingSucceeded } else { Test-ComputerPingable -ComputerName $ComputerName }
         if (-not $online) { $result.Offline = $true; return $result }
@@ -1172,7 +1172,16 @@ try {
             $monitorData = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ComputerName $ComputerName -ErrorAction Stop
             foreach ($m in $monitorData) {
                 $serial = Convert-WmiIdToString -Id $m.SerialNumberID
-                if (-not [string]::IsNullOrWhiteSpace($serial)) { $result.MonitorSerials += $serial.Trim() }
+                $name = Convert-WmiIdToString -Id $m.UserFriendlyName
+                $manufacturer = Convert-WmiIdToString -Id $m.ManufacturerName
+                $productCode = Convert-WmiIdToString -Id $m.ProductCodeID
+                $serialText = if ([string]::IsNullOrWhiteSpace($serial)) { '' } else { $serial.Trim() }
+                if (-not [string]::IsNullOrWhiteSpace($serialText)) { $result.MonitorSerials += $serialText }
+                $detail = [pscustomobject]@{
+                    Type='Monitor'; Name=$name; Manufacturer=$manufacturer; ProductCode=$productCode; Serial=$serialText
+                    ManufactureWeek=$m.WeekOfManufacture; ManufactureYear=$m.YearOfManufacture; InstanceName=$m.InstanceName; Active=$m.Active
+                }
+                $result.MonitorDetails += $detail
             }
         } catch {}
         return $result
@@ -1216,6 +1225,20 @@ try {
         }
     }
 
+    function Get-ConnectedMonitorDetailBySerial {
+        param([object[]]$MonitorDetails,[string]$Serial)
+        if ([string]::IsNullOrWhiteSpace($Serial)) { return $null }
+        $target = $Serial.Trim().ToUpper()
+        $compactTarget = ($target -replace '[-\s]','')
+        foreach ($detail in @($MonitorDetails)) {
+            if (-not $detail -or [string]::IsNullOrWhiteSpace($detail.Serial)) { continue }
+            $detailSerial = $detail.Serial.Trim().ToUpper()
+            $compactDetailSerial = ($detailSerial -replace '[-\s]','')
+            if ($detailSerial -eq $target -or $compactDetailSerial -eq $compactTarget) { return $detail }
+        }
+        return $null
+    }
+
     function Get-UnlinkedMonitorSerials {
         param([object[]]$Items,[object[]]$MonitorSerials)
         $linked = New-Object System.Collections.ArrayList
@@ -1246,13 +1269,13 @@ try {
         $missingMonitors = @(Get-UnlinkedMonitorSerials -Items $items -MonitorSerials @($wmiData.MonitorSerials))
         if ($missingMonitors.Count -gt 0) {
             $serialToLink = $missingMonitors | Select-Object -First 1
-            $changed = Show-AddPeripheralDialog -Ui $Ui -ParentDevice $ParentDevice -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath -DefaultSearchText $serialToLink -InfoMessage 'This monitor is connected but not linked. Click Add to link.'
+            $changed = Show-AddPeripheralDialog -Ui $Ui -ParentDevice $ParentDevice -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath -DefaultSearchText $serialToLink -InfoMessage 'This monitor is connected but not linked. Click Add to link if it is found in inventory.' -ConnectedMonitorDetails @($wmiData.MonitorDetails)
             if ($changed) { $Ui.AssociatedDevicesDataGrid.ItemsSource = Build-AssociatedDevices -Device $ParentDevice -Inventory $Inventory }
         }
     }
 
     function Show-AddPeripheralDialog {
-        param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath,[string]$DefaultSearchText='',[string]$InfoMessage='')
+        param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath,[string]$DefaultSearchText='',[string]$InfoMessage='',[object[]]$ConnectedMonitorDetails=@())
         if (-not $ParentDevice) { return $false }
         $window = New-Object System.Windows.Window
         $window.Title = 'Add Peripheral (Name/Asset/Serial)'
@@ -1299,6 +1322,11 @@ try {
         & $addPreviewRow 4 'Serial Number:' 'Serial'
         & $addPreviewRow 5 'RITM:' 'RITM'
         & $addPreviewRow 6 'Retire:' 'Retire'
+        & $addPreviewRow 7 'Manufacturer:' 'Manufacturer'
+        & $addPreviewRow 8 'Product Code:' 'ProductCode'
+        & $addPreviewRow 9 'Manufactured:' 'Manufactured'
+        & $addPreviewRow 10 'WMI Instance:' 'InstanceName'
+        & $addPreviewRow 11 'Active:' 'Active'
         $buttons = New-Object System.Windows.Controls.StackPanel -Property @{ Orientation='Horizontal'; HorizontalAlignment='Right' }
         $addButton = New-Object System.Windows.Controls.Button -Property @{ Content='Add'; IsEnabled=$false; Margin='0,0,8,0'; MinWidth=90 }
         $cancelButton = New-Object System.Windows.Controls.Button -Property @{ Content='Cancel'; MinWidth=90 }
@@ -1312,7 +1340,20 @@ try {
             $lookupResult = $result
             foreach ($value in $previewValues.Values) { $value.Text = '' }
             if (-not $result -or -not $result.Candidate) {
-                $previewValues.Type.Text = if ($result -and $result.NormalizedInput) { '(not found)' } else { '' }
+                $previewValues.Type.Text = if ($result -and $result.NormalizedInput) { '(not found in inventory)' } else { '' }
+                $detail = $null
+                if ($result -and $result.NormalizedInput) { $detail = Get-ConnectedMonitorDetailBySerial -MonitorDetails $ConnectedMonitorDetails -Serial $result.NormalizedInput }
+                if (-not $detail) { $detail = Get-ConnectedMonitorDetailBySerial -MonitorDetails $ConnectedMonitorDetails -Serial $txt.Text }
+                if ($detail) {
+                    $previewValues.Type.Text = 'Connected monitor (not in inventory)'
+                    $previewValues.Name.Text = $detail.Name
+                    $previewValues.Serial.Text = $detail.Serial
+                    $previewValues.Manufacturer.Text = $detail.Manufacturer
+                    $previewValues.ProductCode.Text = $detail.ProductCode
+                    $previewValues.Manufactured.Text = if ($detail.ManufactureYear) { "Week $($detail.ManufactureWeek), $($detail.ManufactureYear)" } else { '' }
+                    $previewValues.InstanceName.Text = $detail.InstanceName
+                    $previewValues.Active.Text = $detail.Active
+                }
                 $addButton.IsEnabled = $false
                 return
             }
@@ -1329,6 +1370,14 @@ try {
             $previewValues.Serial.Text = $c.Serial
             $previewValues.RITM.Text = $c.RITM
             $previewValues.Retire.Text = $c.RetireDate
+            $detail = Get-ConnectedMonitorDetailBySerial -MonitorDetails $ConnectedMonitorDetails -Serial $c.Serial
+            if ($detail) {
+                $previewValues.Manufacturer.Text = $detail.Manufacturer
+                $previewValues.ProductCode.Text = $detail.ProductCode
+                $previewValues.Manufactured.Text = if ($detail.ManufactureYear) { "Week $($detail.ManufactureWeek), $($detail.ManufactureYear)" } else { '' }
+                $previewValues.InstanceName.Text = $detail.InstanceName
+                $previewValues.Active.Text = $detail.Active
+            }
             $addButton.IsEnabled = $true
         }
 

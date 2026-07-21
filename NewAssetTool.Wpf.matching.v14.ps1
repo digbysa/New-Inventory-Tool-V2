@@ -1869,13 +1869,28 @@ try {
             return
         }
         [System.Threading.Tasks.Task]::Run([Action]{
-            try { $connectivity = Test-RemoteConnectivity -HostName $HostName -DataRoot $script:AppState.DataRoot }
+            try {
+                $pingResult = Invoke-DevicePing -ComputerName $HostName -DataRoot $script:AppState.DataRoot
+                $connectivity = Test-RemoteConnectivity -HostName $HostName -KnownPingResult $pingResult -DataRoot $script:AppState.DataRoot
+            }
             catch { $connectivity = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Subnet='Unknown' } }
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
+                Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Device found; ping updated'
             }) | Out-Null
         }) | Out-Null
+    }
+
+    function Resolve-CurrentPingTarget {
+        param([hashtable]$Ui,[object]$Inventory)
+        $device = $script:AppState.CurrentDevice
+        if (-not $device -and -not [string]::IsNullOrWhiteSpace($Ui.SearchTextBox.Text)) { $device = Find-InventoryMatch -SearchTerm $Ui.SearchTextBox.Text -Inventory $Inventory }
+        $parent = if ($device) { Resolve-ParentDevice -Device $device -Inventory $Inventory } else { $null }
+        if ($parent -and -not [string]::IsNullOrWhiteSpace($parent.Name)) { return $parent.Name }
+        if ($device -and -not [string]::IsNullOrWhiteSpace($device.Name)) { return $device.Name }
+        if (-not [string]::IsNullOrWhiteSpace($Ui.SearchTextBox.Text)) { return $Ui.SearchTextBox.Text.Trim() }
+        return $null
     }
 
     function Increment-Fonts {
@@ -1910,6 +1925,8 @@ try {
         $Ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
         Set-ControlText -Control $Ui.DeviceResponseTimeText -Value ''
         Set-ControlText -Control $Ui.LastQueryBadgeText -Value 'Awaiting query'
+        Set-ControlText -Control $Ui.DeviceIpText -Value 'IP: Unknown'
+        Set-ControlText -Control $Ui.DeviceSubnetText -Value 'Subnet: Unknown'
         Update-FixNameButtonState -Ui $Ui -Device $null -ParentDevice $null
     }
 function Find-SampleDevice {
@@ -2166,8 +2183,7 @@ function Find-SampleDevice {
         Set-ControlText -Control $ui.DeviceSubnetText -Value 'Subnet: Checking...'
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        $connectivityTarget = Resolve-ParentDevice -Device $match -Inventory $script:AppState.Inventory
-        $connectivityHost = if ($connectivityTarget -and -not [string]::IsNullOrWhiteSpace($connectivityTarget.Name)) { $connectivityTarget.Name } else { $match.Name }
+        $connectivityHost = Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory
         Start-OnlineStatusUpdateAsync -Ui $ui -HostName $connectivityHost -QueryToken $script:AppState.CurrentQueryToken
     })
 
@@ -2233,14 +2249,11 @@ function Find-SampleDevice {
         Validate-AssociatedDevices -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
     })
     $ui.PingButton.Add_Click({
-        $target = $null
-        if ($script:AppState.CurrentDevice -and -not [string]::IsNullOrWhiteSpace($script:AppState.CurrentDevice.Name)) { $target = $script:AppState.CurrentDevice.Name }
-        elseif (-not [string]::IsNullOrWhiteSpace($ui.SearchTextBox.Text)) { $target = $ui.SearchTextBox.Text.Trim() }
+        $target = Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory
         try {
+            if ([string]::IsNullOrWhiteSpace($target)) { throw 'Enter or query a device before using Ping.' }
             $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
-            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $dataRoot
-            Set-OnlineStatusUi -Ui $ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
             Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText 'Continuous ping started'
         } catch {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null

@@ -2631,7 +2631,7 @@ function Find-SampleDevice {
             $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=@() }
         }
     })
-    $ui.EditLocationButton.Add_Click([System.Windows.RoutedEventHandler]{
+    $ui.EditLocationButton.Add_Click({
         param($sender,$e)
         try {
             if ([string]$ui.EditLocationButton.Content -eq 'Save') {
@@ -2645,7 +2645,7 @@ function Find-SampleDevice {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Edit Location') | Out-Null
         }
     })
-    $ui.CancelEditLocationButton.Add_Click([System.Windows.RoutedEventHandler]{
+    $ui.CancelEditLocationButton.Add_Click({
         param($sender,$e)
         try {
             Toggle-LocationEditMode -Ui $ui -IsEditing:$false

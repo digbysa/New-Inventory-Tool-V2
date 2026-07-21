@@ -947,8 +947,11 @@
                     <Border x:Name="RemainingPerDayBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
                         <TextBlock x:Name="RemainingPerDayBadgeText" Text="Week remaining 0" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
-                    <Border x:Name="StatusMessageBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource RedBadgeBrush}">
+                    <Border x:Name="StatusMessageBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource RedBadgeBrush}" Margin="0,0,6,0">
                         <TextBlock Text="Found Computer / Computer" Foreground="{StaticResource RedBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                    </Border>
+                    <Border x:Name="DataFileBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource AmberBadgeBrush}" Cursor="Hand" ToolTip="Click to view data file ages">
+                        <TextBlock x:Name="DataFileBadgeText" Text="Data File" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                 </StackPanel>
             </Grid>

@@ -726,6 +726,78 @@ try {
         return $inventory
     }
 
+
+
+    function Get-DataFileInfo {
+        param([string]$ResolvedXamlPath,[string]$SiteFolderPath)
+        $dataRoot = Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Data'
+        $useSiteFolder = -not [string]::IsNullOrWhiteSpace($SiteFolderPath) -and (Test-Path -LiteralPath $SiteFolderPath)
+        $sitePath = if ($useSiteFolder) { $SiteFolderPath } else { $dataRoot }
+        $definitions = @(
+            @{ Label='Computers'; Path=$sitePath; Filter='Computers - *.csv'; Recurse=(-not $useSiteFolder) },
+            @{ Label='Monitors'; Path=$sitePath; Filter='Monitors - *.csv'; Recurse=(-not $useSiteFolder) },
+            @{ Label='Mics'; Path=$dataRoot; Filter='Mics.csv' },
+            @{ Label='Scanners'; Path=$dataRoot; Filter='Scanners.csv' },
+            @{ Label='Carts'; Path=$dataRoot; Filter='Carts.csv' },
+            @{ Label='Rounding'; Path=$dataRoot; Filter='Rounding.csv' }
+        )
+        $files = @()
+        foreach ($definition in $definitions) {
+            if (-not (Test-Path -LiteralPath $definition.Path)) {
+                $files += [pscustomobject]@{ Label=$definition.Label; Name=$definition.Filter; Path=''; LastWriteTime=$null; Age=$null; Missing=$true }
+                continue
+            }
+            $getChildItemParams = @{ LiteralPath=$definition.Path; File=$true; Filter=$definition.Filter; ErrorAction='SilentlyContinue' }
+            if ($definition.ContainsKey('Recurse') -and $definition.Recurse) { $getChildItemParams.Recurse = $true }
+            $matches = @(Get-ChildItem @getChildItemParams | Sort-Object FullName)
+            if ($matches.Count -eq 0) {
+                $files += [pscustomobject]@{ Label=$definition.Label; Name=$definition.Filter; Path=''; LastWriteTime=$null; Age=$null; Missing=$true }
+                continue
+            }
+            foreach ($file in $matches) {
+                $age = (Get-Date) - $file.LastWriteTime
+                $files += [pscustomobject]@{ Label=$definition.Label; Name=$file.Name; Path=$file.FullName; LastWriteTime=$file.LastWriteTime; Age=$age; Missing=$false }
+            }
+        }
+        return @($files)
+    }
+
+    function Format-DataFileAge {
+        param([TimeSpan]$Age)
+        if ($null -eq $Age) { return 'missing' }
+        if ($Age.TotalMinutes -lt 1) { return 'less than 1 minute old' }
+        $parts = @()
+        if ($Age.Days -gt 0) { $parts += "$($Age.Days) day$(if ($Age.Days -ne 1) { 's' })" }
+        if ($Age.Hours -gt 0) { $parts += "$($Age.Hours) hour$(if ($Age.Hours -ne 1) { 's' })" }
+        if ($parts.Count -eq 0) { $parts += "$([Math]::Max(1, [int]$Age.Minutes)) minute$(if ([int]$Age.Minutes -ne 1) { 's' })" }
+        return (($parts | Select-Object -First 2) -join ', ') + ' old'
+    }
+
+    function Show-DataFileInfo {
+        param([hashtable]$Ui)
+        $files = @($script:AppState.DataFiles)
+        if ($files.Count -eq 0) { [System.Windows.MessageBox]::Show('No data files were found.', 'Data File') | Out-Null; return }
+        $lines = foreach ($file in $files) {
+            if ($file.Missing) { "$($file.Label) - $($file.Name) is missing." }
+            else { "$($file.Label) - $($file.Name) was updated $($file.LastWriteTime.ToString('yyyy-MM-dd HH:mm')) and is $(Format-DataFileAge -Age $file.Age)." }
+        }
+        [System.Windows.MessageBox]::Show(($lines -join [Environment]::NewLine), 'Data File') | Out-Null
+    }
+
+    function Update-DataFileBadge {
+        param([hashtable]$Ui,[object[]]$DataFiles)
+        Set-BadgeText -Border $Ui.DataFileBadge -Text 'Data File'
+        $computerFiles = @($DataFiles | Where-Object { $_.Label -eq 'Computers' -and -not $_.Missing })
+        if ($computerFiles.Count -eq 0) {
+            Set-BadgeStyle -Border $Ui.DataFileBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C'
+            return
+        }
+        $computerAgeDays = (($computerFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1).Age).TotalDays
+        if ($computerAgeDays -lt 1) { Set-BadgeStyle -Border $Ui.DataFileBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D' }
+        elseif ($computerAgeDays -le 3) { Set-BadgeStyle -Border $Ui.DataFileBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309' }
+        else { Set-BadgeStyle -Border $Ui.DataFileBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C' }
+    }
+
     function ConvertTo-DeviceRecord {
         param([object]$Row,[string]$DetectedType='Computer')
         $name = Get-FieldValue -Row $Row -Names @('name','HostName')
@@ -2282,7 +2354,7 @@ function Find-SampleDevice {
         'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','ClearNearbyButton',
         'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
-        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DeviceIpText','DeviceSubnetText'
+        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'
     )
 
     $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
@@ -2307,12 +2379,14 @@ function Find-SampleDevice {
         if ($elapsedMinutes -ge $script:RoundingBaseMinutes) { $target = [Math]::Min(120, $elapsedMinutes) }
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot }
+    $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
     Increment-Fonts -Root $window
     Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
+    Update-DataFileBadge -Ui $ui -DataFiles $dataFiles
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
     Register-SummaryClipboardCopy -Ui $ui
 
@@ -2320,6 +2394,7 @@ function Find-SampleDevice {
     Set-ControlText -Control $ui.DataPathText -Value "Data: $dataRoot (Site: $siteName)"
     Set-ControlText -Control $ui.OutputPathText -Value "Output: $(Get-OutputFolder -ResolvedXamlPath $resolvedXamlPath)"
     $ui.DaysPerWeekBadge.Add_MouseLeftButtonUp({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$true })
+    $ui.DataFileBadge.Add_MouseLeftButtonUp({ Show-DataFileInfo -Ui $ui })
 
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         $combo.Items.Clear()

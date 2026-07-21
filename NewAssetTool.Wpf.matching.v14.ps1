@@ -137,6 +137,53 @@ try {
         $script:AppState.LastStatusMode = $Mode
     }
 
+
+    function New-CalendarWindowIcon {
+        $group = New-Object System.Windows.Media.DrawingGroup
+        $outline = New-Object System.Windows.Media.GeometryDrawing
+        $outline.Brush = New-Brush '#FFFFFF'
+        $outline.Pen = New-Object System.Windows.Media.Pen((New-Brush '#0F5EA8'), 1.4)
+        $outline.Geometry = [System.Windows.Media.Geometry]::Parse('M 4,5 L 12,5 L 12,13 L 4,13 Z')
+        $group.Children.Add($outline) | Out-Null
+
+        $header = New-Object System.Windows.Media.GeometryDrawing
+        $header.Brush = New-Brush '#0EA5E9'
+        $header.Geometry = [System.Windows.Media.Geometry]::Parse('M 4,5 L 12,5 L 12,7.2 L 4,7.2 Z')
+        $group.Children.Add($header) | Out-Null
+
+        $rings = New-Object System.Windows.Media.GeometryDrawing
+        $rings.Brush = New-Brush '#1F2A44'
+        $rings.Geometry = [System.Windows.Media.Geometry]::Parse('M 5.5,3.5 L 5.5,6 M 10.5,3.5 L 10.5,6')
+        $rings.Pen = New-Object System.Windows.Media.Pen((New-Brush '#1F2A44'), 1.2)
+        $group.Children.Add($rings) | Out-Null
+
+        $dots = New-Object System.Windows.Media.GeometryDrawing
+        $dots.Brush = New-Brush '#16A34A'
+        $dots.Geometry = [System.Windows.Media.Geometry]::Parse('M 5.5,8.4 L 6.8,8.4 L 6.8,9.7 L 5.5,9.7 Z M 8.8,8.4 L 10.1,8.4 L 10.1,9.7 L 8.8,9.7 Z M 5.5,10.7 L 6.8,10.7 L 6.8,12 L 5.5,12 Z M 8.8,10.7 L 10.1,10.7 L 10.1,12 L 8.8,12 Z')
+        $group.Children.Add($dots) | Out-Null
+
+        $image = New-Object System.Windows.Media.DrawingImage($group)
+        $image.Freeze()
+        return $image
+    }
+
+    function Set-RoundedButtonTemplate {
+        param([System.Windows.Controls.Button]$Button,[double]$CornerRadius = 8)
+        $template = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Button]::BackgroundProperty)))
+        $border.SetValue([System.Windows.Controls.Border]::BorderBrushProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Button]::BorderBrushProperty)))
+        $border.SetValue([System.Windows.Controls.Border]::BorderThicknessProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Button]::BorderThicknessProperty)))
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius($CornerRadius)))
+        $border.SetValue([System.Windows.Controls.Border]::PaddingProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Button]::PaddingProperty)))
+        $presenter = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $presenter.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $presenter.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $border.AppendChild($presenter)
+        $template.VisualTree = $border
+        $Button.Template = $template
+    }
+
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
 
@@ -168,6 +215,7 @@ try {
         $dialog.Title = 'Choose rounding days'
         $dialog.Width = 660; $dialog.Height = 440; $dialog.WindowStartupLocation = 'CenterOwner'; $dialog.ResizeMode = 'NoResize'
         $dialog.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#F3F5F7')
+        $dialog.Icon = New-CalendarWindowIcon
         if ($Owner) { $dialog.Owner = $Owner }
 
         $root = New-Object System.Windows.Controls.Grid
@@ -225,9 +273,9 @@ try {
         $buttons = New-Object System.Windows.Controls.StackPanel
         $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = New-Object System.Windows.Thickness(0,14,0,0)
         $ok = New-Object System.Windows.Controls.Button; $ok.Content = 'Save'; $ok.MinWidth = 104; $ok.Height = 32; $ok.Margin = New-Object System.Windows.Thickness(0,0,8,0)
-        $ok.Foreground = [System.Windows.Media.Brushes]::White; $ok.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $ok.BorderBrush = $ok.Background; $ok.FontWeight = 'SemiBold'; $ok.FontSize = 11; $ok.Padding = New-Object System.Windows.Thickness(12,6,12,6)
+        $ok.Foreground = [System.Windows.Media.Brushes]::White; $ok.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $ok.BorderBrush = $ok.Background; $ok.FontWeight = 'SemiBold'; $ok.FontSize = 11; $ok.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $ok -CornerRadius 8
         $cancel = New-Object System.Windows.Controls.Button; $cancel.Content = 'Cancel'; $cancel.MinWidth = 104; $cancel.Height = 32
-        $cancel.Foreground = [System.Windows.Media.Brushes]::White; $cancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2A44'); $cancel.BorderBrush = $cancel.Background; $cancel.FontWeight = 'SemiBold'; $cancel.FontSize = 11; $cancel.Padding = New-Object System.Windows.Thickness(12,6,12,6)
+        $cancel.Foreground = [System.Windows.Media.Brushes]::White; $cancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2A44'); $cancel.BorderBrush = $cancel.Background; $cancel.FontWeight = 'SemiBold'; $cancel.FontSize = 11; $cancel.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $cancel -CornerRadius 8
         $ok.Add_Click({ if ($calendar.SelectedDates.Count -eq 0) { [System.Windows.MessageBox]::Show('Choose at least one rounding day.', 'Rounding days') | Out-Null; return }; $dialog.DialogResult = $true })
         $cancel.Add_Click({ $dialog.DialogResult = $false })
         $buttons.Children.Add($ok) | Out-Null; $buttons.Children.Add($cancel) | Out-Null
@@ -281,7 +329,17 @@ try {
         Set-ControlText -Control $Ui.DaysPerWeekBadgeText -Value "Days/week $($days.Count)"
         Set-ControlText -Control $Ui.TodayBadgeText -Value "Today $($counts.Today) / $todayTarget"
         Set-ControlText -Control $Ui.ThisWeekBadgeText -Value "This week $($counts.Week) / $weekTarget"
-        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $weekRemaining"
+        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $weekRemaining ($todayTarget/day)"
+
+        if ($counts.Today -gt 75) { Set-BadgeStyle -Border $Ui.TodayBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C' }
+        else { Set-BadgeStyle -Border $Ui.TodayBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309' }
+
+        if ($counts.Week -ge 150) { Set-BadgeStyle -Border $Ui.ThisWeekBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D' }
+        else { Set-BadgeStyle -Border $Ui.ThisWeekBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309' }
+
+        if ($todayTarget -le 35) { Set-BadgeStyle -Border $Ui.RemainingPerDayBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D' }
+        elseif ($todayTarget -le 75) { Set-BadgeStyle -Border $Ui.RemainingPerDayBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309' }
+        else { Set-BadgeStyle -Border $Ui.RemainingPerDayBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C' }
     }
 
     function Ensure-RoundingPlan {

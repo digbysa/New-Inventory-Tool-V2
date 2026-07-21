@@ -1811,7 +1811,7 @@ try {
         param([System.Windows.Controls.Border]$Badge,[bool]$IsAvailable)
         if (-not $Badge) { return }
         if ($IsAvailable) { Set-BadgeStyle -Border $Badge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D' }
-        else { Set-BadgeStyle -Border $Badge -BackgroundHex '#F1F5F9' -ForegroundHex '#64748B' }
+        else { Set-BadgeStyle -Border $Badge -BackgroundHex '#FEE2E2' -ForegroundHex '#BE123C' }
     }
 
     function Set-OnlineStatusUi {
@@ -1854,19 +1854,26 @@ try {
     }
 
     function Test-RemoteConnectivity {
-        param([string]$HostName)
+        param([string]$HostName,[object]$KnownPingResult=$null)
         $result = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Wmi=$false; PsRemoting=$false; Smb=$false }
         if ([string]::IsNullOrWhiteSpace($HostName)) { return $result }
-        try {
-            $reply = @(Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop | Select-Object -First 1)
-            if ($reply) {
-                $result.IsOnline = $true
-                $latencyValue = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
-                if (-not [string]::IsNullOrWhiteSpace($latencyValue)) { $result.LatencyMs = [int][Math]::Round([double]$latencyValue) }
-                $result.IpAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $HostName
+        if ($KnownPingResult) {
+            $result.IsOnline = [bool]$KnownPingResult.Success
+            if ($KnownPingResult.IpAddress -and $KnownPingResult.IpAddress -ne 'Unknown') { $result.IpAddress = [string]$KnownPingResult.IpAddress }
+            if ($KnownPingResult.ResponseTime -match '^(\d+(?:\.\d+)?)') { $result.LatencyMs = [int][Math]::Round([double]$Matches[1]) }
+        }
+        if (-not $KnownPingResult) {
+            try {
+                $reply = @(Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop | Select-Object -First 1)
+                if ($reply) {
+                    $result.IsOnline = $true
+                    $latencyValue = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
+                    if (-not [string]::IsNullOrWhiteSpace($latencyValue)) { $result.LatencyMs = [int][Math]::Round([double]$latencyValue) }
+                    $result.IpAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $HostName
+                }
+            } catch {
+                try { $result.IpAddress = ([System.Net.Dns]::GetHostAddresses($HostName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1).ToString() } catch {}
             }
-        } catch {
-            try { $result.IpAddress = ([System.Net.Dns]::GetHostAddresses($HostName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1).ToString() } catch {}
         }
         try { $result.Smb = [bool](Test-NetConnection -ComputerName $HostName -Port 445 -InformationLevel Quiet -WarningAction SilentlyContinue -ErrorAction SilentlyContinue) } catch {}
         try { Test-WSMan -ComputerName $HostName -ErrorAction Stop | Out-Null; $result.PsRemoting = $true } catch {}
@@ -1881,7 +1888,8 @@ try {
             return
         }
         [System.Threading.Tasks.Task]::Run([Action]{
-            $connectivity = Test-RemoteConnectivity -HostName $HostName
+            try { $connectivity = Test-RemoteConnectivity -HostName $HostName }
+            catch { $connectivity = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Wmi=$false; PsRemoting=$false; Smb=$false } }
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -WmiAvailable:$connectivity.Wmi -PsRemotingAvailable:$connectivity.PsRemoting -SmbAvailable:$connectivity.Smb -CheckedHost $connectivity.HostName
@@ -2252,6 +2260,8 @@ function Find-SampleDevice {
             $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
             Show-PingResultDialog -PingResult $pingResult
+            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult
+            Set-OnlineStatusUi -Ui $ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -WmiAvailable:$connectivity.Wmi -PsRemotingAvailable:$connectivity.PsRemoting -SmbAvailable:$connectivity.Smb -CheckedHost $connectivity.HostName
             Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText $(if ($pingResult.Success) { "Ping complete: $($pingResult.ResponseTime)" } else { 'Ping failed' })
         } catch {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null

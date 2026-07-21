@@ -427,6 +427,44 @@ try {
         if ($textbox) { Set-ControlText -Control $textbox -Value $Value }
     }
 
+    function Show-CopiedClipboardToast {
+        param([object]$Control)
+        if (-not $Control) { return }
+
+        $toastText = New-Object System.Windows.Controls.TextBlock
+        $toastText.Text = 'Copied to clipboard'
+        $toastText.Foreground = [System.Windows.Media.Brushes]::White
+        $toastText.FontSize = 12
+        $toastText.FontWeight = [System.Windows.FontWeights]::SemiBold
+        $toastText.Margin = New-Object System.Windows.Thickness(10,5,10,5)
+        $toastText.IsHitTestVisible = $false
+
+        $toastBorder = New-Object System.Windows.Controls.Border
+        $toastBorder.Background = New-Object System.Windows.Media.SolidColorBrush([System.Windows.Media.Color]::FromArgb(235, 31, 42, 68))
+        $toastBorder.CornerRadius = New-Object System.Windows.CornerRadius(4)
+        $toastBorder.Child = $toastText
+        $toastBorder.IsHitTestVisible = $false
+
+        $popup = New-Object System.Windows.Controls.Primitives.Popup
+        $popup.AllowsTransparency = $true
+        $popup.Child = $toastBorder
+        $popup.HorizontalOffset = 14
+        $popup.VerticalOffset = 16
+        $popup.Placement = [System.Windows.Controls.Primitives.PlacementMode]::MousePoint
+        $popup.PlacementTarget = $Control
+        $popup.IsOpen = $true
+
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds(1500)
+        $timer.Tag = $popup
+        $timer.Add_Tick({
+            param($sender,$eventArgs)
+            $sender.Stop()
+            if ($sender.Tag) { $sender.Tag.IsOpen = $false }
+        })
+        $timer.Start()
+    }
+
     function Copy-SummaryValueToClipboard {
         param([hashtable]$Ui,[object]$Control,[string]$FieldName)
         if (-not $Control) { return }
@@ -435,6 +473,7 @@ try {
         if ([string]::IsNullOrWhiteSpace($value)) { return }
         try {
             [System.Windows.Clipboard]::SetText($value.Trim())
+            Show-CopiedClipboardToast -Control $Control
             Set-StatusMessage -Ui $Ui -Mode 'Found' -CustomText "Copied $FieldName to clipboard."
         } catch {
             Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Unable to copy $FieldName to clipboard."

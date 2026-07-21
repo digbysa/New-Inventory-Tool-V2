@@ -1863,13 +1863,17 @@ try {
     }
 
     function Start-OnlineStatusUpdateAsync {
-        param([hashtable]$Ui,[string]$HostName,[string]$QueryToken)
+        param([hashtable]$Ui,[string]$HostName,[string]$QueryToken,[int]$DelayMilliseconds=0)
         if ([string]::IsNullOrWhiteSpace($HostName)) {
             Set-OnlineStatusUi -Ui $Ui -IsOnline:$false -LatencyMs $null
             return
         }
         [System.Threading.Tasks.Task]::Run([Action]{
             try {
+                if ($DelayMilliseconds -gt 0) {
+                    [System.Threading.Thread]::Sleep($DelayMilliseconds)
+                    if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
+                }
                 $pingResult = Invoke-DevicePing -ComputerName $HostName -DataRoot $script:AppState.DataRoot
                 $connectivity = Test-RemoteConnectivity -HostName $HostName -KnownPingResult $pingResult -DataRoot $script:AppState.DataRoot
             }
@@ -2184,7 +2188,7 @@ function Find-SampleDevice {
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
         $connectivityHost = Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory
-        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $connectivityHost -QueryToken $script:AppState.CurrentQueryToken
+        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $connectivityHost -QueryToken $script:AppState.CurrentQueryToken -DelayMilliseconds 1000
     })
 
     function Reset-RoundingFormForNextScan {

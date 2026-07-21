@@ -765,23 +765,92 @@ try {
     function Format-DataFileAge {
         param([TimeSpan]$Age)
         if ($null -eq $Age) { return 'missing' }
-        if ($Age.TotalMinutes -lt 1) { return 'less than 1 minute old' }
-        $parts = @()
-        if ($Age.Days -gt 0) { $parts += "$($Age.Days) day$(if ($Age.Days -ne 1) { 's' })" }
-        if ($Age.Hours -gt 0) { $parts += "$($Age.Hours) hour$(if ($Age.Hours -ne 1) { 's' })" }
-        if ($parts.Count -eq 0) { $parts += "$([Math]::Max(1, [int]$Age.Minutes)) minute$(if ([int]$Age.Minutes -ne 1) { 's' })" }
-        return (($parts | Select-Object -First 2) -join ', ') + ' old'
+
+        $units = @(
+            @{ Name='year'; Value=($Age.TotalDays / 365) },
+            @{ Name='week'; Value=($Age.TotalDays / 7) },
+            @{ Name='day'; Value=$Age.TotalDays },
+            @{ Name='hour'; Value=$Age.TotalHours }
+        )
+        $unit = $units | Where-Object { $_.Value -ge 1 } | Select-Object -First 1
+        if ($null -eq $unit) { $unit = @{ Name='hour'; Value=0 } }
+
+        $value = [Math]::Round([double]$unit.Value, 1)
+        $displayValue = if ($value -eq [Math]::Truncate($value)) { [int]$value } else { $value.ToString('0.0') }
+        $plural = if ($value -eq 1) { '' } else { 's' }
+        return "$displayValue $($unit.Name)$plural old"
+    }
+
+    function Add-DataFileInfoLine {
+        param(
+            [System.Windows.Controls.Panel]$Panel,
+            [string]$Label,
+            [string]$Name,
+            [string]$StatusText,
+            [System.Windows.Media.Brush]$StatusBrush
+        )
+
+        $textBlock = New-Object System.Windows.Controls.TextBlock
+        $textBlock.FontSize = 13
+        $textBlock.Margin = New-Object System.Windows.Thickness(0,0,0,6)
+        $textBlock.TextWrapping = 'Wrap'
+
+        $labelRun = New-Object System.Windows.Documents.Run("$Label`n")
+        $labelRun.FontWeight = [System.Windows.FontWeights]::Bold
+        $labelRun.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2937')
+        $null = $textBlock.Inlines.Add($labelRun)
+        $null = $textBlock.Inlines.Add((New-Object System.Windows.Documents.Run("$Name - ")))
+        $statusRun = New-Object System.Windows.Documents.Run($StatusText)
+        $statusRun.Foreground = $StatusBrush
+        $null = $textBlock.Inlines.Add($statusRun)
+        $null = $Panel.Children.Add($textBlock)
     }
 
     function Show-DataFileInfo {
         param([hashtable]$Ui)
         $files = @($script:AppState.DataFiles)
         if ($files.Count -eq 0) { [System.Windows.MessageBox]::Show('No data files were found.', 'Data File') | Out-Null; return }
-        $lines = foreach ($file in $files) {
-            if ($file.Missing) { "$($file.Label) - $($file.Name) is missing." }
-            else { "$($file.Label) - $($file.Name) was updated $($file.LastWriteTime.ToString('yyyy-MM-dd HH:mm')) and is $(Format-DataFileAge -Age $file.Age)." }
+
+        $dialog = New-Object System.Windows.Window
+        $dialog.Title = 'Data File Ages'
+        $dialog.SizeToContent = 'WidthAndHeight'
+        $dialog.MinWidth = 360
+        $dialog.MaxWidth = 560
+        $dialog.WindowStartupLocation = 'CenterOwner'
+        $dialog.ResizeMode = 'NoResize'
+        $dialog.Background = [System.Windows.Media.Brushes]::White
+        if ($Ui.ContainsKey('Window') -and $Ui.Window) { $dialog.Owner = $Ui.Window }
+
+        $panel = New-Object System.Windows.Controls.StackPanel
+        $panel.Margin = New-Object System.Windows.Thickness(18)
+
+        $title = New-Object System.Windows.Controls.TextBlock
+        $title.Text = 'Data File Ages'
+        $title.FontSize = 16
+        $title.FontWeight = [System.Windows.FontWeights]::SemiBold
+        $title.Margin = New-Object System.Windows.Thickness(0,0,0,12)
+        $null = $panel.Children.Add($title)
+
+        foreach ($file in $files) {
+            if ($file.Missing) {
+                Add-DataFileInfoLine -Panel $panel -Label $file.Label -Name $file.Name -StatusText 'missing' -StatusBrush ([System.Windows.Media.BrushConverter]::new().ConvertFromString('#BE123C'))
+            }
+            else {
+                Add-DataFileInfoLine -Panel $panel -Label $file.Label -Name $file.Name -StatusText (Format-DataFileAge -Age $file.Age) -StatusBrush ([System.Windows.Media.BrushConverter]::new().ConvertFromString('#374151'))
+            }
         }
-        [System.Windows.MessageBox]::Show(($lines -join [Environment]::NewLine), 'Data File') | Out-Null
+
+        $ok = New-Object System.Windows.Controls.Button
+        $ok.Content = 'OK'
+        $ok.Width = 78
+        $ok.Margin = New-Object System.Windows.Thickness(0,10,0,0)
+        $ok.HorizontalAlignment = 'Right'
+        $ok.IsDefault = $true
+        $ok.Add_Click({ $dialog.Close() })
+        $null = $panel.Children.Add($ok)
+
+        $dialog.Content = $panel
+        $dialog.ShowDialog() | Out-Null
     }
 
     function Update-DataFileBadge {
@@ -2356,6 +2425,7 @@ function Find-SampleDevice {
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
         'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'
     )
+    $ui.Window = $window
 
     $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
     $availableSites = Get-InventorySites -DataRoot $dataRoot

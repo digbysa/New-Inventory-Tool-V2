@@ -1897,6 +1897,24 @@ try {
         return $null
     }
 
+    function Invoke-CurrentDevicePing {
+        param([hashtable]$Ui,[object]$Inventory,[string]$DataRoot,[switch]$StartContinuous)
+        $target = Resolve-CurrentPingTarget -Ui $Ui -Inventory $Inventory
+        if ([string]::IsNullOrWhiteSpace($target)) { throw 'Enter or query a device before using Ping.' }
+
+        $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $DataRoot
+        $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $DataRoot
+        Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
+
+        if ($StartContinuous) {
+            Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
+            Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Continuous ping started; device status updated'
+        }
+        else {
+            Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Ping complete; device status updated'
+        }
+    }
+
     function Increment-Fonts {
         param([System.Windows.DependencyObject]$Root)
         if ($null -eq $Root) { return }
@@ -2187,8 +2205,12 @@ function Find-SampleDevice {
         Set-ControlText -Control $ui.DeviceSubnetText -Value 'Subnet: Checking...'
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        $connectivityHost = Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory
-        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $connectivityHost -QueryToken $script:AppState.CurrentQueryToken -DelayMilliseconds 1000
+        try {
+            Invoke-CurrentDevicePing -Ui $ui -Inventory $script:AppState.Inventory -DataRoot $dataRoot
+        } catch {
+            Set-OnlineStatusUi -Ui $ui -IsOnline:$false -LatencyMs $null
+            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Device found; ping failed'
+        }
     })
 
     function Reset-RoundingFormForNextScan {
@@ -2253,14 +2275,8 @@ function Find-SampleDevice {
         Validate-AssociatedDevices -Ui $ui -ParentDevice $parent -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
     })
     $ui.PingButton.Add_Click({
-        $target = Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory
         try {
-            if ([string]::IsNullOrWhiteSpace($target)) { throw 'Enter or query a device before using Ping.' }
-            $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
-            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $dataRoot
-            Set-OnlineStatusUi -Ui $ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
-            Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
-            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText 'Continuous ping started; device status updated'
+            Invoke-CurrentDevicePing -Ui $ui -Inventory $script:AppState.Inventory -DataRoot $dataRoot -StartContinuous
         } catch {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null
         }

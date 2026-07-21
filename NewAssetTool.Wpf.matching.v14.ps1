@@ -965,10 +965,24 @@ try {
         return (-join $chars).Trim()
     }
 
+    function Invoke-PingOnce {
+        param([string]$ComputerName,[int]$TimeoutMilliseconds=1000)
+        if ([string]::IsNullOrWhiteSpace($ComputerName)) { return $null }
+        $ping = $null
+        try {
+            $ping = New-Object System.Net.NetworkInformation.Ping
+            return $ping.Send($ComputerName, $TimeoutMilliseconds)
+        } catch {
+            return $null
+        } finally {
+            try { if ($ping) { $ping.Dispose() } } catch {}
+        }
+    }
+
     function Test-ComputerPingable {
         param([string]$ComputerName)
-        if ([string]::IsNullOrWhiteSpace($ComputerName)) { return $false }
-        try { return [bool](Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -ErrorAction SilentlyContinue) } catch { return $false }
+        $reply = Invoke-PingOnce -ComputerName $ComputerName -TimeoutMilliseconds 1000
+        return ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
     }
 
     function ConvertTo-IPv4Bytes {
@@ -1049,18 +1063,16 @@ try {
         param([string]$ComputerName,[string]$DataRoot)
         if ([string]::IsNullOrWhiteSpace($ComputerName)) { throw 'Enter or query a device before using Ping.' }
 
-        $reply = $null
-        try {
-            $results = @(Test-Connection -ComputerName $ComputerName -Count 1 -ErrorAction Stop)
-            if ($results.Count -gt 0) { $reply = $results[0] }
-        } catch {
-            return [pscustomobject]@{ HostName=$ComputerName; Success=$false; IpAddress='Unknown'; ResponseTime='Timed out'; Subnet='Unknown'; ErrorMessage=$_.Exception.Message }
+        $reply = Invoke-PingOnce -ComputerName $ComputerName -TimeoutMilliseconds 1000
+        if (-not $reply -or $reply.Status -ne [System.Net.NetworkInformation.IPStatus]::Success) {
+            $errorMessage = if ($reply) { [string]$reply.Status } else { 'Timed out' }
+            return [pscustomobject]@{ HostName=$ComputerName; Success=$false; IpAddress='Unknown'; ResponseTime='Timed out'; Subnet='Unknown'; ErrorMessage=$errorMessage }
         }
 
         $ipAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $ComputerName
         if ([string]::IsNullOrWhiteSpace($ipAddress)) { $ipAddress = 'Unknown' }
 
-        $responseMs = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
+        $responseMs = Get-FieldValue -Row $reply -Names @('RoundtripTime','ResponseTime','Latency')
         if ([string]::IsNullOrWhiteSpace($responseMs)) { $responseMs = 'Unknown' } else { $responseMs = "$responseMs ms" }
 
         return [pscustomobject]@{ HostName=$ComputerName; Success=$true; IpAddress=$ipAddress; ResponseTime=$responseMs; Subnet=(Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot); ErrorMessage='' }
@@ -1806,6 +1818,13 @@ try {
         else { Set-BadgeStyle -Border $Badge -BackgroundHex '#FEE2E2' -ForegroundHex '#BE123C' }
     }
 
+    function Set-DeviceNetworkVisibility {
+        param([hashtable]$Ui,[bool]$IsVisible)
+        $visibility = if ($IsVisible) { 'Visible' } else { 'Collapsed' }
+        if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Visibility = $visibility }
+        if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Visibility = $visibility }
+    }
+
     function Set-OnlineStatusUi {
         param(
             [hashtable]$Ui,
@@ -1830,8 +1849,11 @@ try {
         if ($IsOnline -and $LatencyMs -ne $null) { $Ui.DeviceResponseTimeText.Text = "($LatencyMs ms)" }
         elseif (-not [string]::IsNullOrWhiteSpace($CheckedHost)) { $Ui.DeviceResponseTimeText.Text = "($CheckedHost)" }
         else { $Ui.DeviceResponseTimeText.Text = '(No response)' }
-        if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
-        if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
+        Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$IsOnline
+        if ($IsOnline) {
+            if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
+            if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
+        }
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
 
@@ -1847,16 +1869,14 @@ try {
         }
         if (-not $KnownPingResult) {
             try {
-                $reply = @(Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop | Select-Object -First 1)
-                if ($reply) {
+                $reply = Invoke-PingOnce -ComputerName $HostName -TimeoutMilliseconds 1000
+                if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
                     $result.IsOnline = $true
-                    $latencyValue = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
+                    $latencyValue = Get-FieldValue -Row $reply -Names @('RoundtripTime','ResponseTime','Latency')
                     if (-not [string]::IsNullOrWhiteSpace($latencyValue)) { $result.LatencyMs = [int][Math]::Round([double]$latencyValue) }
                     $result.IpAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $HostName
                 }
-            } catch {
-                try { $result.IpAddress = ([System.Net.Dns]::GetHostAddresses($HostName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1).ToString() } catch {}
-            }
+            } catch {}
             if (-not [string]::IsNullOrWhiteSpace($result.IpAddress) -and -not [string]::IsNullOrWhiteSpace($DataRoot)) { $result.Subnet = Resolve-SubnetName -IpAddress $result.IpAddress -DataRoot $DataRoot }
         }
         return $result
@@ -1949,6 +1969,7 @@ try {
         Set-ControlText -Control $Ui.LastQueryBadgeText -Value 'Awaiting query'
         Set-ControlText -Control $Ui.DeviceIpText -Value 'IP: Unknown'
         Set-ControlText -Control $Ui.DeviceSubnetText -Value 'Subnet: Unknown'
+        Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$false
         Update-FixNameButtonState -Ui $Ui -Device $null -ParentDevice $null
     }
 function Find-SampleDevice {
@@ -2203,6 +2224,7 @@ function Find-SampleDevice {
         Set-ControlText -Control $ui.DeviceResponseTimeText -Value ''
         Set-ControlText -Control $ui.DeviceIpText -Value 'IP: Checking...'
         Set-ControlText -Control $ui.DeviceSubnetText -Value 'Subnet: Checking...'
+        Set-DeviceNetworkVisibility -Ui $ui -IsVisible:$false
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
         try {

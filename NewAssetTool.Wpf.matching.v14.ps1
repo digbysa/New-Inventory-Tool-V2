@@ -166,28 +166,73 @@ try {
         param([System.Windows.Window]$Owner,[DateTime[]]$SelectedDates)
         $dialog = New-Object System.Windows.Window
         $dialog.Title = 'Choose rounding days'
-        $dialog.Width = 360; $dialog.Height = 420; $dialog.WindowStartupLocation = 'CenterOwner'; $dialog.ResizeMode = 'NoResize'
+        $dialog.Width = 660; $dialog.Height = 440; $dialog.WindowStartupLocation = 'CenterOwner'; $dialog.ResizeMode = 'NoResize'
+        $dialog.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#F3F5F7')
         if ($Owner) { $dialog.Owner = $Owner }
-        $panel = New-Object System.Windows.Controls.DockPanel
-        $panel.Margin = New-Object System.Windows.Thickness(12)
+
+        $root = New-Object System.Windows.Controls.Grid
+        $root.Margin = New-Object System.Windows.Thickness(16)
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' }))
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='*' }))
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' }))
         $text = New-Object System.Windows.Controls.TextBlock
         $text.Text = 'Select each day you plan to round devices for this work period. Target is 30 devices per selected day.'
-        $text.TextWrapping = 'Wrap'; $text.Margin = New-Object System.Windows.Thickness(0,0,0,8)
-        [System.Windows.Controls.DockPanel]::SetDock($text, 'Top'); $panel.Children.Add($text) | Out-Null
+        $text.TextWrapping = 'Wrap'; $text.Margin = New-Object System.Windows.Thickness(0,0,0,14)
+        $text.FontSize = 13
+        [System.Windows.Controls.Grid]::SetRow($text, 0); $root.Children.Add($text) | Out-Null
+
+        $content = New-Object System.Windows.Controls.Grid
+        $content.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='360' }))
+        $content.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='18' }))
+        $content.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width='*' }))
+        [System.Windows.Controls.Grid]::SetRow($content, 1); $root.Children.Add($content) | Out-Null
+
+        $calendarHost = New-Object System.Windows.Controls.Border
+        $calendarHost.Background = [System.Windows.Media.Brushes]::White
+        $calendarHost.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D1D8E0')
+        $calendarHost.BorderThickness = New-Object System.Windows.Thickness(1)
+        $calendarHost.CornerRadius = New-Object System.Windows.CornerRadius(4)
+        $calendarHost.Padding = New-Object System.Windows.Thickness(14)
+        $calendarHost.HorizontalAlignment = 'Left'; $calendarHost.VerticalAlignment = 'Top'
         $calendar = New-Object System.Windows.Controls.Calendar
-        $calendar.SelectionMode = 'MultipleRange'; $calendar.Margin = New-Object System.Windows.Thickness(0,0,0,8)
-        $calendar.DisplayDate = Get-Date
+        $calendar.SelectionMode = 'MultipleRange'; $calendar.DisplayDate = Get-Date
+        $calendar.LayoutTransform = New-Object System.Windows.Media.ScaleTransform(1.42, 1.42)
         foreach ($d in @($SelectedDates)) { if ($d) { $calendar.SelectedDates.Add($d.Date) } }
-        [System.Windows.Controls.DockPanel]::SetDock($calendar, 'Top'); $panel.Children.Add($calendar) | Out-Null
+        $calendarHost.Child = $calendar
+        [System.Windows.Controls.Grid]::SetColumn($calendarHost, 0); $content.Children.Add($calendarHost) | Out-Null
+
+        $summary = New-Object System.Windows.Controls.Border
+        $summary.Background = [System.Windows.Media.Brushes]::White
+        $summary.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D1D8E0')
+        $summary.BorderThickness = New-Object System.Windows.Thickness(1)
+        $summary.CornerRadius = New-Object System.Windows.CornerRadius(4)
+        $summary.Padding = New-Object System.Windows.Thickness(16)
+        $summary.VerticalAlignment = 'Top'
+        $summaryPanel = New-Object System.Windows.Controls.StackPanel
+        $summaryTitle = New-Object System.Windows.Controls.TextBlock
+        $summaryTitle.Text = 'Adjusting Targets'; $summaryTitle.FontSize = 14; $summaryTitle.FontWeight = 'SemiBold'; $summaryTitle.Margin = New-Object System.Windows.Thickness(0,0,0,14)
+        $daysText = New-Object System.Windows.Controls.TextBlock
+        $daysText.FontSize = 13; $daysText.Margin = New-Object System.Windows.Thickness(0,0,0,10)
+        $devicesText = New-Object System.Windows.Controls.TextBlock
+        $devicesText.FontSize = 13; $devicesText.TextWrapping = 'Wrap'
+        $summaryPanel.Children.Add($summaryTitle) | Out-Null; $summaryPanel.Children.Add($daysText) | Out-Null; $summaryPanel.Children.Add($devicesText) | Out-Null
+        $summary.Child = $summaryPanel
+        [System.Windows.Controls.Grid]::SetColumn($summary, 2); $content.Children.Add($summary) | Out-Null
+
+        $updateTargets = { $days = $calendar.SelectedDates.Count; $daysText.Text = "Days selected: $days"; $devicesText.Text = "Devices needed to round: $($days * 30)" }
+        $calendar.Add_SelectedDatesChanged($updateTargets); & $updateTargets
+
         $buttons = New-Object System.Windows.Controls.StackPanel
-        $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'
-        $ok = New-Object System.Windows.Controls.Button; $ok.Content = 'Save'; $ok.MinWidth = 80; $ok.Margin = New-Object System.Windows.Thickness(0,0,8,0)
-        $cancel = New-Object System.Windows.Controls.Button; $cancel.Content = 'Cancel'; $cancel.MinWidth = 80
+        $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = New-Object System.Windows.Thickness(0,14,0,0)
+        $ok = New-Object System.Windows.Controls.Button; $ok.Content = 'Save'; $ok.MinWidth = 104; $ok.Height = 32; $ok.Margin = New-Object System.Windows.Thickness(0,0,8,0)
+        $ok.Foreground = [System.Windows.Media.Brushes]::White; $ok.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $ok.BorderBrush = $ok.Background; $ok.FontWeight = 'SemiBold'; $ok.FontSize = 11; $ok.Padding = New-Object System.Windows.Thickness(12,6,12,6)
+        $cancel = New-Object System.Windows.Controls.Button; $cancel.Content = 'Cancel'; $cancel.MinWidth = 104; $cancel.Height = 32
+        $cancel.Foreground = [System.Windows.Media.Brushes]::White; $cancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2A44'); $cancel.BorderBrush = $cancel.Background; $cancel.FontWeight = 'SemiBold'; $cancel.FontSize = 11; $cancel.Padding = New-Object System.Windows.Thickness(12,6,12,6)
         $ok.Add_Click({ if ($calendar.SelectedDates.Count -eq 0) { [System.Windows.MessageBox]::Show('Choose at least one rounding day.', 'Rounding days') | Out-Null; return }; $dialog.DialogResult = $true })
         $cancel.Add_Click({ $dialog.DialogResult = $false })
         $buttons.Children.Add($ok) | Out-Null; $buttons.Children.Add($cancel) | Out-Null
-        [System.Windows.Controls.DockPanel]::SetDock($buttons, 'Bottom'); $panel.Children.Add($buttons) | Out-Null
-        $dialog.Content = $panel
+        [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
+        $dialog.Content = $root
         if ($dialog.ShowDialog()) { return @($calendar.SelectedDates | ForEach-Object { $_.Date } | Sort-Object) }
         return $null
     }

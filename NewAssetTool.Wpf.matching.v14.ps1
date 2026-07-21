@@ -2257,8 +2257,10 @@ function Find-SampleDevice {
         try {
             if ([string]::IsNullOrWhiteSpace($target)) { throw 'Enter or query a device before using Ping.' }
             $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
+            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $dataRoot
+            Set-OnlineStatusUi -Ui $ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
-            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText 'Continuous ping started'
+            Set-StatusMessage -Ui $ui -Mode 'PingComplete' -CustomText 'Continuous ping started; device status updated'
         } catch {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null
         }

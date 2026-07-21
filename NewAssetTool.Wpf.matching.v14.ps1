@@ -329,7 +329,7 @@ try {
         Set-ControlText -Control $Ui.DaysPerWeekBadgeText -Value "Days/week $($days.Count)"
         Set-ControlText -Control $Ui.TodayBadgeText -Value "Today $($counts.Today) / $todayTarget"
         Set-ControlText -Control $Ui.ThisWeekBadgeText -Value "This week $($counts.Week) / $weekTarget"
-        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $weekRemaining ($todayTarget/day)"
+        Set-ControlText -Control $Ui.RemainingPerDayBadgeText -Value "Week remaining $weekRemaining"
 
         if ($counts.Today -gt 75) { Set-BadgeStyle -Border $Ui.TodayBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C' }
         else { Set-BadgeStyle -Border $Ui.TodayBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309' }
@@ -643,6 +643,7 @@ try {
             DetectedType=$DetectedType; Name=$name
             AssetTag=Get-FieldValue -Row $Row -Names @('asset_tag','AssetTag')
             Serial=Get-FieldValue -Row $Row -Names @('serial_number','Serial')
+            Model=Get-FieldValue -Row $Row -Names @('model_id','Model')
             Parent=$parent; RITM=Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number','RITM'))
             RetireDate=Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','RetireDate'))
             LastRounded=Get-FieldValue -Row $Row -Names @('u_last_rounded_date','LastRounded')
@@ -801,7 +802,7 @@ try {
         $queryRole = if ($parentDevice) { 'Child' } else { 'Parent' }
 
         $parentType = Get-AssociatedDeviceDisplayType -Device $effectiveParent
-        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
+        $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; Model=$effectiveParent.Model; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
         $childrenByParent = @{}
         foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
             $collection = $Inventory.$collectionName
@@ -832,7 +833,7 @@ try {
                 $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
                 $role = if ($Device.AssetTag -and ($childAssetTag -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
                 $childDevice = ConvertTo-DeviceRecord -Row $row -DetectedType $type
-                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
+                $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; Model=$childDevice.Model; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
                 $results += $record
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag)) { $addedChildAssetTags[$childAssetTag] = $true }
             }
@@ -1723,6 +1724,7 @@ try {
             Name         = 'AO400568'
             AssetTag     = 'HSS-8093577'
             Serial       = 'C24102M031'
+            Model        = 'Dell OptiPlex'
             Parent       = '(n/a)'
             RITM         = 'TRP - 26 May 2025'
             RetireDate   = '31 May 2028'
@@ -1736,8 +1738,8 @@ try {
         }
 
         $associated = @(
-            [pscustomobject]@{ Role='Parent'; Type='Tangent'; Name='AO400568'; AssetTag='HSS-8093577'; Serial='C24102M031'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='TRP - 26 May 2025'; Retire='31 May 2028' },
-            [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='-'; Retire='-' }
+            [pscustomobject]@{ Role='Parent'; Type='Tangent'; Name='AO400568'; AssetTag='HSS-8093577'; Serial='C24102M031'; Model='Dell OptiPlex'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='TRP - 26 May 2025'; Retire='31 May 2028' },
+            [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; Model='Capsa Cart'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='-'; Retire='-' }
         )
 
         $nearby = @(
@@ -2310,7 +2312,7 @@ function Find-SampleDevice {
         if ($row.PSObject.Properties.Name -contains 'Device') { $device = $row.Device }
         if (-not $device) {
             $device = [pscustomobject]@{
-                DetectedType=$row.Type; Name=$row.Name; AssetTag=$row.AssetTag; Serial=$row.Serial; Parent='(n/a)'; RITM=$row.RITM; RetireDate=$row.Retire
+                DetectedType=$row.Type; Name=$row.Name; AssetTag=$row.AssetTag; Serial=$row.Serial; Model=$row.Model; Parent='(n/a)'; RITM=$row.RITM; RetireDate=$row.Retire
                 LastRounded=''; City=''; Location=''; Building=''; Floor=''; Room=''; Department=''
             }
         }

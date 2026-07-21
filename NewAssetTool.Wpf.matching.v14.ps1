@@ -427,6 +427,46 @@ try {
         if ($textbox) { Set-ControlText -Control $textbox -Value $Value }
     }
 
+    function Copy-SummaryValueToClipboard {
+        param([hashtable]$Ui,[object]$Control,[string]$FieldName)
+        if (-not $Control) { return }
+        $value = ''
+        try { $value = [string]$Control.Text } catch {}
+        if ([string]::IsNullOrWhiteSpace($value)) { return }
+        try {
+            [System.Windows.Clipboard]::SetText($value.Trim())
+            Set-StatusMessage -Ui $Ui -Mode 'Found' -CustomText "Copied $FieldName to clipboard."
+        } catch {
+            Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Unable to copy $FieldName to clipboard."
+        }
+    }
+
+    function Register-SummaryClipboardCopy {
+        param([hashtable]$Ui)
+        $summaryCopyFields = @(
+            @{ Control = $Ui.HostNameDisplay; FieldName = 'Name' },
+            @{ Control = $Ui.AssetTagDisplay; FieldName = 'Asset Tag' },
+            @{ Control = $Ui.SerialDisplay; FieldName = 'Serial' },
+            @{ Control = $Ui.ParentDisplay; FieldName = 'Parent' },
+            @{ Control = $Ui.RitmDisplay; FieldName = 'PO/RITM' }
+        )
+        foreach ($field in $summaryCopyFields) {
+            $control = $field.Control
+            $fieldName = $field.FieldName
+            if (-not $control) { continue }
+            $control.Cursor = [System.Windows.Input.Cursors]::Hand
+            $control.ToolTip = "Double-click to copy $fieldName to the clipboard."
+            $control.Add_MouseLeftButtonDown({
+                param($sender,$eventArgs)
+                if ($eventArgs.ClickCount -eq 2) {
+                    Copy-SummaryValueToClipboard -Ui $sender.Tag.Ui -Control $sender -FieldName $sender.Tag.FieldName
+                    $eventArgs.Handled = $true
+                }
+            })
+            $control.Tag = [pscustomobject]@{ Ui = $Ui; FieldName = $fieldName }
+        }
+    }
+
     function Set-ControlText {
         param([object]$Control,[string]$Value)
         if ($null -eq $Control) { return }
@@ -2235,6 +2275,7 @@ function Find-SampleDevice {
     Increment-Fonts -Root $window
     Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
+    Register-SummaryClipboardCopy -Ui $ui
 
     $window.Title = "New Inventory Tool - $siteName"
     Set-ControlText -Control $ui.DataPathText -Value "Data: $dataRoot (Site: $siteName)"

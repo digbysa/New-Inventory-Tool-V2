@@ -1857,13 +1857,15 @@ try {
         param([System.Windows.Controls.ComboBox]$Combo,[object[]]$Items,[string]$Text)
         if (-not $Combo) { return }
         $targetText = if ($null -ne $Text) { [string]$Text } else { '' }
-        $Combo.Items.Clear()
+        $values = New-Object System.Collections.Generic.List[string]
         foreach ($item in @($Items)) {
             if ($null -eq $item) { continue }
             $itemText = [string]$item
             if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
-            [void]$Combo.Items.Add($itemText)
+            [void]$values.Add($itemText)
         }
+        $Combo.ItemsSource = $null
+        $Combo.ItemsSource = [string[]]$values.ToArray()
         if ($Combo.Text -ne $targetText) { $Combo.Text = $targetText }
         if ([string]::IsNullOrWhiteSpace($targetText)) {
             $Combo.SelectedIndex = -1
@@ -1940,7 +1942,7 @@ try {
             $validBuilding = Get-ValidLocationSelection $Ui.BuildingComboBox.Text $buildings
 
             $floorRows = if ($validBuilding) { Filter-LocationRows -Rows $bldRows -Building $validBuilding } else { @($bldRows) }
-            $floors = Sort-LocationFloors @($floorRows | ForEach-Object { $_.Floor } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+            $floors = Sort-LocationFloors -Floors @($floorRows | ForEach-Object { $_.Floor } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
             Set-ComboItems $Ui.FloorComboBox $floors $floor
             $validFloor = Get-ValidLocationSelection $Ui.FloorComboBox.Text $floors
 

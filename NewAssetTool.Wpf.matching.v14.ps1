@@ -1807,41 +1807,84 @@ try {
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
 
+    function Set-ConnectivityBadgeUi {
+        param([System.Windows.Controls.Border]$Badge,[bool]$IsAvailable)
+        if (-not $Badge) { return }
+        if ($IsAvailable) { Set-BadgeStyle -Border $Badge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D' }
+        else { Set-BadgeStyle -Border $Badge -BackgroundHex '#F1F5F9' -ForegroundHex '#64748B' }
+    }
+
     function Set-OnlineStatusUi {
-        param([hashtable]$Ui,[bool]$IsOnline,[Nullable[int]]$LatencyMs)
-        if ($IsOnline) {
+        param(
+            [hashtable]$Ui,
+            [bool]$IsOnline,
+            [Nullable[int]]$LatencyMs,
+            [string]$IpAddress='',
+            [bool]$WmiAvailable=$false,
+            [bool]$PsRemotingAvailable=$false,
+            [bool]$SmbAvailable=$false,
+            [string]$CheckedHost=''
+        )
+        $isVpn = (-not [string]::IsNullOrWhiteSpace($IpAddress)) -and ($IpAddress.Trim() -match '^10\.64\.')
+        if ($isVpn) {
+            $Ui.DeviceOnlineText.Text = 'VPN'
+            $Ui.DeviceOnlineText.Foreground = New-Brush '#7C3AED'
+            $Ui.DeviceOnlineDot.Fill = New-Brush '#7C3AED'
+            if ($Ui.DeviceStatusIcon) { $Ui.DeviceStatusIcon.Background = New-Brush '#7C3AED' }
+        }
+        elseif ($IsOnline) {
             $Ui.DeviceOnlineText.Text = 'Online'
             $Ui.DeviceOnlineText.Foreground = New-Brush '#16A34A'
             $Ui.DeviceOnlineDot.Fill = New-Brush '#16A34A'
-            $Ui.DeviceResponseTimeText.Text = "($LatencyMs ms)"
+            if ($Ui.DeviceStatusIcon) { $Ui.DeviceStatusIcon.Background = New-Brush '#16A34A' }
         }
         else {
             $Ui.DeviceOnlineText.Text = 'Offline'
             $Ui.DeviceOnlineText.Foreground = New-Brush '#BE123C'
             $Ui.DeviceOnlineDot.Fill = New-Brush '#BE123C'
-            $Ui.DeviceResponseTimeText.Text = '(No response)'
+            if ($Ui.DeviceStatusIcon) { $Ui.DeviceStatusIcon.Background = New-Brush '#BE123C' }
         }
+        if ($IsOnline -and $LatencyMs -ne $null) { $Ui.DeviceResponseTimeText.Text = "($LatencyMs ms)" }
+        elseif (-not [string]::IsNullOrWhiteSpace($CheckedHost)) { $Ui.DeviceResponseTimeText.Text = "($CheckedHost)" }
+        else { $Ui.DeviceResponseTimeText.Text = '(No response)' }
+        Set-ConnectivityBadgeUi -Badge $Ui.WmiStatusBadge -IsAvailable:$WmiAvailable
+        Set-ConnectivityBadgeUi -Badge $Ui.PsRemotingStatusBadge -IsAvailable:$PsRemotingAvailable
+        Set-ConnectivityBadgeUi -Badge $Ui.SmbStatusBadge -IsAvailable:$SmbAvailable
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
 
+    function Test-RemoteConnectivity {
+        param([string]$HostName)
+        $result = [pscustomobject]@{ HostName=$HostName; IsOnline=$false; LatencyMs=$null; IpAddress=''; Wmi=$false; PsRemoting=$false; Smb=$false }
+        if ([string]::IsNullOrWhiteSpace($HostName)) { return $result }
+        try {
+            $reply = @(Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop | Select-Object -First 1)
+            if ($reply) {
+                $result.IsOnline = $true
+                $latencyValue = Get-FieldValue -Row $reply -Names @('ResponseTime','Latency')
+                if (-not [string]::IsNullOrWhiteSpace($latencyValue)) { $result.LatencyMs = [int][Math]::Round([double]$latencyValue) }
+                $result.IpAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $HostName
+            }
+        } catch {
+            try { $result.IpAddress = ([System.Net.Dns]::GetHostAddresses($HostName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1).ToString() } catch {}
+        }
+        try { $result.Smb = [bool](Test-NetConnection -ComputerName $HostName -Port 445 -InformationLevel Quiet -WarningAction SilentlyContinue -ErrorAction SilentlyContinue) } catch {}
+        try { Test-WSMan -ComputerName $HostName -ErrorAction Stop | Out-Null; $result.PsRemoting = $true } catch {}
+        try { Get-CimInstance -ClassName Win32_OperatingSystem -ComputerName $HostName -OperationTimeoutSec 3 -ErrorAction Stop | Out-Null; $result.Wmi = $true } catch {}
+        return $result
+    }
+
     function Start-OnlineStatusUpdateAsync {
-        param([hashtable]$Ui,[string]$HostName)
+        param([hashtable]$Ui,[string]$HostName,[string]$QueryToken)
         if ([string]::IsNullOrWhiteSpace($HostName)) {
             Set-OnlineStatusUi -Ui $Ui -IsOnline:$false -LatencyMs $null
             return
         }
         [System.Threading.Tasks.Task]::Run([Action]{
-            $isOnline = $false
-            $latencyMs = $null
-            try {
-                $result = Test-Connection -ComputerName $HostName -Count 1 -ErrorAction Stop
-                if ($result) {
-                    $isOnline = $true
-                    $latencyMs = [int][Math]::Round(($result | Select-Object -First 1).ResponseTime)
-                }
-            } catch {}
+            $connectivity = Test-RemoteConnectivity -HostName $HostName
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
-                Set-OnlineStatusUi -Ui $Ui -IsOnline:$isOnline -LatencyMs $latencyMs
+                if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
+                Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -WmiAvailable:$connectivity.Wmi -PsRemotingAvailable:$connectivity.PsRemoting -SmbAvailable:$connectivity.Smb -CheckedHost $connectivity.HostName
             }) | Out-Null
         }) | Out-Null
     }
@@ -2031,7 +2074,7 @@ function Find-SampleDevice {
 
     $ui = Get-NamedControls -Window $window -Names @(
         'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton',
-        'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
+        'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
         'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedContainer','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',
         'AssociatedDevicesDataGrid','FixNameButton',
@@ -2047,7 +2090,7 @@ function Find-SampleDevice {
         'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','ClearNearbyButton',
         'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
-        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge'
+        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','WmiStatusBadge','WmiStatusText','PsRemotingStatusBadge','PsRemotingStatusText','SmbStatusBadge','SmbStatusText'
     )
 
     $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
@@ -2128,10 +2171,16 @@ function Find-SampleDevice {
         Set-ControlText -Control $ui.DeviceOnlineText -Value 'Checking...'
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
+        if ($ui.DeviceStatusIcon) { $ui.DeviceStatusIcon.Background = New-Brush '#94A3B8' }
+        Set-ConnectivityBadgeUi -Badge $ui.WmiStatusBadge -IsAvailable:$false
+        Set-ConnectivityBadgeUi -Badge $ui.PsRemotingStatusBadge -IsAvailable:$false
+        Set-ConnectivityBadgeUi -Badge $ui.SmbStatusBadge -IsAvailable:$false
         Set-ControlText -Control $ui.DeviceResponseTimeText -Value ''
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $match.Name
+        $connectivityTarget = Resolve-ParentDevice -Device $match -Inventory $script:AppState.Inventory
+        $connectivityHost = if ($connectivityTarget -and -not [string]::IsNullOrWhiteSpace($connectivityTarget.Name)) { $connectivityTarget.Name } else { $match.Name }
+        Start-OnlineStatusUpdateAsync -Ui $ui -HostName $connectivityHost -QueryToken $script:AppState.CurrentQueryToken
     })
 
     function Reset-RoundingFormForNextScan {

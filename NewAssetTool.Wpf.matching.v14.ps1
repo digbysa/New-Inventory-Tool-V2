@@ -928,17 +928,34 @@ try {
         $Inventory | Add-Member -NotePropertyName IndexBySerial -NotePropertyValue $indexBySerial -Force
     }
 
+    function Find-ComputerNameMatch {
+        param([string]$Term,[pscustomobject]$Inventory)
+        if (-not $Inventory -or [string]::IsNullOrWhiteSpace($Term)) { return $null }
+        $variants = @($Term.Trim().ToUpper(),(($Term.Trim().ToUpper()) -replace '[-\s]','')) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+        foreach ($row in @($Inventory.Computers)) {
+            $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
+            $candidateNames = @($record.Name) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+            foreach ($name in $candidateNames) {
+                $nameVariants = @($name,($name -replace '[-\s]','')) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+                foreach ($variant in $variants) {
+                    if ($nameVariants -contains $variant) { return $record }
+                }
+            }
+        }
+        return $null
+    }
+
     function Find-InventoryMatch {
         param([string]$SearchTerm,[pscustomobject]$Inventory)
         $term = $SearchTerm.Trim().ToUpper()
         if ([string]::IsNullOrWhiteSpace($term)) { return $null }
 
-        $isComputerName = $term -match '^(PC|LD|TD|AO|WT)'
+        $isComputerName = $term -match '^(PC|LD|TD|AO)'
         $isAssetTag = $term -match '^(HSS|C)'
         $isHssAssetTag = $term -match '^HSS-'
 
         if ($isComputerName) {
-            $match = $Inventory.IndexByName[$term]
+            $match = Find-ComputerNameMatch -Term $term -Inventory $Inventory
             if ($match) { return $match }
         }
 
@@ -2298,19 +2315,21 @@ function Find-SampleDevice {
     }
 
     function Save-RoundingEvent {
-        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[string]$ResolvedXamlPath)
+        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath)
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
+        $eventDevice = if ($Inventory) { Resolve-ParentDevice -Device $CurrentDevice -Inventory $Inventory } else { $null }
+        if (-not $eventDevice) { $eventDevice = $CurrentDevice }
         $row = [pscustomobject]([ordered]@{
             Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-            AssetTag=$CurrentDevice.AssetTag; Name=$CurrentDevice.Name; Serial=$CurrentDevice.Serial
-            City=$CurrentDevice.City; Location=$CurrentDevice.Location; Building=$CurrentDevice.Building
-            Floor=$CurrentDevice.Floor; Room=$CurrentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
+            AssetTag=$eventDevice.AssetTag; Name=$eventDevice.Name; Serial=$eventDevice.Serial
+            City=$eventDevice.City; Location=$eventDevice.Location; Building=$eventDevice.Building
+            Floor=$eventDevice.Floor; Room=$eventDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
             RoundingMinutes=(Get-RoundingMinutes -Ui $Ui); CableMgmtOK=$(if($Ui.ValidateCableCheckBox.IsChecked){'Yes'}else{'No'})
             CablingNeeded=$(if($Ui.CablingNeededCheckBox.IsChecked){'Yes'}else{'No'})
             LabelOK=$(if($Ui.LabelMonitorCheckBox.IsChecked){'Yes'}else{'No'}); CartOK=$(if($Ui.PhysicalCartCheckBox.IsChecked){'Yes'}else{'No'})
             PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
-            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$CurrentDevice.Department
+            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$eventDevice.Department
             RoundingUrl=$Ui.ManualRoundButton.Tag; Comments=$Ui.CommentsTextBox.Text
             Rounded=$(if($script:ManualRoundUsed){'Yes'}else{'No'})
         })
@@ -2665,7 +2684,7 @@ function Find-SampleDevice {
             [System.Windows.MessageBox]::Show("This device is marked as Excluded. Enable 'Excluded' to log rounding.","Save Event") | Out-Null
             return
         }
-        Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath
+        Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
         $script:RoundingBaseMinutes = 3
         Reset-RoundingFormForNextScan -Ui $ui
     })

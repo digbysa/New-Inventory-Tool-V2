@@ -87,6 +87,24 @@ try {
         return $null
     }
 
+    function Find-VisualChildByType {
+        param(
+            [Parameter(Mandatory=$true)][System.Object]$Root,
+            [Parameter(Mandatory=$true)][Type]$Type
+        )
+
+        if ($null -eq $Root) { return $null }
+        if ($Root -is $Type) { return $Root }
+        if (-not ($Root -is [System.Windows.Media.Visual] -or $Root -is [System.Windows.Media.Media3D.Visual3D])) { return $null }
+
+        $count = [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($Root)
+        for ($i = 0; $i -lt $count; $i++) {
+            $found = Find-VisualChildByType -Root ([System.Windows.Media.VisualTreeHelper]::GetChild($Root, $i)) -Type $Type
+            if ($null -ne $found) { return $found }
+        }
+        return $null
+    }
+
     function Get-NamedControls {
         param(
             [Parameter(Mandatory=$true)][System.Windows.Window]$Window,
@@ -1752,8 +1770,8 @@ try {
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
                 LastRounded=(Format-DateLong $computer.LastRounded)
                 DaysAgo=$daysAgo
-                Status='-'
-                StatusOptions=@('Complete','Inaccessible - Asset not found','Inaccessible - Laptop is not available','Inaccessible - In use','Inaccessible - Other')
+                Status='—'
+                StatusOptions=@('—','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
                 IsStatusEditable=$true
                 Device=$computer
             }
@@ -2211,13 +2229,18 @@ try {
             [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; Model='Capsa Cart'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='-'; Retire='-' }
         )
 
+        $nearbyStatusOptions = @('—','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $nearby = @(
             [pscustomobject]@{ HostName='LD065898'; IPAddress='';             Subnet='';       AssetTag='HSS-8077199'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#6 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Asset not found' },
-            [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Laptop is not available' },
-            [pscustomobject]@{ HostName='LD062047'; IPAddress='10.64.47.15';  Subnet='VPN';    AssetTag='HSS-1037495'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#8 Charge Cabinet)'; Department='CHS (Reception)'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Inaccessible - Laptop is not available' },
-            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; DaysAgo='45'; Status='-' },
+            [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Laptop is not onsite' },
+            [pscustomobject]@{ HostName='LD062047'; IPAddress='10.64.47.15';  Subnet='VPN';    AssetTag='HSS-1037495'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#8 Charge Cabinet)'; Department='CHS (Reception)'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Inaccessible - Laptop is not onsite' },
+            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; DaysAgo='45'; Status='—' },
             [pscustomobject]@{ HostName='LD072236'; IPAddress='10.209.233.47'; Subnet='Unknown';AssetTag='HSS-1037488'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='104 (Chart Room)'; Department='Charting'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Complete' }
         )
+        foreach ($nearbyRow in $nearby) {
+            $nearbyRow | Add-Member -NotePropertyName StatusOptions -NotePropertyValue $nearbyStatusOptions -Force
+            $nearbyRow | Add-Member -NotePropertyName IsStatusEditable -NotePropertyValue $true -Force
+        }
 
         return [pscustomobject]@{ Device=$device; Associated=$associated; Nearby=$nearby }
     }
@@ -2741,6 +2764,15 @@ function Find-SampleDevice {
     Update-DataFileBadge -Ui $ui -DataFiles $dataFiles
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
     Register-SummaryClipboardCopy -Ui $ui
+    if ($ui.NearbyDataGrid) {
+        $ui.NearbyDataGrid.Add_PreviewMouseWheel({
+            param($sender, $e)
+            $scrollViewer = Find-VisualChildByType -Root $sender -Type ([System.Windows.Controls.ScrollViewer])
+            if ($null -eq $scrollViewer) { return }
+            if ($e.Delta -lt 0) { $scrollViewer.LineDown() } else { $scrollViewer.LineUp() }
+            $e.Handled = $true
+        })
+    }
 
     $window.Title = "New Inventory Tool - $siteName"
     Set-ControlText -Control $ui.DataPathText -Value "Data: $dataRoot (Site: $siteName)"
@@ -2835,7 +2867,7 @@ function Find-SampleDevice {
     function Reset-RoundingFormForNextScan {
         param([hashtable]$Ui)
         foreach ($cb in @($Ui.ValidateCableCheckBox,$Ui.LabelMonitorCheckBox,$Ui.ValidatePeripheralsCheckBox,$Ui.CablingNeededCheckBox,$Ui.PhysicalCartCheckBox,$Ui.AddDeviceToTrackerCheckBox)) { $cb.IsChecked = $false }
-        Set-ControlText -Control $Ui.CheckStatusComboBox -Value 'Complete'
+        Set-ControlText -Control $Ui.CheckStatusComboBox -Value '—'
         Set-ControlText -Control $Ui.MaintenanceTypeComboBox -Value 'General Rounding'
         Set-ControlText -Control $Ui.CommentsTextBox -Value ''
         Set-ControlText -Control $Ui.SearchTextBox -Value ''
@@ -2971,7 +3003,7 @@ function Find-SampleDevice {
         } else {
             foreach ($cb in $enabled) { $cb.IsChecked = $true }
         }
-        Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete'
+        Set-ControlText -Control $ui.CheckStatusComboBox -Value '—'
     })
     $ui.SaveEventButton.Add_Click({
         if (-not $script:AppState.CurrentDevice) { return }

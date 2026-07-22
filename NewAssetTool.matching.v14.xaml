@@ -746,7 +746,7 @@
                                             <StackPanel>
                                                 <TextBlock Text="CHECK STATUS" Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
                                                 <ComboBox x:Name="CheckStatusComboBox" Style="{StaticResource EditorComboStyle}" Margin="0,6,0,0">
-                                                    <ComboBoxItem Content="Complete" IsSelected="True"/>
+                                                    <ComboBoxItem Content="—" IsSelected="True"/>
                                                     <ComboBoxItem Content="Inaccessible - Asset not found"/>
                                                     <ComboBoxItem Content="Inaccessible - In storage"/>
                                                     <ComboBoxItem Content="Inaccessible - In use by Customer"/>
@@ -757,7 +757,6 @@
                                                     <ComboBoxItem Content="Inaccessible - Room locked - Key Lock"/>
                                                     <ComboBoxItem Content="Inaccessible - Under renovation"/>
                                                     <ComboBoxItem Content="Inaccessible - User working at home"/>
-                                                    <ComboBoxItem Content="Pending Repair"/>
                                                 </ComboBox>
                                             </StackPanel>
                                         </Border>
@@ -899,7 +898,7 @@
                                 <Style TargetType="{x:Type DataGridColumnHeader}">
                                     <Setter Property="Background" Value="#F3F4F6"/>
                                     <Setter Property="Foreground" Value="#000000"/>
-                                    <Setter Property="FontWeight" Value="Normal"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
                                     <Setter Property="FontSize" Value="12"/>
                                     <Setter Property="Padding" Value="3,2"/>
                                     <Setter Property="BorderBrush" Value="#B8C1CC"/>
@@ -929,7 +928,7 @@
                                 <DataGridTemplateColumn Header="Status" Width="*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" MinWidth="120" Padding="2,0"/>
+                                            <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" Style="{StaticResource EditorComboStyle}" MinWidth="120" Padding="2,0"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>

@@ -257,7 +257,9 @@
             <Setter Property="ColumnHeaderHeight" Value="23"/>
             <Setter Property="HorizontalGridLinesBrush" Value="#DDE3EA"/>
             <Setter Property="VerticalGridLinesBrush" Value="#D7DEE7"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="False"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible"/>
         </Style>
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#F8FAFC"/>
@@ -894,8 +896,17 @@
                             <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)"/>
                         </WrapPanel>
 
-                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow">
+                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" MinHeight="320" MaxHeight="520" SelectionMode="Extended" SelectionUnit="FullRow">
                             <DataGrid.Resources>
+                                <Style TargetType="{x:Type ScrollBar}">
+                                    <Setter Property="Width" Value="13"/>
+                                    <Setter Property="MinWidth" Value="13"/>
+                                    <Setter Property="Background" Value="#F3F4F6"/>
+                                </Style>
+                                <Style TargetType="{x:Type Thumb}">
+                                    <Setter Property="Background" Value="#8B8F96"/>
+                                    <Setter Property="BorderBrush" Value="#8B8F96"/>
+                                </Style>
                                 <Style TargetType="{x:Type DataGridColumnHeader}">
                                     <Setter Property="Background" Value="#F3F4F6"/>
                                     <Setter Property="Foreground" Value="#000000"/>

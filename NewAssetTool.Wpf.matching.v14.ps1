@@ -2830,13 +2830,15 @@ function Find-SampleDevice {
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
     Register-SummaryClipboardCopy -Ui $ui
     if ($ui.NearbyDataGrid) {
-        $ui.NearbyDataGrid.Add_PreviewMouseWheel({
+        $nearbyWheelHandler = [System.Windows.Input.MouseWheelEventHandler]{
             param($sender, $e)
-            $scrollViewer = Find-VisualChildByType -Root $sender -Type ([System.Windows.Controls.ScrollViewer])
+            $scrollViewer = Find-VisualChildByType -Root $ui.NearbyDataGrid -Type ([System.Windows.Controls.ScrollViewer])
             if ($null -eq $scrollViewer) { return }
             if ($e.Delta -lt 0) { $scrollViewer.LineDown() } else { $scrollViewer.LineUp() }
             $e.Handled = $true
-        })
+        }
+        $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::PreviewMouseWheelEvent, $nearbyWheelHandler, $true)
+        $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::MouseWheelEvent, $nearbyWheelHandler, $true)
         Initialize-NearbyContextMenu -Ui $ui -DataRoot $dataRoot
     }
 

@@ -1901,6 +1901,12 @@ try {
         }
     }
 
+    function Test-LocationHierarchyRowMatch {
+        param([object]$Row,[string]$Name,[string]$Expected)
+        if ([string]::IsNullOrWhiteSpace($Expected)) { return $true }
+        return ((Normalize-LocationValue (Get-LocationHierarchyFieldValue $Row $Name)) -eq (Normalize-LocationValue $Expected))
+    }
+
     function Filter-LocationRows {
         param([object[]]$Rows,[string]$City,[string]$Location,[string]$Building,[string]$Floor,[string]$Room)
         $filtered = @($Rows)

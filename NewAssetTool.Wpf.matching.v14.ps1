@@ -2703,7 +2703,7 @@ function Find-SampleDevice {
         'CablingNeededCheckBox','PhysicalCartCheckBox','AddDeviceToTrackerCheckBox',
         'CheckCompleteButton','SaveEventButton','ManualRoundButton','CommentsTextBox',
         'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','IsolateNearbyButton','ClearNearbyButton',
-        'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton',
+        'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton','ShowAllNearbyButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
         'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'
     )
@@ -2761,6 +2761,8 @@ function Find-SampleDevice {
     foreach ($checkBox in @($ui.TodaysRoundedCheckBox,$ui.ExcludedCheckBox,$ui.RecentlyRoundedCheckBox,$ui.CriticalClinicalCheckBox)) {
         $checkBox.Add_Click($refreshNearbyFromFilters)
     }
+    if ($ui.ShowAllNearbyButton) { $ui.ShowAllNearbyButton.Add_Click({ if ($ui.ShowAllNearbyCheckBox) { $ui.ShowAllNearbyCheckBox.IsChecked = $true; $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) } }) }
+
     $ui.ShowAllNearbyCheckBox.Add_Click({
         try {
             $script:IsUpdatingNearbyFilters = $true

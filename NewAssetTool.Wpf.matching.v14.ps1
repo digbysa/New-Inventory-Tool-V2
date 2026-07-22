@@ -2678,7 +2678,7 @@ function Find-SampleDevice {
         'ValidateCableCheckBox','LabelMonitorCheckBox','ValidatePeripheralsCheckBox',
         'CablingNeededCheckBox','PhysicalCartCheckBox','AddDeviceToTrackerCheckBox',
         'CheckCompleteButton','SaveEventButton','ManualRoundButton','CommentsTextBox',
-        'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','ClearNearbyButton',
+        'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','IsolateNearbyButton','ClearNearbyButton',
         'NearbyCollapseButton','NearbyExpandButton','NearbyDataGrid','NearbySaveButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
         'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'

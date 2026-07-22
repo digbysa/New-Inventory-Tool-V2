@@ -869,6 +869,7 @@
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
                                     <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
+                                    <Button x:Name="IsolateNearbyButton" Content="Isolate" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
                                     <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
                                     <Button x:Name="NearbyCollapseButton" Content="-" Style="{StaticResource SecondaryButtonStyle}" Width="28" Margin="0,0,8,0"/>
                                     <Button x:Name="NearbyExpandButton" Content="+" Style="{StaticResource SecondaryButtonStyle}" Width="28"/>

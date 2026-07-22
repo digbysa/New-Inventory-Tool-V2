@@ -1887,7 +1887,7 @@ try {
     }
 
     function Filter-LocationRows {
-        param([object[]]$Rows,[string]$City,[string]$Location,[string]$Building,[string]$Floor)
+        param([object[]]$Rows,[string]$City,[string]$Location,[string]$Building,[string]$Floor,[string]$Room)
         $filtered = @($Rows)
         if (-not [string]::IsNullOrWhiteSpace($City)) {
             $nCity = Normalize-LocationValue $City
@@ -1904,6 +1904,10 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($Floor)) {
             $nFloor = Normalize-LocationValue $Floor
             $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.Floor) -eq $nFloor })
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Room)) {
+            $nRoom = Normalize-LocationValue $Room
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.Room) -eq $nRoom })
         }
         return @($filtered)
     }
@@ -1922,12 +1926,43 @@ try {
         try {
             $rows = @(Get-ComputerLocationRows -Inventory $Inventory)
 
-            Set-ComboItems -Combo $Ui.CityComboBox -Items @(Get-UniqueLocationValues -Rows $rows -Property 'City') -Text ([string]$Ui.CityComboBox.Text)
-            Set-ComboItems -Combo $Ui.LocationComboBox -Items @(Get-UniqueLocationValues -Rows $rows -Property 'Location') -Text ([string]$Ui.LocationComboBox.Text)
-            Set-ComboItems -Combo $Ui.BuildingComboBox -Items @(Get-UniqueLocationValues -Rows $rows -Property 'Building') -Text ([string]$Ui.BuildingComboBox.Text)
-            Set-ComboItems -Combo $Ui.FloorComboBox -Items @(Get-UniqueLocationValues -Rows $rows -Property 'Floor' -Floor) -Text ([string]$Ui.FloorComboBox.Text)
-            Set-ComboItems -Combo $Ui.RoomComboBox -Items @(Get-UniqueLocationValues -Rows $rows -Property 'Room') -Text ([string]$Ui.RoomComboBox.Text)
-            Set-ComboItems -Combo $Ui.DepartmentComboBox -Items @(Get-UniqueLocationValues -Rows $rows -Property 'Department') -Text ([string]$Ui.DepartmentComboBox.Text)
+            $cities = @(Get-UniqueLocationValues -Rows $rows -Property 'City')
+            Set-ComboItems -Combo $Ui.CityComboBox -Items $cities -Text ([string]$Ui.CityComboBox.Text)
+            $validCity = Get-ValidLocationSelection -Value ([string]$Ui.CityComboBox.Text) -Items $cities
+
+            $locationRows = @(Filter-LocationRows -Rows $rows -City $validCity)
+            $locations = @(Get-UniqueLocationValues -Rows $locationRows -Property 'Location')
+            $locationText = [string]$Ui.LocationComboBox.Text
+            if (-not (Get-ValidLocationSelection -Value $locationText -Items $locations)) { $locationText = '' }
+            Set-ComboItems -Combo $Ui.LocationComboBox -Items $locations -Text $locationText
+            $validLocation = Get-ValidLocationSelection -Value ([string]$Ui.LocationComboBox.Text) -Items $locations
+
+            $buildingRows = if ($validLocation) { @(Filter-LocationRows -Rows $locationRows -Location $validLocation) } else { @() }
+            $buildings = @(Get-UniqueLocationValues -Rows $buildingRows -Property 'Building')
+            $buildingText = [string]$Ui.BuildingComboBox.Text
+            if (-not (Get-ValidLocationSelection -Value $buildingText -Items $buildings)) { $buildingText = '' }
+            Set-ComboItems -Combo $Ui.BuildingComboBox -Items $buildings -Text $buildingText
+            $validBuilding = Get-ValidLocationSelection -Value ([string]$Ui.BuildingComboBox.Text) -Items $buildings
+
+            $floorRows = if ($validLocation -and $validBuilding) { @(Filter-LocationRows -Rows $buildingRows -Building $validBuilding) } else { @() }
+            $floors = @(Get-UniqueLocationValues -Rows $floorRows -Property 'Floor' -Floor)
+            $floorText = [string]$Ui.FloorComboBox.Text
+            if (-not (Get-ValidLocationSelection -Value $floorText -Items $floors)) { $floorText = '' }
+            Set-ComboItems -Combo $Ui.FloorComboBox -Items $floors -Text $floorText
+            $validFloor = Get-ValidLocationSelection -Value ([string]$Ui.FloorComboBox.Text) -Items $floors
+
+            $roomRows = if ($validLocation -and $validBuilding -and $validFloor) { @(Filter-LocationRows -Rows $floorRows -Floor $validFloor) } else { @() }
+            $rooms = @(Get-UniqueLocationValues -Rows $roomRows -Property 'Room')
+            $roomText = [string]$Ui.RoomComboBox.Text
+            if (-not (Get-ValidLocationSelection -Value $roomText -Items $rooms)) { $roomText = '' }
+            Set-ComboItems -Combo $Ui.RoomComboBox -Items $rooms -Text $roomText
+            $validRoom = Get-ValidLocationSelection -Value ([string]$Ui.RoomComboBox.Text) -Items $rooms
+
+            $departmentRows = if ($validLocation -and $validBuilding -and $validFloor -and $validRoom) { @(Filter-LocationRows -Rows $roomRows -Room $validRoom) } else { @() }
+            $departments = @(Get-UniqueLocationValues -Rows $departmentRows -Property 'Department')
+            $departmentText = [string]$Ui.DepartmentComboBox.Text
+            if (-not (Get-ValidLocationSelection -Value $departmentText -Items $departments)) { $departmentText = '' }
+            Set-ComboItems -Combo $Ui.DepartmentComboBox -Items $departments -Text $departmentText
         } finally { $script:IsPopulatingLocationCombos = $false }
     }
 

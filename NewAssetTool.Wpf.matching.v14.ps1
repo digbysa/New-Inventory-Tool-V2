@@ -2291,26 +2291,33 @@ function Find-SampleDevice {
     }
 
     function Save-RoundingEvent {
-        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[string]$ResolvedXamlPath)
+        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[pscustomobject]$Inventory,[hashtable]$RoundingByAssetTag,[string]$ResolvedXamlPath)
+        $parentDevice = Resolve-ParentDevice -Device $CurrentDevice -Inventory $Inventory
+        if (-not $parentDevice -or $parentDevice.DetectedType -ne 'Computer') {
+            [System.Windows.MessageBox]::Show('No parent computer was found in the Computers CSV data. RoundingEvents.csv only accepts parent computer records.', 'Save Event') | Out-Null
+            return $false
+        }
+
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
         $row = [pscustomobject]([ordered]@{
             Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-            AssetTag=$CurrentDevice.AssetTag; Name=$CurrentDevice.Name; Serial=$CurrentDevice.Serial
-            City=$CurrentDevice.City; Location=$CurrentDevice.Location; Building=$CurrentDevice.Building
-            Floor=$CurrentDevice.Floor; Room=$CurrentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
+            AssetTag=$parentDevice.AssetTag; Name=$parentDevice.Name; Serial=$parentDevice.Serial
+            City=$parentDevice.City; Location=$parentDevice.Location; Building=$parentDevice.Building
+            Floor=$parentDevice.Floor; Room=$parentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
             RoundingMinutes=(Get-RoundingMinutes -Ui $Ui); CableMgmtOK=$(if($Ui.ValidateCableCheckBox.IsChecked){'Yes'}else{'No'})
             CablingNeeded=$(if($Ui.CablingNeededCheckBox.IsChecked){'Yes'}else{'No'})
             LabelOK=$(if($Ui.LabelMonitorCheckBox.IsChecked){'Yes'}else{'No'}); CartOK=$(if($Ui.PhysicalCartCheckBox.IsChecked){'Yes'}else{'No'})
             PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
-            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$CurrentDevice.Department
-            RoundingUrl=$Ui.ManualRoundButton.Tag; Comments=$Ui.CommentsTextBox.Text
+            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$parentDevice.Department
+            RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $parentDevice -RoundingByAssetTag $RoundingByAssetTag); Comments=$Ui.CommentsTextBox.Text
             Rounded=$(if($script:ManualRoundUsed){'Yes'}else{'No'})
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
         $script:ManualRoundUsed = $false
-        [System.Windows.MessageBox]::Show("Saved event to:`n$csvPath", 'Save Event') | Out-Null
+        [System.Windows.MessageBox]::Show("Saved parent computer event to:`n$csvPath", 'Save Event') | Out-Null
+        return $true
     }
 
     function Save-NearbyEvents {
@@ -2658,7 +2665,8 @@ function Find-SampleDevice {
             [System.Windows.MessageBox]::Show("This device is marked as Excluded. Enable 'Excluded' to log rounding.","Save Event") | Out-Null
             return
         }
-        Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -ResolvedXamlPath $resolvedXamlPath
+        $saved = Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath
+        if (-not $saved) { return }
         $script:RoundingBaseMinutes = 3
         Reset-RoundingFormForNextScan -Ui $ui
     })

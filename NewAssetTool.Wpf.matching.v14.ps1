@@ -907,6 +907,8 @@ try {
         $indexByName = @{}
         $indexByAsset = @{}
         $indexBySerial = @{}
+        $indexByComputerName = @{}
+        $indexByComputerLookup = @{}
 
         foreach ($set in @(
             @{Rows=$Inventory.Computers; Type='Computer'},
@@ -920,27 +922,29 @@ try {
                 Add-IndexKey -Index $indexByName -Key $record.Name -Value $record
                 Add-IndexKey -Index $indexByAsset -Key $record.AssetTag -Value $record
                 Add-IndexKey -Index $indexBySerial -Key $record.Serial -Value $record
+                if ($set.Type -eq 'Computer' -and $record.Name -match '^(LD|PC|TD|AO|WT)') {
+                    Add-IndexKey -Index $indexByComputerName -Key $record.Name -Value $record
+                    Add-IndexKey -Index $indexByComputerLookup -Key $record.Name -Value $record
+                    Add-IndexKey -Index $indexByComputerLookup -Key $record.AssetTag -Value $record
+                    Add-IndexKey -Index $indexByComputerLookup -Key $record.Serial -Value $record
+                }
             }
         }
 
         $Inventory | Add-Member -NotePropertyName IndexByName -NotePropertyValue $indexByName -Force
         $Inventory | Add-Member -NotePropertyName IndexByAsset -NotePropertyValue $indexByAsset -Force
         $Inventory | Add-Member -NotePropertyName IndexBySerial -NotePropertyValue $indexBySerial -Force
+        $Inventory | Add-Member -NotePropertyName IndexByComputerName -NotePropertyValue $indexByComputerName -Force
+        $Inventory | Add-Member -NotePropertyName IndexByComputerLookup -NotePropertyValue $indexByComputerLookup -Force
     }
 
     function Find-ComputerNameMatch {
         param([string]$Term,[pscustomobject]$Inventory)
-        if (-not $Inventory -or [string]::IsNullOrWhiteSpace($Term)) { return $null }
+        if (-not $Inventory -or [string]::IsNullOrWhiteSpace($Term) -or -not $Inventory.IndexByComputerName) { return $null }
         $variants = @($Term.Trim().ToUpper(),(($Term.Trim().ToUpper()) -replace '[-\s]','')) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
-        foreach ($row in @($Inventory.Computers)) {
-            $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
-            $candidateNames = @($record.Name) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
-            foreach ($name in $candidateNames) {
-                $nameVariants = @($name,($name -replace '[-\s]','')) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
-                foreach ($variant in $variants) {
-                    if ($nameVariants -contains $variant) { return $record }
-                }
-            }
+        foreach ($variant in $variants) {
+            $match = $Inventory.IndexByComputerName[$variant]
+            if ($match) { return $match }
         }
         return $null
     }
@@ -998,13 +1002,13 @@ try {
         $tokens = @(@($Device.Parent) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() })
         if (-not $tokens -or $tokens.Count -eq 0) { return $null }
 
-        foreach ($row in $Inventory.Computers) {
-            $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
-            $name = if ($record.Name) { $record.Name.Trim().ToUpper() } else { '' }
-            if ($name -notmatch '^(LD|PC|TD|AO|WT)') { continue }
-            $candidates = @($record.Name,$record.AssetTag,$record.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
+        if ($Inventory.IndexByComputerLookup) {
             foreach ($token in $tokens) {
-                if ($candidates -contains $token) { return $record }
+                $variants = @($token,($token -replace '[-\s]','')) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+                foreach ($variant in $variants) {
+                    $match = $Inventory.IndexByComputerLookup[$variant]
+                    if ($match) { return $match }
+                }
             }
         }
         return $null

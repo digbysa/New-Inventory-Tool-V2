@@ -1775,23 +1775,38 @@ try {
         return Get-FieldValue -Row $Row -Names @($Name,(([char]0xFEFF) + $Name))
     }
 
-    function Get-ComputerLocationRows {
+    function New-LocationHierarchyRow {
+        param([string]$City,[string]$Location,[string]$Building,[string]$Floor,[string]$Room,[string]$Department)
+        return [pscustomobject]@{ City=[string]$City; Location=[string]$Location; Building=[string]$Building; Floor=[string]$Floor; Room=[string]$Room; Department=[string]$Department }
+    }
+
+    function Add-LocationHierarchyRow {
+        param([System.Collections.Generic.List[object]]$Rows,[hashtable]$Seen,[object]$Row)
+        if (-not $Rows -or -not $Seen -or -not $Row) { return }
+        $city = Get-LocationFieldValue $Row 'City'
+        $location = Get-LocationFieldValue $Row 'Location'
+        if ([string]::IsNullOrWhiteSpace($location)) { $location = Get-FieldValue -Row $Row -Names @('location') }
+        $building = Get-LocationFieldValue $Row 'Building'
+        if ([string]::IsNullOrWhiteSpace($building)) { $building = Get-FieldValue -Row $Row -Names @('u_building') }
+        $floor = Get-LocationFieldValue $Row 'Floor'
+        if ([string]::IsNullOrWhiteSpace($floor)) { $floor = Get-FieldValue -Row $Row -Names @('u_floor') }
+        $room = Get-LocationFieldValue $Row 'Room'
+        if ([string]::IsNullOrWhiteSpace($room)) { $room = Get-FieldValue -Row $Row -Names @('u_room') }
+        $department = Get-LocationFieldValue $Row 'Department'
+        if ([string]::IsNullOrWhiteSpace($department)) { $department = Get-FieldValue -Row $Row -Names @('u_department_location') }
+        $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
+        if ($Seen.ContainsKey($key)) { return }
+        $Seen[$key] = $true
+        [void]$Rows.Add((New-LocationHierarchyRow -City $city -Location $location -Building $building -Floor $floor -Room $room -Department $department))
+    }
+
+    function Get-LocationHierarchyRows {
         param([pscustomobject]$Inventory)
         $rows = New-Object System.Collections.Generic.List[object]
         $seen = @{}
-        foreach ($row in @($Inventory.Computers)) {
-            $city = Get-FieldValue -Row $row -Names @('location.city','City')
-            $location = Get-FieldValue -Row $row -Names @('location','Location')
-            $building = Get-FieldValue -Row $row -Names @('u_building','Building')
-            $floor = Get-FieldValue -Row $row -Names @('u_floor','Floor')
-            $room = Get-FieldValue -Row $row -Names @('u_room','Room')
-            $department = Get-FieldValue -Row $row -Names @('u_department_location','Department')
-            $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
-            if (-not $seen.ContainsKey($key)) {
-                $seen[$key] = $true
-                [void]$rows.Add([pscustomobject]@{ City=[string]$city; Location=[string]$location; Building=[string]$building; Floor=[string]$floor; Room=[string]$room; Department=[string]$department })
-            }
-        }
+        if (-not $Inventory) { return @() }
+        foreach ($row in @($Inventory.Locations)) { Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row }
+        foreach ($row in @($Inventory.Computers)) { Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row }
         return @($rows.ToArray())
     }
 
@@ -1799,8 +1814,8 @@ try {
         param([pscustomobject]$Inventory,[string]$Value,[string]$Column)
         if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
         $n = Normalize-LocationValue $Value
-        foreach ($row in @($Inventory.Locations)) {
-            if ((Normalize-LocationValue (Get-LocationFieldValue $row $Column)) -eq $n) { return $true }
+        foreach ($row in @(Get-LocationHierarchyRows -Inventory $Inventory)) {
+            if ((Normalize-LocationValue $row.$Column) -eq $n) { return $true }
         }
         return $false
     }
@@ -1818,8 +1833,8 @@ try {
         if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
         $n = Normalize-LocationValue $Value
         $code = Extract-RoomCode $Value
-        foreach ($row in @($Inventory.Locations)) {
-            $room = Get-LocationFieldValue $row 'Room'
+        foreach ($row in @(Get-LocationHierarchyRows -Inventory $Inventory)) {
+            $room = $row.Room
             if ((Normalize-LocationValue $room) -eq $n) { return $true }
             if ($code -and (Extract-RoomCode $room) -eq $code) { return $true }
         }
@@ -1924,9 +1939,30 @@ try {
         if (-not $Ui -or -not $Inventory) { return }
         $script:IsPopulatingLocationCombos = $true
         try {
-            $rows = @(Get-ComputerLocationRows -Inventory $Inventory)
+            $rows = @(Get-LocationHierarchyRows -Inventory $Inventory)
 
             $cities = @(Get-UniqueLocationValues -Rows $rows -Property 'City')
+            if ($ChangedLevel -eq 'City') {
+                Set-ControlText -Control $Ui.LocationComboBox -Value ''
+                Set-ControlText -Control $Ui.BuildingComboBox -Value ''
+                Set-ControlText -Control $Ui.FloorComboBox -Value ''
+                Set-ControlText -Control $Ui.RoomComboBox -Value ''
+                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
+            } elseif ($ChangedLevel -eq 'Location') {
+                Set-ControlText -Control $Ui.BuildingComboBox -Value ''
+                Set-ControlText -Control $Ui.FloorComboBox -Value ''
+                Set-ControlText -Control $Ui.RoomComboBox -Value ''
+                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
+            } elseif ($ChangedLevel -eq 'Building') {
+                Set-ControlText -Control $Ui.FloorComboBox -Value ''
+                Set-ControlText -Control $Ui.RoomComboBox -Value ''
+                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
+            } elseif ($ChangedLevel -eq 'Floor') {
+                Set-ControlText -Control $Ui.RoomComboBox -Value ''
+                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
+            } elseif ($ChangedLevel -eq 'Room') {
+                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
+            }
             Set-ComboItems -Combo $Ui.CityComboBox -Items $cities -Text ([string]$Ui.CityComboBox.Text)
             $validCity = Get-ValidLocationSelection -Value ([string]$Ui.CityComboBox.Text) -Items $cities
 
@@ -2405,6 +2441,35 @@ function Find-SampleDevice {
         }
     }
 
+    function Get-LocationUserAddsPath {
+        param([pscustomobject]$Inventory)
+        $folder = if ($Inventory -and -not [string]::IsNullOrWhiteSpace($Inventory.SiteFolderPath) -and (Test-Path -LiteralPath $Inventory.SiteFolderPath)) { $Inventory.SiteFolderPath } elseif ($Inventory) { $Inventory.DataRoot } else { $null }
+        if ([string]::IsNullOrWhiteSpace($folder)) { return $null }
+        $existing = @(Get-ChildItem -LiteralPath $folder -File -Filter 'LocationMaster-UserAdds*.csv' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1)
+        if ($existing.Count -gt 0) { return $existing[0].FullName }
+        $suffix = if ($Inventory -and -not [string]::IsNullOrWhiteSpace($Inventory.SiteFolderPath)) { ' - ' + (Split-Path -Leaf $Inventory.SiteFolderPath) } else { '' }
+        return (Join-Path $folder ("LocationMaster-UserAdds$suffix.csv"))
+    }
+
+    function Add-LocationUserAddRow {
+        param([pscustomobject]$Inventory,[string]$City,[string]$Location,[string]$Building,[string]$Floor,[string]$Room,[string]$Department)
+        if (-not $Inventory) { return }
+        if ([string]::IsNullOrWhiteSpace($City) -and [string]::IsNullOrWhiteSpace($Location) -and [string]::IsNullOrWhiteSpace($Building) -and [string]::IsNullOrWhiteSpace($Floor) -and [string]::IsNullOrWhiteSpace($Room) -and [string]::IsNullOrWhiteSpace($Department)) { return }
+        $newRow = New-LocationHierarchyRow -City $City -Location $Location -Building $Building -Floor $Floor -Room $Room -Department $Department
+        $newKey = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $City),(Normalize-LocationValue $Location),(Normalize-LocationValue $Building),(Normalize-LocationValue $Floor),(Normalize-LocationValue $Room),(Normalize-LocationValue $Department)
+        foreach ($row in @(Get-LocationHierarchyRows -Inventory $Inventory)) {
+            $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $row.City),(Normalize-LocationValue $row.Location),(Normalize-LocationValue $row.Building),(Normalize-LocationValue $row.Floor),(Normalize-LocationValue $row.Room),(Normalize-LocationValue $row.Department)
+            if ($key -eq $newKey) { return }
+        }
+        $path = Get-LocationUserAddsPath -Inventory $Inventory
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            $dir = Split-Path -Path $path -Parent
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
+            @($newRow) | Export-Csv -Path $path -NoTypeInformation -Append:((Test-Path -LiteralPath $path)) -Force
+        }
+        $Inventory.Locations = @($Inventory.Locations) + $newRow
+    }
+
     function Save-LocationValues {
         param([hashtable]$Ui)
 
@@ -2424,7 +2489,10 @@ function Find-SampleDevice {
                 $target.Room = $Ui.RoomTextBox.Text
                 $target.Department = $Ui.DepartmentTextBox.Text
             }
-            if ($script:AppState.Inventory) { Set-LocationValidationStyle -Ui $Ui -Inventory $script:AppState.Inventory }
+            if ($script:AppState.Inventory) {
+                Add-LocationUserAddRow -Inventory $script:AppState.Inventory -City $Ui.CityTextBox.Text -Location $Ui.LocationTextBox.Text -Building $Ui.BuildingTextBox.Text -Floor $Ui.FloorTextBox.Text -Room $Ui.RoomTextBox.Text -Department $Ui.DepartmentTextBox.Text
+                Set-LocationValidationStyle -Ui $Ui -Inventory $script:AppState.Inventory
+            }
         }
     }
 
@@ -2502,6 +2570,7 @@ function Find-SampleDevice {
     $ui.LocationComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Location' } })
     $ui.BuildingComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Building' } })
     $ui.FloorComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Floor' } })
+    $ui.RoomComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Room' } })
 
     $ui.QueryButton.Add_Click({
         $searchTerm = $ui.SearchTextBox.Text

@@ -2522,7 +2522,7 @@ function Find-SampleDevice {
             $row = [pscustomobject]([ordered]@{
                 Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                 AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
-                CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -eq '-') { 'Complete' } else { $item.Status })
+                CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -in @('-','—')) { 'Complete' } else { $item.Status })
                 RoundingMinutes=3; CableMgmtOK='No'; CablingNeeded='No'; LabelOK='No'; CartOK='No'; PeripheralsOK='No'
                 MaintenanceType='Nearby'; Department=''; RoundingUrl=''; Comments='Saved from Nearby tab'; Rounded='No'
             })

@@ -901,7 +901,13 @@
                                     <DataGridTextColumn Header="MAINTENANCE TYPE" Width="105" Binding="{Binding MaintenanceType}"/>
                                     <DataGridTextColumn Header="LAST ROUNDED" Width="105" Binding="{Binding LastRounded}"/>
                                     <DataGridTextColumn Header="DAYS AGO" Width="55" Binding="{Binding DaysAgo}"/>
-                                    <DataGridTextColumn Header="STATUS" Width="*" Binding="{Binding Status}"/>
+                                    <DataGridTemplateColumn Header="STATUS" Width="*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" MinWidth="180"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>

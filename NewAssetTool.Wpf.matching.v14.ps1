@@ -1906,30 +1906,30 @@ try {
         $filtered = @($Rows)
         if (-not [string]::IsNullOrWhiteSpace($City)) {
             $nCity = Normalize-LocationValue $City
-            $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.City) -eq $nCity })
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'City')) -eq $nCity })
         }
         if (-not [string]::IsNullOrWhiteSpace($Location)) {
             $nLocation = Normalize-LocationValue $Location
-            $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.Location) -eq $nLocation })
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Location')) -eq $nLocation })
         }
         if (-not [string]::IsNullOrWhiteSpace($Building)) {
             $nBuilding = Normalize-LocationValue $Building
-            $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.Building) -eq $nBuilding })
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Building')) -eq $nBuilding })
         }
         if (-not [string]::IsNullOrWhiteSpace($Floor)) {
             $nFloor = Normalize-LocationValue $Floor
-            $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.Floor) -eq $nFloor })
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Floor')) -eq $nFloor })
         }
         if (-not [string]::IsNullOrWhiteSpace($Room)) {
             $nRoom = Normalize-LocationValue $Room
-            $filtered = @($filtered | Where-Object { (Normalize-LocationValue $_.Room) -eq $nRoom })
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Room')) -eq $nRoom })
         }
         return @($filtered)
     }
 
     function Get-UniqueLocationValues {
         param([object[]]$Rows,[string]$Property,[switch]$Floor)
-        $values = @($Rows | ForEach-Object { $_.$Property } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        $values = @($Rows | ForEach-Object { Get-LocationHierarchyFieldValue $_ $Property } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
         if ($Floor) { return @(Sort-LocationFloors -Floors $values) }
         return @($values | Sort-Object -Unique)
     }

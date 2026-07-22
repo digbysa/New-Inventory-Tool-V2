@@ -1774,23 +1774,22 @@ try {
         return Get-FieldValue -Row $Row -Names @($Name,(([char]0xFEFF) + $Name))
     }
 
-    function Get-LocationRows {
+    function Get-ComputerLocationRows {
         param([pscustomobject]$Inventory)
         $rows = New-Object System.Collections.Generic.List[object]
         $seen = @{}
-        $add = {
-            param($city,$location,$building,$floor,$room,$department)
+        foreach ($row in @($Inventory.Computers)) {
+            $city = Get-FieldValue $row @('location.city')
+            $location = Get-FieldValue $row @('location')
+            $building = Get-FieldValue $row @('u_building')
+            $floor = Get-FieldValue $row @('u_floor')
+            $room = Get-FieldValue $row @('u_room')
+            $department = Get-FieldValue $row @('u_department_location')
             $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
             if (-not $seen.ContainsKey($key)) {
                 $seen[$key] = $true
                 [void]$rows.Add([pscustomobject]@{ City=[string]$city; Location=[string]$location; Building=[string]$building; Floor=[string]$floor; Room=[string]$room; Department=[string]$department })
             }
-        }
-        foreach ($row in @($Inventory.Locations)) {
-            & $add (Get-LocationFieldValue $row 'City') (Get-LocationFieldValue $row 'Location') (Get-LocationFieldValue $row 'Building') (Get-LocationFieldValue $row 'Floor') (Get-LocationFieldValue $row 'Room') (Get-LocationFieldValue $row 'Department')
-        }
-        foreach ($row in @($Inventory.Computers)) {
-            & $add (Get-FieldValue $row @('location.city','City')) (Get-FieldValue $row @('location','Location')) (Get-FieldValue $row @('u_building','Building')) (Get-FieldValue $row @('u_floor','Floor')) (Get-FieldValue $row @('u_room','Room')) (Get-FieldValue $row @('u_department_location','Department'))
         }
         return @($rows)
     }
@@ -1905,58 +1904,26 @@ try {
         return @($filtered)
     }
 
+    function Get-UniqueLocationValues {
+        param([object[]]$Rows,[string]$Property,[switch]$Floor)
+        $values = @($Rows | ForEach-Object { $_.$Property } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($Floor) { return @(Sort-LocationFloors -Floors $values) }
+        return @($values | Sort-Object -Unique)
+    }
+
     function Populate-LocationCombos {
         param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ChangedLevel='')
         if (-not $Ui -or -not $Inventory) { return }
         $script:IsPopulatingLocationCombos = $true
         try {
-            $rows = @(Get-LocationRows -Inventory $Inventory)
+            $rows = @(Get-ComputerLocationRows -Inventory $Inventory)
 
-            $city = [string]$Ui.CityComboBox.Text
-            $loc = [string]$Ui.LocationComboBox.Text
-            $building = [string]$Ui.BuildingComboBox.Text
-            $floor = [string]$Ui.FloorComboBox.Text
-            $room = [string]$Ui.RoomComboBox.Text
-            $department = [string]$Ui.DepartmentComboBox.Text
-
-            if ($ChangedLevel -eq 'City') { $loc = ''; $building = ''; $floor = ''; $room = '' }
-            elseif ($ChangedLevel -eq 'Location') { $building = ''; $floor = ''; $room = '' }
-            elseif ($ChangedLevel -eq 'Building') { $floor = ''; $room = '' }
-            elseif ($ChangedLevel -eq 'Floor') { $room = '' }
-
-            $cities = @($rows | ForEach-Object { $_.City } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
-            Set-ComboItems $Ui.CityComboBox $cities $city
-            $validCity = Get-ValidLocationSelection $Ui.CityComboBox.Text $cities
-
-            # Match the old tool's behavior: only filter a lower level when the higher-level
-            # text is a valid LocationMaster value. This keeps dropdowns populated even when
-            # a device has a legacy/free-form city, location, building, floor, or room value.
-            $locRows = Filter-LocationRows -Rows $rows -City $validCity
-            $locs = @($locRows | ForEach-Object { $_.Location } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
-            Set-ComboItems $Ui.LocationComboBox $locs $loc
-            $validLoc = Get-ValidLocationSelection $Ui.LocationComboBox.Text $locs
-
-            $bldRows = if ($validLoc) { Filter-LocationRows -Rows $locRows -Location $validLoc } else { @($locRows) }
-            $buildings = @($bldRows | ForEach-Object { $_.Building } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
-            Set-ComboItems $Ui.BuildingComboBox $buildings $building
-            $validBuilding = Get-ValidLocationSelection $Ui.BuildingComboBox.Text $buildings
-
-            $floorRows = if ($validBuilding) { Filter-LocationRows -Rows $bldRows -Building $validBuilding } else { @($bldRows) }
-            $floors = Sort-LocationFloors -Floors @($floorRows | ForEach-Object { $_.Floor } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-            Set-ComboItems $Ui.FloorComboBox $floors $floor
-            $validFloor = Get-ValidLocationSelection $Ui.FloorComboBox.Text $floors
-
-            $roomRows = if ($validFloor) { Filter-LocationRows -Rows $floorRows -Floor $validFloor } else { @($floorRows) }
-            $rooms = @($roomRows | ForEach-Object { $_.Room } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
-            Set-ComboItems $Ui.RoomComboBox $rooms $room
-
-            $departmentRows = if (-not [string]::IsNullOrWhiteSpace($Ui.RoomComboBox.Text)) {
-                $validRoom = Get-ValidLocationSelection $Ui.RoomComboBox.Text $rooms
-                if ($validRoom) { @($roomRows | Where-Object { (Normalize-LocationValue $_.Room) -eq (Normalize-LocationValue $validRoom) }) } else { @($roomRows) }
-            } else { @($roomRows) }
-            $departments = @($departmentRows | ForEach-Object { $_.Department } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
-            if ($departments.Count -eq 0) { $departments = @($rows | ForEach-Object { $_.Department } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique) }
-            Set-ComboItems $Ui.DepartmentComboBox $departments $department
+            Set-ComboItems $Ui.CityComboBox (Get-UniqueLocationValues -Rows $rows -Property 'City') ([string]$Ui.CityComboBox.Text)
+            Set-ComboItems $Ui.LocationComboBox (Get-UniqueLocationValues -Rows $rows -Property 'Location') ([string]$Ui.LocationComboBox.Text)
+            Set-ComboItems $Ui.BuildingComboBox (Get-UniqueLocationValues -Rows $rows -Property 'Building') ([string]$Ui.BuildingComboBox.Text)
+            Set-ComboItems $Ui.FloorComboBox (Get-UniqueLocationValues -Rows $rows -Property 'Floor' -Floor) ([string]$Ui.FloorComboBox.Text)
+            Set-ComboItems $Ui.RoomComboBox (Get-UniqueLocationValues -Rows $rows -Property 'Room') ([string]$Ui.RoomComboBox.Text)
+            Set-ComboItems $Ui.DepartmentComboBox (Get-UniqueLocationValues -Rows $rows -Property 'Department') ([string]$Ui.DepartmentComboBox.Text)
         } finally { $script:IsPopulatingLocationCombos = $false }
     }
 

@@ -747,6 +747,7 @@
                                                 <TextBlock Text="CHECK STATUS" Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
                                                 <ComboBox x:Name="CheckStatusComboBox" Style="{StaticResource EditorComboStyle}" Margin="0,6,0,0">
                                                     <ComboBoxItem Content="—" IsSelected="True"/>
+                                                    <ComboBoxItem Content="Complete"/>
                                                     <ComboBoxItem Content="Inaccessible - Asset not found"/>
                                                     <ComboBoxItem Content="Inaccessible - In storage"/>
                                                     <ComboBoxItem Content="Inaccessible - In use by Customer"/>
@@ -893,7 +894,7 @@
                             <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)"/>
                         </WrapPanel>
 
-                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0">
+                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow">
                             <DataGrid.Resources>
                                 <Style TargetType="{x:Type DataGridColumnHeader}">
                                     <Setter Property="Background" Value="#F3F4F6"/>

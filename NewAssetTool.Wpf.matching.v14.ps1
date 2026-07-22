@@ -40,7 +40,7 @@ try {
     function ConvertFrom-XamlFile {
         param([Parameter(Mandatory=$true)][string]$Path)
         if (-not (Test-Path -LiteralPath $Path)) { throw "XAML file not found: $Path" }
-        $rawXaml = Get-Content -LiteralPath $Path -Raw
+        $rawXaml = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
         $xml = [xml]$rawXaml
         $reader = New-Object System.Xml.XmlNodeReader $xml
         return [Windows.Markup.XamlReader]::Load($reader)
@@ -1771,7 +1771,7 @@ try {
                 LastRounded=(Format-DateLong $computer.LastRounded)
                 DaysAgo=$daysAgo
                 Status='—'
-                StatusOptions=@('—','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
+                StatusOptions=@('—','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
                 IsStatusEditable=$true
                 Device=$computer
             }
@@ -1800,6 +1800,71 @@ try {
             $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=$rows }
         }
         Update-NearbySummary -Ui $Ui
+    }
+
+
+
+    function Get-NearbySelectedRows {
+        param([hashtable]$Ui)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return @() }
+        $selected = @($Ui.NearbyDataGrid.SelectedItems | Where-Object { $_ })
+        if ($selected.Count -gt 0) { return $selected }
+        if ($Ui.NearbyDataGrid.SelectedItem) { return @($Ui.NearbyDataGrid.SelectedItem) }
+        return @()
+    }
+
+    function Set-NearbySelectedStatus {
+        param([hashtable]$Ui,[string]$Status)
+        $selected = @(Get-NearbySelectedRows -Ui $Ui)
+        if ($selected.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Nearby Status') | Out-Null
+            return
+        }
+        foreach ($row in $selected) {
+            if (-not $row) { continue }
+            if ($row.PSObject.Properties.Name -contains 'IsStatusEditable' -and -not [bool]$row.IsStatusEditable) { continue }
+            $row.Status = $Status
+        }
+        try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Updated status for $($selected.Count) selected Nearby device(s)."
+    }
+
+    function Invoke-SelectedNearbyPing {
+        param([hashtable]$Ui,[string]$DataRoot)
+        $selected = @(Get-NearbySelectedRows -Ui $Ui)
+        if ($selected.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Ping selected host(s)') | Out-Null
+            return
+        }
+        $updated = 0
+        foreach ($row in $selected) {
+            if (-not $row -or [string]::IsNullOrWhiteSpace([string]$row.HostName)) { continue }
+            $result = Invoke-DevicePing -ComputerName ([string]$row.HostName) -DataRoot $DataRoot
+            $row.IPAddress = if ($result.IpAddress) { [string]$result.IpAddress } else { 'Unknown' }
+            $row.Subnet = if ($result.Subnet) { [string]$result.Subnet } else { 'Unknown' }
+            $updated++
+        }
+        try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated selected Nearby host(s)."
+    }
+
+    function Initialize-NearbyContextMenu {
+        param([hashtable]$Ui,[string]$DataRoot)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
+        $menu = New-Object System.Windows.Controls.ContextMenu
+        $pingItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Ping selected host(s)' }
+        $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $dataRoot })
+        [void]$menu.Items.Add($pingItem)
+        [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
+        foreach ($status in @('—','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')) {
+            $item = New-Object System.Windows.Controls.MenuItem -Property @{ Header=$status; Tag=$status }
+            $item.Add_Click({ param($sender,$e) Set-NearbySelectedStatus -Ui $ui -Status ([string]$sender.Tag) })
+            [void]$menu.Items.Add($item)
+        }
+        $Ui.NearbyDataGrid.ContextMenu = $menu
+        $Ui.NearbyDataGrid.Add_PreviewMouseRightButtonDown({
+            if (-not $this.SelectedItem -and $this.CurrentItem) { $this.SelectedItem = $this.CurrentItem }
+        })
     }
 
 
@@ -2229,7 +2294,7 @@ try {
             [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; Model='Capsa Cart'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='-'; Retire='-' }
         )
 
-        $nearbyStatusOptions = @('—','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
+        $nearbyStatusOptions = @('—','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $nearby = @(
             [pscustomobject]@{ HostName='LD065898'; IPAddress='';             Subnet='';       AssetTag='HSS-8077199'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#6 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Asset not found' },
             [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Laptop is not onsite' },
@@ -2772,6 +2837,7 @@ function Find-SampleDevice {
             if ($e.Delta -lt 0) { $scrollViewer.LineDown() } else { $scrollViewer.LineUp() }
             $e.Handled = $true
         })
+        Initialize-NearbyContextMenu -Ui $ui -DataRoot $dataRoot
     }
 
     $window.Title = "New Inventory Tool - $siteName"

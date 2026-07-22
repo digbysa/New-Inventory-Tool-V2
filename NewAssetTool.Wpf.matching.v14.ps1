@@ -109,7 +109,7 @@ try {
         # parameterless WPF Window.ShowDialog() overload from event-driven nested
         # dialogs. Calling the CLR method explicitly avoids that binder path while
         # preserving the nullable Boolean return value.
-        return [System.Windows.Window].GetMethod('ShowDialog', [System.Type[]]::EmptyTypes).Invoke($Window, $null)
+        return [System.Windows.Window].GetMethod('ShowDialog', [System.Type]::EmptyTypes).Invoke($Window, $null)
     }
 
     function New-Brush {

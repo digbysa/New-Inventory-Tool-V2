@@ -2692,6 +2692,34 @@ function Find-SampleDevice {
         Set-ControlText -Control $combo -Value ''
     }
 
+    $script:IsUpdatingNearbyFilters = $false
+    $refreshNearbyFromFilters = {
+        if ($script:IsUpdatingNearbyFilters) { return }
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+    }
+    foreach ($checkBox in @($ui.TodaysRoundedCheckBox,$ui.ExcludedCheckBox,$ui.RecentlyRoundedCheckBox,$ui.CriticalClinicalCheckBox)) {
+        $checkBox.Add_Click($refreshNearbyFromFilters)
+    }
+    $ui.ShowAllNearbyCheckBox.Add_Click({
+        try {
+            $script:IsUpdatingNearbyFilters = $true
+            if ($ui.ShowAllNearbyCheckBox.IsChecked) {
+                $ui.TodaysRoundedCheckBox.IsChecked = $true
+                $ui.ExcludedCheckBox.IsChecked = $true
+                $ui.RecentlyRoundedCheckBox.IsChecked = $true
+                $ui.CriticalClinicalCheckBox.IsChecked = $true
+            } else {
+                $ui.TodaysRoundedCheckBox.IsChecked = $false
+                $ui.ExcludedCheckBox.IsChecked = $false
+                $ui.RecentlyRoundedCheckBox.IsChecked = $true
+                $ui.CriticalClinicalCheckBox.IsChecked = $false
+            }
+        } finally {
+            $script:IsUpdatingNearbyFilters = $false
+        }
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+    })
+
     $ui.CityComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'City' } })
     $ui.LocationComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Location' } })
     $ui.BuildingComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Building' } })

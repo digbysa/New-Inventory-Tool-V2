@@ -201,6 +201,24 @@ try {
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
 
+    function Load-NearbyRoundingEvents {
+        param([string]$ResolvedXamlPath)
+        if (-not $script:AppState) { return }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedTodayAssetTags') -or -not $script:AppState.NearbyRoundedTodayAssetTags) {
+            $script:AppState | Add-Member -NotePropertyName NearbyRoundedTodayAssetTags -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
+        }
+        $script:AppState.NearbyRoundedTodayAssetTags.Clear()
+        $path = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
+        if (-not (Test-Path -LiteralPath $path)) { return }
+        $today = (Get-Date).Date
+        foreach ($row in @(Import-Csv -LiteralPath $path)) {
+            $dt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt) -or $dt.Date -ne $today) { continue }
+            $assetKey = [string]$row.AssetTag
+            if (-not [string]::IsNullOrWhiteSpace($assetKey)) { [void]$script:AppState.NearbyRoundedTodayAssetTags.Add($assetKey.Trim().ToUpperInvariant()) }
+        }
+    }
+
     function Get-RoundingPlanPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingPlan.json' }
 
     function Read-RoundingPlan {
@@ -1735,6 +1753,8 @@ try {
                 LastRounded=(Format-DateLong $computer.LastRounded)
                 DaysAgo=$daysAgo
                 Status='-'
+                StatusOptions=@('Complete','Inaccessible - Asset not found','Inaccessible - Laptop is not available','Inaccessible - In use','Inaccessible - Other')
+                IsStatusEditable=$true
                 Device=$computer
             }
         }
@@ -1753,7 +1773,7 @@ try {
     }
 
     function Update-NearbyRows {
-        param([hashtable]$Ui,[pscustomobject]$Inventory)
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
         $rows = Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory
         $Ui.NearbyDataGrid.ItemsSource = $rows
         if ($script:AppState) {
@@ -2394,7 +2414,7 @@ try {
     }
 
     function Clear-WindowData {
-        param([hashtable]$Ui)
+        param([hashtable]$Ui,[bool]$ClearNearby=$true)
         foreach ($name in @('DetectedType','HostName','AssetTag','Serial','Parent','Ritm','Retire')) { Set-DisplayText -Ui $Ui -BaseName $name -Value '' }
         Set-ControlText -Control $Ui.SelectedDeviceText -Value ''
         $Ui.LastRoundedLabelText.Foreground = New-Brush '#64748B'
@@ -2404,9 +2424,13 @@ try {
         $Ui.LastRoundedContainer.BorderBrush = New-Brush '#D9E1EA'
         $Ui.LastRoundedAttentionBadge.Visibility = 'Collapsed'
         foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { Set-ControlText -Control $box -Value ''; $box.Background = New-Brush '#CCF2D3'; $box.BorderBrush = New-Brush '#7CE0A6' }
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
         $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
-        $Ui.NearbyDataGrid.ItemsSource = @()
+        if ($ClearNearby) {
+            Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
+            $Ui.NearbyDataGrid.ItemsSource = @()
+        } else {
+            Update-NearbySummary -Ui $Ui
+        }
         Set-ControlText -Control $Ui.DeviceOnlineText -Value 'Ready'
         $Ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $Ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
@@ -2803,12 +2827,7 @@ function Find-SampleDevice {
         Set-DeviceNetworkVisibility -Ui $ui -IsVisible:$false
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        try {
-            Invoke-CurrentDevicePing -Ui $ui -Inventory $script:AppState.Inventory -DataRoot $dataRoot
-        } catch {
-            Set-OnlineStatusUi -Ui $ui -IsOnline:$false -LatencyMs $null
-            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Device found; ping failed'
-        }
+        Start-OnlineStatusUpdateAsync -Ui $ui -HostName (Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory) -QueryToken $script:AppState.CurrentQueryToken
     })
 
     function Reset-RoundingFormForNextScan {
@@ -2832,7 +2851,7 @@ function Find-SampleDevice {
             $script:AppState.CurrentQueryToken = ''
             $script:AppState.SelectedSummaryDevice = $null
             $script:AppState.SelectedSummaryParent = $null
-            Clear-WindowData -Ui $ui
+            Clear-WindowData -Ui $ui -ClearNearby:$false
             Set-RoundingMinutes -Ui $ui -Minutes 3
             Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'

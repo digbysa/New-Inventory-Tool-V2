@@ -1864,7 +1864,8 @@ try {
             [void]$values.Add($itemText)
         }
         $Combo.ItemsSource = $null
-        $Combo.ItemsSource = [string[]]$values.ToArray()
+        $Combo.Items.Clear()
+        foreach ($value in $values) { [void]$Combo.Items.Add($value) }
         if ($Combo.Text -ne $targetText) { $Combo.Text = $targetText }
         if ([string]::IsNullOrWhiteSpace($targetText)) {
             $Combo.SelectedIndex = -1
@@ -1878,8 +1879,10 @@ try {
                     break
                 }
             }
-            if ($matchIndex -ge 0) { $Combo.SelectedIndex = $matchIndex }
-        } catch {}
+            $Combo.SelectedIndex = $matchIndex
+        } catch {
+            $Combo.SelectedIndex = -1
+        }
     }
 
     function Filter-LocationRows {
@@ -2342,7 +2345,19 @@ function Find-SampleDevice {
         $Ui.CancelEditLocationButton.Visibility = if ($IsEditing) { $visible } else { $collapsed }
         $Ui.EditLocationButton.Content = if ($IsEditing) { 'Save' } else { 'Edit Location' }
         if ($IsEditing -and $Inventory) {
-            foreach ($pair in @(@($Ui.CityComboBox,$Ui.CityTextBox),@($Ui.LocationComboBox,$Ui.LocationTextBox),@($Ui.BuildingComboBox,$Ui.BuildingTextBox),@($Ui.FloorComboBox,$Ui.FloorTextBox),@($Ui.RoomComboBox,$Ui.RoomTextBox),@($Ui.DepartmentComboBox,$Ui.DepartmentTextBox))) { $pair[0].IsEditable = $true; $pair[0].Text = $pair[1].Text }
+            $editablePairs = @(
+                [pscustomobject]@{ Combo=$Ui.CityComboBox; TextBox=$Ui.CityTextBox },
+                [pscustomobject]@{ Combo=$Ui.LocationComboBox; TextBox=$Ui.LocationTextBox },
+                [pscustomobject]@{ Combo=$Ui.BuildingComboBox; TextBox=$Ui.BuildingTextBox },
+                [pscustomobject]@{ Combo=$Ui.FloorComboBox; TextBox=$Ui.FloorTextBox },
+                [pscustomobject]@{ Combo=$Ui.RoomComboBox; TextBox=$Ui.RoomTextBox },
+                [pscustomobject]@{ Combo=$Ui.DepartmentComboBox; TextBox=$Ui.DepartmentTextBox }
+            )
+            foreach ($pair in $editablePairs) {
+                if (-not $pair.Combo -or -not $pair.TextBox) { continue }
+                $pair.Combo.IsEditable = $true
+                $pair.Combo.Text = $pair.TextBox.Text
+            }
             Populate-LocationCombos -Ui $Ui -Inventory $Inventory
         }
     }

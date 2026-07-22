@@ -2786,17 +2786,13 @@ function Find-SampleDevice {
         Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes
         $script:RoundingStartTimeUtc = [DateTime]::UtcNow
         $roundingTimer.Start()
-        $nearbyScopeDevice = Resolve-ParentDevice -Device $match -Inventory $script:AppState.Inventory
-        if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $match }
-        [void](Add-NearbyScope -Device $nearbyScopeDevice)
         $associated = Build-AssociatedDevices -Device $match -Inventory $script:AppState.Inventory
-        $nearby = Build-NearbyDevices -Device $match -Inventory $script:AppState.Inventory
-        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=$nearby }
+        $existingNearby = @()
+        try { $existingNearby = @($ui.NearbyDataGrid.ItemsSource) } catch {}
+        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=$existingNearby }
         $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
         Set-PrimaryDeviceBindings -Ui $ui -Device $match -Inventory $inventory
         $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
-        $ui.NearbyDataGrid.ItemsSource = $nearby
-        Update-NearbySummary -Ui $ui
         Set-ControlText -Control $ui.DeviceOnlineText -Value 'Checking...'
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'

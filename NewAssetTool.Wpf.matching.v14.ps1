@@ -2510,25 +2510,62 @@ function Find-SampleDevice {
     }
 
     function Save-NearbyEvents {
-        param([hashtable]$Ui,[string]$ResolvedXamlPath)
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[hashtable]$RoundingByAssetTag,[string]$ResolvedXamlPath)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
-        $selectedRows = @($Ui.NearbyDataGrid.SelectedItems)
-        if ($selectedRows.Count -eq 0) {
-            [System.Windows.MessageBox]::Show('Select one or more Nearby rows before saving.', 'Nearby Save') | Out-Null
+        Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
+
+        $nearbyRows = @($Ui.NearbyDataGrid.ItemsSource)
+        if ($nearbyRows.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('There are no Nearby rows to save.', 'Nearby Save') | Out-Null
             return
         }
-        foreach ($item in $selectedRows) {
+
+        $saved = 0
+        foreach ($item in $nearbyRows) {
+            if (-not $item) { continue }
+            if ($item.PSObject.Properties.Name -contains 'IsStatusEditable' -and -not [bool]$item.IsStatusEditable) { continue }
+            $status = [string]$item.Status
+            if ([string]::IsNullOrWhiteSpace($status) -or $status -in @('-','—')) { continue }
+
+            $assetKey = if ($item.AssetTag) { $item.AssetTag.Trim().ToUpperInvariant() } else { '' }
+            if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyRoundedTodayAssetTags -and $script:AppState.NearbyRoundedTodayAssetTags.Contains($assetKey)) { continue }
+
+            $device = $null
+            if ($item.PSObject.Properties.Name -contains 'Device') { $device = $item.Device }
+            if (-not $device -and $Inventory -and -not [string]::IsNullOrWhiteSpace($assetKey) -and $Inventory.IndexByAsset -and $Inventory.IndexByAsset.ContainsKey($assetKey)) {
+                $device = $Inventory.IndexByAsset[$assetKey]
+            }
+            if (-not $device) {
+                $device = [pscustomobject]@{
+                    Name=$item.HostName; AssetTag=$item.AssetTag; Serial=''; City=''
+                    Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
+                    Department=$item.Department; DetectedType='Computer'
+                }
+            }
+
             $row = [pscustomobject]([ordered]@{
                 Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                 AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
                 CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -in @('-','—')) { 'Complete' } else { $item.Status })
                 RoundingMinutes=3; CableMgmtOK='No'; CablingNeeded='No'; LabelOK='No'; CartOK='No'; PeripheralsOK='No'
-                MaintenanceType='Nearby'; Department=''; RoundingUrl=''; Comments='Saved from Nearby tab'; Rounded='No'
+                MaintenanceType=$item.MaintenanceType; Department=$item.Department
+                RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $device -RoundingByAssetTag $RoundingByAssetTag)
+                Comments=''; Rounded='No'
             })
             Add-RoundingCsvRow -Path $csvPath -Row $row
+            $saved++
         }
-        [System.Windows.MessageBox]::Show("Saved $($selectedRows.Count) nearby row(s) to:`n$csvPath", 'Nearby Save') | Out-Null
+
+        if ($saved -gt 0) {
+            if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
+            Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
+            Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
+            [System.Windows.MessageBox]::Show("Saved $saved nearby rounding event(s) to:`n$csvPath", 'Nearby Save') | Out-Null
+        } else {
+            [System.Windows.MessageBox]::Show('Nothing to save. Pick a Nearby status first.', 'Nearby Save') | Out-Null
+        }
     }
 
     function Toggle-LocationEditMode {
@@ -2947,7 +2984,7 @@ function Find-SampleDevice {
     $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory })
     $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
     $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
-    $ui.NearbySaveButton.Add_Click({ [System.Windows.MessageBox]::Show('Nearby logic is currently disabled.', 'Nearby Disabled') | Out-Null })
+    $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath })
     $ui.AssociatedDevicesDataGrid.Add_MouseDoubleClick({
         $row = $ui.AssociatedDevicesDataGrid.SelectedItem
         if (-not $row) { return }

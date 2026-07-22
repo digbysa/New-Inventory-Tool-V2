@@ -863,7 +863,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 1 - Showing 84" Foreground="#374151" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 0" Foreground="#374151" FontWeight="SemiBold"/>
                                     <TextBlock Text="Devices in the same nearby scope, styled to match the system page." Foreground="#6B7280" FontSize="13" Margin="0,3,0,0"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -878,11 +878,11 @@
 
                         <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
                             <WrapPanel>
-                                <CheckBox x:Name="ShowAllNearbyCheckBox" Content="Show All (84)" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="TodaysRoundedCheckBox" Content="Today's Rounded (9)" IsChecked="True" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="ExcludedCheckBox" Content="Excluded (7)" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="RecentlyRoundedCheckBox" Content="Recently Rounded (50)" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)" IsChecked="True"/>
+                                <CheckBox x:Name="ShowAllNearbyCheckBox" Content="Show All (0)" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="TodaysRoundedCheckBox" Content="Today's Rounded (0)" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="ExcludedCheckBox" Content="Excluded (0)" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="RecentlyRoundedCheckBox" Content="Recently Rounded (0)" IsChecked="True" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)"/>
                             </WrapPanel>
                         </Border>
 

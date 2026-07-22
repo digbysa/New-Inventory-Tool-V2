@@ -1667,6 +1667,103 @@ try {
         return [pscustomobject]@{ Device=$Device; Associated=(Build-AssociatedDevices -Device $Device -Inventory $Inventory); Nearby=(Build-NearbyDevices -Device $Device -Inventory $Inventory) }
     }
 
+    function Get-NearbyScopeKey {
+        param([string]$Location)
+        $normalized = Normalize-LocationValue -Value $Location
+        if ([string]::IsNullOrWhiteSpace($normalized)) { return $null }
+        return $normalized
+    }
+
+    function Ensure-NearbyState {
+        if (-not $script:AppState) { return }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'ActiveNearbyScopes') -or -not $script:AppState.ActiveNearbyScopes) {
+            $script:AppState | Add-Member -NotePropertyName ActiveNearbyScopes -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
+        }
+    }
+
+    function Add-NearbyScope {
+        param([pscustomobject]$Device)
+        if (-not $Device) { return $false }
+        Ensure-NearbyState
+        if (-not $script:AppState -or -not $script:AppState.ActiveNearbyScopes) { return $false }
+        $key = Get-NearbyScopeKey -Location $Device.Location
+        if (-not $key) { return $false }
+        return $script:AppState.ActiveNearbyScopes.Add($key)
+    }
+
+    function Test-DeviceInNearbyScope {
+        param([pscustomobject]$Device)
+        if (-not $Device) { return $false }
+        Ensure-NearbyState
+        if (-not $script:AppState -or -not $script:AppState.ActiveNearbyScopes -or $script:AppState.ActiveNearbyScopes.Count -eq 0) { return $false }
+        $key = Get-NearbyScopeKey -Location $Device.Location
+        if (-not $key) { return $false }
+        return $script:AppState.ActiveNearbyScopes.Contains($key)
+    }
+
+    function Build-NearbyDevices {
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
+        if (-not $Inventory -or -not $Inventory.Computers) { return @() }
+        Ensure-NearbyState
+        $rows = @()
+        $seenAssetTags = @{}
+        foreach ($row in @($Inventory.Computers)) {
+            $computer = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
+            if (-not (Test-DeviceInNearbyScope -Device $computer)) { continue }
+            $assetKey = if ($computer.AssetTag) { $computer.AssetTag.Trim().ToUpperInvariant() } else { '' }
+            if (-not [string]::IsNullOrWhiteSpace($assetKey)) {
+                if ($seenAssetTags.ContainsKey($assetKey)) { continue }
+                $seenAssetTags[$assetKey] = $true
+            }
+            $lastRoundedDate = Parse-DateLoose -Value $computer.LastRounded
+            $daysAgo = ''
+            if ($lastRoundedDate) {
+                $daysAgo = [int]((Get-Date).Date - $lastRoundedDate.Date).TotalDays
+            }
+            $maintenanceType = Get-FieldValue -Row $row -Names @('u_device_rounding','MaintenanceType')
+            $rows += [pscustomobject]@{
+                HostName=$computer.Name
+                IPAddress=''
+                Subnet=''
+                AssetTag=$computer.AssetTag
+                Location=$computer.Location
+                Building=$computer.Building
+                Floor=$computer.Floor
+                Room=$computer.Room
+                Department=$computer.Department
+                MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
+                LastRounded=(Format-DateLong $computer.LastRounded)
+                DaysAgo=$daysAgo
+                Status='-'
+                Device=$computer
+            }
+        }
+        return @($rows | Sort-Object Location,Building,Floor,Room,HostName)
+    }
+
+    function Update-NearbySummary {
+        param([hashtable]$Ui)
+        Ensure-NearbyState
+        $scopeCount = if ($script:AppState -and $script:AppState.ActiveNearbyScopes) { $script:AppState.ActiveNearbyScopes.Count } else { 0 }
+        $rowCount = 0
+        try { $rowCount = @($Ui.NearbyDataGrid.ItemsSource).Count } catch {}
+        $text = "Nearby scopes (Location): $scopeCount"
+        if ($rowCount -gt 0) { $text += " - Showing $rowCount" }
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value $text
+    }
+
+    function Update-NearbyRows {
+        param([hashtable]$Ui,[pscustomobject]$Inventory)
+        $rows = Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory
+        $Ui.NearbyDataGrid.ItemsSource = $rows
+        if ($script:AppState) {
+            $associated = @()
+            try { $associated = @($Ui.AssociatedDevicesDataGrid.ItemsSource) } catch {}
+            $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=$rows }
+        }
+        Update-NearbySummary -Ui $Ui
+    }
+
 
 
     function Get-ExpectedDeviceName {
@@ -2574,7 +2671,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]') }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -2624,13 +2721,17 @@ function Find-SampleDevice {
         Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes
         $script:RoundingStartTimeUtc = [DateTime]::UtcNow
         $roundingTimer.Start()
+        $nearbyScopeDevice = Resolve-ParentDevice -Device $match -Inventory $script:AppState.Inventory
+        if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $match }
+        [void](Add-NearbyScope -Device $nearbyScopeDevice)
         $associated = Build-AssociatedDevices -Device $match -Inventory $script:AppState.Inventory
-        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=@() }
+        $nearby = Build-NearbyDevices -Device $match -Inventory $script:AppState.Inventory
+        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=$nearby }
         $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
         Set-PrimaryDeviceBindings -Ui $ui -Device $match -Inventory $inventory
         $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
-        $ui.NearbyDataGrid.ItemsSource = @()
-        Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled'
+        $ui.NearbyDataGrid.ItemsSource = $nearby
+        Update-NearbySummary -Ui $ui
         Set-ControlText -Control $ui.DeviceOnlineText -Value 'Checking...'
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
@@ -2800,6 +2901,10 @@ function Find-SampleDevice {
         }
         $saved = Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath
         if (-not $saved) { return }
+        $nearbyScopeDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+        if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
+        [void](Add-NearbyScope -Device $nearbyScopeDevice)
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory
         $script:RoundingBaseMinutes = 3
         Reset-RoundingFormForNextScan -Ui $ui
     })
@@ -2811,8 +2916,8 @@ function Find-SampleDevice {
         $script:ManualRoundUsed = $true
         Start-Process -FilePath $ui.ManualRoundButton.Tag
     })
-    $ui.RebuildNearbyButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
-    $ui.ClearNearbyButton.Add_Click({ $ui.NearbyDataGrid.ItemsSource = @(); Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
+    $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory })
+    $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
     $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.NearbySaveButton.Add_Click({ [System.Windows.MessageBox]::Show('Nearby logic is currently disabled.', 'Nearby Disabled') | Out-Null })
     $ui.AssociatedDevicesDataGrid.Add_MouseDoubleClick({

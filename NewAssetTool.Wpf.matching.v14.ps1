@@ -1779,12 +1779,12 @@ try {
         $rows = New-Object System.Collections.Generic.List[object]
         $seen = @{}
         foreach ($row in @($Inventory.Computers)) {
-            $city = Get-FieldValue $row @('location.city')
-            $location = Get-FieldValue $row @('location')
-            $building = Get-FieldValue $row @('u_building')
-            $floor = Get-FieldValue $row @('u_floor')
-            $room = Get-FieldValue $row @('u_room')
-            $department = Get-FieldValue $row @('u_department_location')
+            $city = Get-FieldValue -Row $row -Names @('location.city','City')
+            $location = Get-FieldValue -Row $row -Names @('location','Location')
+            $building = Get-FieldValue -Row $row -Names @('u_building','Building')
+            $floor = Get-FieldValue -Row $row -Names @('u_floor','Floor')
+            $room = Get-FieldValue -Row $row -Names @('u_room','Room')
+            $department = Get-FieldValue -Row $row -Names @('u_department_location','Department')
             $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
             if (-not $seen.ContainsKey($key)) {
                 $seen[$key] = $true

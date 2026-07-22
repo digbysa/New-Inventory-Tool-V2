@@ -863,12 +863,13 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 1 - Showing 84" Foreground="#374151" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 0" Foreground="#374151" FontWeight="SemiBold"/>
                                     <TextBlock Text="Devices in the same nearby scope, styled to match the system page." Foreground="#6B7280" FontSize="13" Margin="0,3,0,0"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
                                     <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
+                                    <Button x:Name="IsolateNearbyButton" Content="Isolate" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
                                     <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
                                     <Button x:Name="NearbyCollapseButton" Content="-" Style="{StaticResource SecondaryButtonStyle}" Width="28" Margin="0,0,8,0"/>
                                     <Button x:Name="NearbyExpandButton" Content="+" Style="{StaticResource SecondaryButtonStyle}" Width="28"/>
@@ -878,18 +879,24 @@
 
                         <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
                             <WrapPanel>
-                                <CheckBox x:Name="ShowAllNearbyCheckBox" Content="Show All (84)" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="TodaysRoundedCheckBox" Content="Today's Rounded (9)" IsChecked="True" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="ExcludedCheckBox" Content="Excluded (7)" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="RecentlyRoundedCheckBox" Content="Recently Rounded (50)" Margin="0,0,16,0"/>
-                                <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)" IsChecked="True"/>
+                                <CheckBox x:Name="ShowAllNearbyCheckBox" Content="Show All (0)" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="TodaysRoundedCheckBox" Content="Today's Rounded (0)" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="ExcludedCheckBox" Content="Excluded (0)" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="RecentlyRoundedCheckBox" Content="Recently Rounded (0)" IsChecked="True" Margin="0,0,16,0"/>
+                                <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)"/>
                             </WrapPanel>
                         </Border>
 
                         <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="0" Margin="0,0,0,10">
                             <DataGrid x:Name="NearbyDataGrid" Style="{StaticResource CompactDataGridStyle}">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="HOST NAME" Width="95" Binding="{Binding HostName}"/>
+                                    <DataGridTextColumn Header="HOST NAME" Width="95" Binding="{Binding HostName}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="{x:Type TextBlock}">
+                                                <Setter Property="Foreground" Value="{Binding HostForeground}"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
                                     <DataGridTextColumn Header="IP ADDRESS" Width="105" Binding="{Binding IPAddress}"/>
                                     <DataGridTextColumn Header="SUBNET" Width="70" Binding="{Binding Subnet}"/>
                                     <DataGridTextColumn Header="ASSET TAG" Width="105" Binding="{Binding AssetTag}"/>
@@ -901,7 +908,13 @@
                                     <DataGridTextColumn Header="MAINTENANCE TYPE" Width="105" Binding="{Binding MaintenanceType}"/>
                                     <DataGridTextColumn Header="LAST ROUNDED" Width="105" Binding="{Binding LastRounded}"/>
                                     <DataGridTextColumn Header="DAYS AGO" Width="55" Binding="{Binding DaysAgo}"/>
-                                    <DataGridTextColumn Header="STATUS" Width="*" Binding="{Binding Status}"/>
+                                    <DataGridTemplateColumn Header="STATUS" Width="*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" MinWidth="180"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>

@@ -1864,7 +1864,8 @@ try {
             [void]$values.Add($itemText)
         }
         $Combo.ItemsSource = $null
-        $Combo.ItemsSource = [string[]]$values.ToArray()
+        $Combo.Items.Clear()
+        foreach ($value in $values) { [void]$Combo.Items.Add($value) }
         if ($Combo.Text -ne $targetText) { $Combo.Text = $targetText }
         if ([string]::IsNullOrWhiteSpace($targetText)) {
             $Combo.SelectedIndex = -1
@@ -1878,8 +1879,10 @@ try {
                     break
                 }
             }
-            if ($matchIndex -ge 0) { $Combo.SelectedIndex = $matchIndex }
-        } catch {}
+            $Combo.SelectedIndex = $matchIndex
+        } catch {
+            $Combo.SelectedIndex = -1
+        }
     }
 
     function Filter-LocationRows {

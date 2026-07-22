@@ -1701,119 +1701,12 @@ try {
         return $script:AppState.ActiveNearbyScopes.Contains($key)
     }
 
-    function Get-NearbyRoundingEventField {
-        param([object]$Event,[string]$Name)
-        if (-not $Event -or [string]::IsNullOrWhiteSpace($Name)) { return '' }
-        try {
-            if ($Event.PSObject.Properties.Name -contains $Name) {
-                return [string]$Event.$Name
-            }
-        } catch {}
-        return ''
-    }
-
-    function Load-NearbyRoundingEvents {
-        param([string]$ResolvedXamlPath)
-        Ensure-NearbyState
-        if (-not $script:AppState) { return }
-
-        $events = @()
-        if (-not [string]::IsNullOrWhiteSpace($ResolvedXamlPath)) {
-            $path = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
-            if (Test-Path -LiteralPath $path) {
-                try { $events = @(Import-Csv -LiteralPath $path) } catch { $events = @() }
-            }
-        }
-
-        $latestEventByAssetTag = @{}
-        $latestTimestampByAssetTag = @{}
-        $roundedTodayAssetTags = New-Object 'System.Collections.Generic.HashSet[string]'
-        $today = (Get-Date).Date
-
-        foreach ($event in @($events)) {
-            $assetKey = (Get-NearbyRoundingEventField -Event $event -Name 'AssetTag').Trim().ToUpperInvariant()
-            if ([string]::IsNullOrWhiteSpace($assetKey)) { continue }
-
-            $timestamp = Parse-DateLoose -Value (Get-NearbyRoundingEventField -Event $event -Name 'Timestamp')
-            if (-not $timestamp) { continue }
-
-            if ($timestamp.Date -eq $today) { [void]$roundedTodayAssetTags.Add($assetKey) }
-            if (-not $latestTimestampByAssetTag.ContainsKey($assetKey) -or $timestamp -gt $latestTimestampByAssetTag[$assetKey]) {
-                $latestTimestampByAssetTag[$assetKey] = $timestamp
-                $latestEventByAssetTag[$assetKey] = $event
-            }
-        }
-
-        $script:AppState | Add-Member -NotePropertyName NearbyRoundingEvents -NotePropertyValue $events -Force
-        $script:AppState | Add-Member -NotePropertyName NearbyLatestRoundingEventByAssetTag -NotePropertyValue $latestEventByAssetTag -Force
-        $script:AppState | Add-Member -NotePropertyName NearbyLatestRoundingTimestampByAssetTag -NotePropertyValue $latestTimestampByAssetTag -Force
-        $script:AppState | Add-Member -NotePropertyName NearbyRoundedTodayAssetTags -NotePropertyValue $roundedTodayAssetTags -Force
-    }
-
-    function Get-NearbyLatestRoundingTimestamp {
-        param([string]$AssetTag,[string]$FallbackLastRounded)
-        $assetKey = if ($AssetTag) { $AssetTag.Trim().ToUpperInvariant() } else { '' }
-        if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState -and $script:AppState.NearbyLatestRoundingTimestampByAssetTag -and $script:AppState.NearbyLatestRoundingTimestampByAssetTag.ContainsKey($assetKey)) {
-            return $script:AppState.NearbyLatestRoundingTimestampByAssetTag[$assetKey]
-        }
-        return Parse-DateLoose -Value $FallbackLastRounded
-    }
-
-    function Get-NearbyLatestRoundingEvent {
-        param([string]$AssetTag)
-        $assetKey = if ($AssetTag) { $AssetTag.Trim().ToUpperInvariant() } else { '' }
-        if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState -and $script:AppState.NearbyLatestRoundingEventByAssetTag -and $script:AppState.NearbyLatestRoundingEventByAssetTag.ContainsKey($assetKey)) {
-            return $script:AppState.NearbyLatestRoundingEventByAssetTag[$assetKey]
-        }
-        return $null
-    }
-
-    function Update-NearbyCheckboxLabels {
-        param([hashtable]$Ui,[int]$TotalCount,[int]$TodayCount,[int]$ExcludedCount,[int]$RecentCount,[int]$CriticalClinicalCount)
-        if (-not $Ui) { return }
-        if ($Ui.ShowAllNearbyCheckBox) { $Ui.ShowAllNearbyCheckBox.Content = "Show All ($TotalCount)" }
-        if ($Ui.TodaysRoundedCheckBox) { $Ui.TodaysRoundedCheckBox.Content = "Today's Rounded ($TodayCount)" }
-        if ($Ui.ExcludedCheckBox) { $Ui.ExcludedCheckBox.Content = "Excluded ($ExcludedCount)" }
-        if ($Ui.RecentlyRoundedCheckBox) { $Ui.RecentlyRoundedCheckBox.Content = "Recently Rounded ($RecentCount)" }
-        if ($Ui.CriticalClinicalCheckBox) { $Ui.CriticalClinicalCheckBox.Content = "Critical Clinical ($CriticalClinicalCount)" }
-    }
-
-    function Get-NearbyStatusOptions {
-        return @(
-            '—',
-            'Inaccessible - Asset not found',
-            'Inaccessible - In storage',
-            'Inaccessible - In use by Customer',
-            'Inaccessible - Laptop is not onsite',
-            'Inaccessible - Other',
-            'Inaccessible - Restricted area',
-            'Inaccessible - Room locked - Card Swipe',
-            'Inaccessible - Room locked - Key Lock',
-            'Inaccessible - Under renovation',
-            'Inaccessible - User working at home',
-            'Pending Repair'
-        )
-    }
-
     function Build-NearbyDevices {
-        param(
-            [pscustomobject]$Device,
-            [pscustomobject]$Inventory,
-            [switch]$IncludeTodayRounded,
-            [switch]$IncludeExcluded,
-            [switch]$IncludeRecentlyRounded,
-            [switch]$IncludeCriticalClinical,
-            [ref]$Counts
-        )
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
         if (-not $Inventory -or -not $Inventory.Computers) { return @() }
         Ensure-NearbyState
         $rows = @()
         $seenAssetTags = @{}
-        $totalCount = 0
-        $todayCount = 0
-        $excludedCount = 0
-        $recentCount = 0
-        $criticalClinicalCount = 0
         foreach ($row in @($Inventory.Computers)) {
             $computer = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
             if (-not (Test-DeviceInNearbyScope -Device $computer)) { continue }
@@ -1822,86 +1715,27 @@ try {
                 if ($seenAssetTags.ContainsKey($assetKey)) { continue }
                 $seenAssetTags[$assetKey] = $true
             }
-            $totalCount++
-            $latestEvent = Get-NearbyLatestRoundingEvent -AssetTag $computer.AssetTag
-            $lastRoundedDate = Get-NearbyLatestRoundingTimestamp -AssetTag $computer.AssetTag -FallbackLastRounded $computer.LastRounded
+            $lastRoundedDate = Parse-DateLoose -Value $computer.LastRounded
             $daysAgo = ''
-            $isRecent = $false
             if ($lastRoundedDate) {
                 $daysAgo = [int]((Get-Date).Date - $lastRoundedDate.Date).TotalDays
-                $isRecent = ($daysAgo -ge 1 -and $daysAgo -le 35)
             }
             $maintenanceType = Get-FieldValue -Row $row -Names @('u_device_rounding','MaintenanceType')
-            $isToday = -not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyRoundedTodayAssetTags -and $script:AppState.NearbyRoundedTodayAssetTags.Contains($assetKey)
-            $isExcluded = $maintenanceType.Trim() -match '^(?i)Excluded$'
-            $isCriticalClinical = $maintenanceType.Trim() -match '^(?i)Critical Clinical$'
-
-            if ($isToday) { $todayCount++ }
-            if ($isExcluded) { $excludedCount++ }
-            if ($isRecent) { $recentCount++ }
-            if ($isCriticalClinical) { $criticalClinicalCount++ }
-
-            if ($isToday -and -not $IncludeTodayRounded) { continue }
-            if ($isExcluded -and -not $IncludeExcluded) { continue }
-            if ($isCriticalClinical -and -not $IncludeCriticalClinical) { continue }
-            if ($isRecent -and -not $IncludeRecentlyRounded -and -not ($isCriticalClinical -and $IncludeCriticalClinical)) { continue }
-
-            $displayLocation = $computer.Location
-            $displayBuilding = $computer.Building
-            $displayFloor = $computer.Floor
-            $displayRoom = $computer.Room
-            $displayDepartment = $computer.Department
-            $eventMaintenanceType = ''
-            $eventStatus = ''
-            if ($latestEvent) {
-                foreach ($field in @(
-                    @{ Name='Location'; Variable='displayLocation' },
-                    @{ Name='Building'; Variable='displayBuilding' },
-                    @{ Name='Floor'; Variable='displayFloor' },
-                    @{ Name='Room'; Variable='displayRoom' },
-                    @{ Name='Department'; Variable='displayDepartment' }
-                )) {
-                    $eventValue = Get-NearbyRoundingEventField -Event $latestEvent -Name $field.Name
-                    if (-not [string]::IsNullOrWhiteSpace($eventValue)) { Set-Variable -Name $field.Variable -Value $eventValue }
-                }
-                $eventMaintenanceType = Get-NearbyRoundingEventField -Event $latestEvent -Name 'MaintenanceType'
-                $eventStatus = Get-NearbyRoundingEventField -Event $latestEvent -Name 'CheckStatus'
-            }
-            $maintenanceDisplay = if (-not [string]::IsNullOrWhiteSpace($eventMaintenanceType)) { $eventMaintenanceType } else { $maintenanceType }
-            $statusOptions = Get-NearbyStatusOptions
-            $statusValue = if ([string]::IsNullOrWhiteSpace($eventStatus)) { '—' } else { $eventStatus }
-            if ($statusOptions -notcontains $statusValue) { $statusOptions = @($statusOptions) + $statusValue }
-            $isStatusEditable = [string]::IsNullOrWhiteSpace($eventStatus)
             $rows += [pscustomobject]@{
                 HostName=$computer.Name
                 IPAddress=''
                 Subnet=''
                 AssetTag=$computer.AssetTag
-                Location=$displayLocation
-                Building=$displayBuilding
-                Floor=$displayFloor
-                Room=$displayRoom
-                Department=$displayDepartment
-                MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceDisplay -DeviceName $computer.Name)
-                LastRounded=$(if ($lastRoundedDate) { $lastRoundedDate.ToString('dd MMMM yyyy') } else { '' })
+                Location=$computer.Location
+                Building=$computer.Building
+                Floor=$computer.Floor
+                Room=$computer.Room
+                Department=$computer.Department
+                MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
+                LastRounded=(Format-DateLong $computer.LastRounded)
                 DaysAgo=$daysAgo
-                Status=$statusValue
-                StatusOptions=$statusOptions
-                IsStatusEditable=$isStatusEditable
-                IsRoundedToday=$isToday
-                IsExcluded=$isExcluded
-                IsRecentlyRounded=$isRecent
-                IsCriticalClinical=$isCriticalClinical
+                Status='-'
                 Device=$computer
-            }
-        }
-        if ($Counts) {
-            $Counts.Value = [pscustomobject]@{
-                Total=$totalCount
-                Today=$todayCount
-                Excluded=$excludedCount
-                Recent=$recentCount
-                CriticalClinical=$criticalClinicalCount
             }
         }
         return @($rows | Sort-Object Location,Building,Floor,Room,HostName)
@@ -1919,52 +1753,15 @@ try {
     }
 
     function Update-NearbyRows {
-        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath)
-        Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
-        $counts = $null
-        $rows = Build-NearbyDevices `
-            -Device $script:AppState.CurrentDevice `
-            -Inventory $Inventory `
-            -IncludeTodayRounded:([bool]$Ui.TodaysRoundedCheckBox.IsChecked) `
-            -IncludeExcluded:([bool]$Ui.ExcludedCheckBox.IsChecked) `
-            -IncludeRecentlyRounded:([bool]$Ui.RecentlyRoundedCheckBox.IsChecked) `
-            -IncludeCriticalClinical:([bool]$Ui.CriticalClinicalCheckBox.IsChecked) `
-            -Counts ([ref]$counts)
+        param([hashtable]$Ui,[pscustomobject]$Inventory)
+        $rows = Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory
         $Ui.NearbyDataGrid.ItemsSource = $rows
-        if ($counts) {
-            Update-NearbyCheckboxLabels -Ui $Ui -TotalCount $counts.Total -TodayCount $counts.Today -ExcludedCount $counts.Excluded -RecentCount $counts.Recent -CriticalClinicalCount $counts.CriticalClinical
-        }
         if ($script:AppState) {
             $associated = @()
             try { $associated = @($Ui.AssociatedDevicesDataGrid.ItemsSource) } catch {}
             $script:AppState.SampleData = [pscustomobject]@{ Device=$script:AppState.CurrentDevice; Associated=$associated; Nearby=$rows }
         }
         Update-NearbySummary -Ui $Ui
-    }
-
-    function Set-NearbySelectedStatus {
-        param([hashtable]$Ui,[string]$Status)
-        if (-not $Ui -or -not $Ui.NearbyDataGrid -or [string]::IsNullOrWhiteSpace($Status)) { return }
-        foreach ($item in @($Ui.NearbyDataGrid.SelectedItems)) {
-            if (-not $item) { continue }
-            if ($item.PSObject.Properties.Name -contains 'IsStatusEditable' -and -not [bool]$item.IsStatusEditable) { continue }
-            if ($item.PSObject.Properties.Name -contains 'Status') { $item.Status = $Status }
-        }
-        try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-    }
-
-    function Register-NearbyStatusContextMenu {
-        param([hashtable]$Ui)
-        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
-        $menu = New-Object System.Windows.Controls.ContextMenu
-        foreach ($status in (Get-NearbyStatusOptions | Where-Object { $_ -ne '—' })) {
-            $statusValue = $status
-            $item = New-Object System.Windows.Controls.MenuItem
-            $item.Header = "Set Status: $statusValue"
-            $item.Add_Click({ Set-NearbySelectedStatus -Ui $Ui -Status $statusValue }.GetNewClosure())
-            $menu.Items.Add($item) | Out-Null
-        }
-        $Ui.NearbyDataGrid.ContextMenu = $menu
     }
 
 
@@ -2750,8 +2547,8 @@ function Find-SampleDevice {
 
             $row = [pscustomobject]([ordered]@{
                 Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-                AssetTag=$item.AssetTag; Name=$item.HostName; Serial=$device.Serial; City=$device.City; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
-                CheckStatus=$status
+                AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
+                CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -in @('-','—')) { 'Complete' } else { $item.Status })
                 RoundingMinutes=3; CableMgmtOK='No'; CablingNeeded='No'; LabelOK='No'; CartOK='No'; PeripheralsOK='No'
                 MaintenanceType=$item.MaintenanceType; Department=$item.Department
                 RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $device -RoundingByAssetTag $RoundingByAssetTag)
@@ -2959,7 +2756,6 @@ function Find-SampleDevice {
         }
         Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
     })
-    Register-NearbyStatusContextMenu -Ui $ui
 
     $ui.CityComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'City' } })
     $ui.LocationComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Location' } })
@@ -2994,11 +2790,13 @@ function Find-SampleDevice {
         if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $match }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)
         $associated = Build-AssociatedDevices -Device $match -Inventory $script:AppState.Inventory
-        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=@() }
+        $nearby = Build-NearbyDevices -Device $match -Inventory $script:AppState.Inventory
+        $script:AppState.SampleData = [pscustomobject]@{ Device=$match; Associated=$associated; Nearby=$nearby }
         $script:AppState.CurrentQueryToken = [guid]::NewGuid().ToString('N')
         Set-PrimaryDeviceBindings -Ui $ui -Device $match -Inventory $inventory
         $ui.AssociatedDevicesDataGrid.ItemsSource = $associated
-        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+        $ui.NearbyDataGrid.ItemsSource = $nearby
+        Update-NearbySummary -Ui $ui
         Set-ControlText -Control $ui.DeviceOnlineText -Value 'Checking...'
         $ui.DeviceOnlineText.Foreground = New-Brush '#64748B'
         $ui.DeviceOnlineDot.Fill = New-Brush '#94A3B8'
@@ -3171,7 +2969,7 @@ function Find-SampleDevice {
         $nearbyScopeDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
         if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)
-        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory
         $script:RoundingBaseMinutes = 3
         Reset-RoundingFormForNextScan -Ui $ui
     })
@@ -3183,8 +2981,8 @@ function Find-SampleDevice {
         $script:ManualRoundUsed = $true
         Start-Process -FilePath $ui.ManualRoundButton.Tag
     })
-    $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath })
-    $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbyCheckboxLabels -Ui $ui -TotalCount 0 -TodayCount 0 -ExcludedCount 0 -RecentCount 0 -CriticalClinicalCount 0; Update-NearbySummary -Ui $ui })
+    $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory })
+    $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
     $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
     $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath })
     $ui.AssociatedDevicesDataGrid.Add_MouseDoubleClick({

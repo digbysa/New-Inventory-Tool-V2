@@ -616,9 +616,10 @@ try {
     function Get-FieldValue {
         param([object]$Row,[string[]]$Names)
         if (-not $Row) { return '' }
-        foreach ($name in $Names) {
-            $property = $Row.PSObject.Properties[$name]
-            if ($property) {
+        foreach ($name in @($Names)) {
+            if ([string]::IsNullOrWhiteSpace($name)) { continue }
+            foreach ($property in @($Row.PSObject.Properties)) {
+                if ($property.Name -ne $name) { continue }
                 $value = $property.Value
                 if (-not [string]::IsNullOrWhiteSpace([string]$value)) { return [string]$value }
             }
@@ -1791,7 +1792,7 @@ try {
                 [void]$rows.Add([pscustomobject]@{ City=[string]$city; Location=[string]$location; Building=[string]$building; Floor=[string]$floor; Room=[string]$room; Department=[string]$department })
             }
         }
-        return @($rows)
+        return @($rows.ToArray())
     }
 
     function Test-LocationColumnValue {

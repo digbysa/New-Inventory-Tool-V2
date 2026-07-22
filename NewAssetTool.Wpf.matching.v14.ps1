@@ -1780,28 +1780,20 @@ try {
         return [pscustomobject]@{ City=[string]$City; Location=[string]$Location; Building=[string]$Building; Floor=[string]$Floor; Room=[string]$Room; Department=[string]$Department }
     }
 
-    function script:Get-LocationHierarchyFieldValue {
-        param([object]$Row,[string]$Name)
-        switch ($Name) {
-            'City' { return Get-FieldValue -Row $Row -Names @('City','location.city') }
-            'Location' { return Get-FieldValue -Row $Row -Names @('Location','location') }
-            'Building' { return Get-FieldValue -Row $Row -Names @('Building','u_building') }
-            'Floor' { return Get-FieldValue -Row $Row -Names @('Floor','u_floor') }
-            'Room' { return Get-FieldValue -Row $Row -Names @('Room','u_room') }
-            'Department' { return Get-FieldValue -Row $Row -Names @('Department','u_department_location') }
-            default { return Get-LocationFieldValue $Row $Name }
-        }
-    }
-
     function Add-LocationHierarchyRow {
         param([System.Collections.Generic.List[object]]$Rows,[hashtable]$Seen,[object]$Row)
         if (-not $Rows -or -not $Seen -or -not $Row) { return }
-        $city = Get-LocationHierarchyFieldValue $Row 'City'
-        $location = Get-LocationHierarchyFieldValue $Row 'Location'
-        $building = Get-LocationHierarchyFieldValue $Row 'Building'
-        $floor = Get-LocationHierarchyFieldValue $Row 'Floor'
-        $room = Get-LocationHierarchyFieldValue $Row 'Room'
-        $department = Get-LocationHierarchyFieldValue $Row 'Department'
+        $city = Get-LocationFieldValue $Row 'City'
+        $location = Get-LocationFieldValue $Row 'Location'
+        if ([string]::IsNullOrWhiteSpace($location)) { $location = Get-FieldValue -Row $Row -Names @('location') }
+        $building = Get-LocationFieldValue $Row 'Building'
+        if ([string]::IsNullOrWhiteSpace($building)) { $building = Get-FieldValue -Row $Row -Names @('u_building') }
+        $floor = Get-LocationFieldValue $Row 'Floor'
+        if ([string]::IsNullOrWhiteSpace($floor)) { $floor = Get-FieldValue -Row $Row -Names @('u_floor') }
+        $room = Get-LocationFieldValue $Row 'Room'
+        if ([string]::IsNullOrWhiteSpace($room)) { $room = Get-FieldValue -Row $Row -Names @('u_room') }
+        $department = Get-LocationFieldValue $Row 'Department'
+        if ([string]::IsNullOrWhiteSpace($department)) { $department = Get-FieldValue -Row $Row -Names @('u_department_location') }
         $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
         if ($Seen.ContainsKey($key)) { return }
         $Seen[$key] = $true
@@ -1823,7 +1815,7 @@ try {
         if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
         $n = Normalize-LocationValue $Value
         foreach ($row in @(Get-LocationHierarchyRows -Inventory $Inventory)) {
-            if ((Normalize-LocationValue (Get-LocationHierarchyFieldValue $row $Column)) -eq $n) { return $true }
+            if ((Normalize-LocationValue $row.$Column) -eq $n) { return $true }
         }
         return $false
     }
@@ -1842,7 +1834,7 @@ try {
         $n = Normalize-LocationValue $Value
         $code = Extract-RoomCode $Value
         foreach ($row in @(Get-LocationHierarchyRows -Inventory $Inventory)) {
-            $room = Get-LocationHierarchyFieldValue $row 'Room'
+            $room = $row.Room
             if ((Normalize-LocationValue $room) -eq $n) { return $true }
             if ($code -and (Extract-RoomCode $room) -eq $code) { return $true }
         }
@@ -1917,27 +1909,35 @@ try {
 
     function Filter-LocationRows {
         param([object[]]$Rows,[string]$City,[string]$Location,[string]$Building,[string]$Floor,[string]$Room)
-        $filtered = New-Object System.Collections.Generic.List[object]
-        foreach ($row in @($Rows)) {
-            if (-not (Test-LocationHierarchyRowMatch -Row $row -Name 'City' -Expected $City)) { continue }
-            if (-not (Test-LocationHierarchyRowMatch -Row $row -Name 'Location' -Expected $Location)) { continue }
-            if (-not (Test-LocationHierarchyRowMatch -Row $row -Name 'Building' -Expected $Building)) { continue }
-            if (-not (Test-LocationHierarchyRowMatch -Row $row -Name 'Floor' -Expected $Floor)) { continue }
-            if (-not (Test-LocationHierarchyRowMatch -Row $row -Name 'Room' -Expected $Room)) { continue }
-            [void]$filtered.Add($row)
+        $filtered = @($Rows)
+        if (-not [string]::IsNullOrWhiteSpace($City)) {
+            $nCity = Normalize-LocationValue $City
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'City')) -eq $nCity })
         }
-        return @($filtered.ToArray())
+        if (-not [string]::IsNullOrWhiteSpace($Location)) {
+            $nLocation = Normalize-LocationValue $Location
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Location')) -eq $nLocation })
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Building)) {
+            $nBuilding = Normalize-LocationValue $Building
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Building')) -eq $nBuilding })
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Floor)) {
+            $nFloor = Normalize-LocationValue $Floor
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Floor')) -eq $nFloor })
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Room)) {
+            $nRoom = Normalize-LocationValue $Room
+            $filtered = @($filtered | Where-Object { (Normalize-LocationValue (Get-LocationHierarchyFieldValue $_ 'Room')) -eq $nRoom })
+        }
+        return @($filtered)
     }
 
     function Get-UniqueLocationValues {
         param([object[]]$Rows,[string]$Property,[switch]$Floor)
-        $values = New-Object System.Collections.Generic.List[string]
-        foreach ($row in @($Rows)) {
-            $value = Get-LocationHierarchyFieldValue $row $Property
-            if (-not [string]::IsNullOrWhiteSpace([string]$value)) { [void]$values.Add([string]$value) }
-        }
-        if ($Floor) { return @(Sort-LocationFloors -Floors $values.ToArray()) }
-        return @($values.ToArray() | Sort-Object -Unique)
+        $values = @($Rows | ForEach-Object { Get-LocationHierarchyFieldValue $_ $Property } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($Floor) { return @(Sort-LocationFloors -Floors $values) }
+        return @($values | Sort-Object -Unique)
     }
 
     function Populate-LocationCombos {
@@ -2464,7 +2464,7 @@ function Find-SampleDevice {
         $newRow = New-LocationHierarchyRow -City $City -Location $Location -Building $Building -Floor $Floor -Room $Room -Department $Department
         $newKey = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $City),(Normalize-LocationValue $Location),(Normalize-LocationValue $Building),(Normalize-LocationValue $Floor),(Normalize-LocationValue $Room),(Normalize-LocationValue $Department)
         foreach ($row in @(Get-LocationHierarchyRows -Inventory $Inventory)) {
-            $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue (Get-LocationHierarchyFieldValue $row 'City')),(Normalize-LocationValue (Get-LocationHierarchyFieldValue $row 'Location')),(Normalize-LocationValue (Get-LocationHierarchyFieldValue $row 'Building')),(Normalize-LocationValue (Get-LocationHierarchyFieldValue $row 'Floor')),(Normalize-LocationValue (Get-LocationHierarchyFieldValue $row 'Room')),(Normalize-LocationValue (Get-LocationHierarchyFieldValue $row 'Department'))
+            $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $row.City),(Normalize-LocationValue $row.Location),(Normalize-LocationValue $row.Building),(Normalize-LocationValue $row.Floor),(Normalize-LocationValue $row.Room),(Normalize-LocationValue $row.Department)
             if ($key -eq $newKey) { return }
         }
         $path = Get-LocationUserAddsPath -Inventory $Inventory

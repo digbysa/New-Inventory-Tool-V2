@@ -889,7 +889,13 @@
                         <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="0" Margin="0,0,0,10">
                             <DataGrid x:Name="NearbyDataGrid" Style="{StaticResource CompactDataGridStyle}">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="HOST NAME" Width="95" Binding="{Binding HostName}"/>
+                                    <DataGridTextColumn Header="HOST NAME" Width="95" Binding="{Binding HostName}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="{x:Type TextBlock}">
+                                                <Setter Property="Foreground" Value="{Binding HostForeground}"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
                                     <DataGridTextColumn Header="IP ADDRESS" Width="105" Binding="{Binding IPAddress}"/>
                                     <DataGridTextColumn Header="SUBNET" Width="70" Binding="{Binding Subnet}"/>
                                     <DataGridTextColumn Header="ASSET TAG" Width="105" Binding="{Binding AssetTag}"/>

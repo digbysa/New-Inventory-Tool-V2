@@ -1775,23 +1775,31 @@ try {
     }
 
     function Get-ComputerLocationRows {
-        param([pscustomobject]$Inventory)
-        $rows = New-Object System.Collections.Generic.List[object]
+        param([object]$Inventory)
+        $rows = @()
         $seen = @{}
         foreach ($row in @($Inventory.Computers)) {
-            $city = Get-FieldValue -Row $row -Names @('location.city','City')
-            $location = Get-FieldValue -Row $row -Names @('location','Location')
-            $building = Get-FieldValue -Row $row -Names @('u_building','Building')
-            $floor = Get-FieldValue -Row $row -Names @('u_floor','Floor')
-            $room = Get-FieldValue -Row $row -Names @('u_room','Room')
-            $department = Get-FieldValue -Row $row -Names @('u_department_location','Department')
-            $key = '{0}|{1}|{2}|{3}|{4}|{5}' -f (Normalize-LocationValue $city),(Normalize-LocationValue $location),(Normalize-LocationValue $building),(Normalize-LocationValue $floor),(Normalize-LocationValue $room),(Normalize-LocationValue $department)
+            $city = [string](Get-FieldValue -Row $row -Names @('location.city','City'))
+            $location = [string](Get-FieldValue -Row $row -Names @('location','Location'))
+            $building = [string](Get-FieldValue -Row $row -Names @('u_building','Building'))
+            $floor = [string](Get-FieldValue -Row $row -Names @('u_floor','Floor'))
+            $room = [string](Get-FieldValue -Row $row -Names @('u_room','Room'))
+            $department = [string](Get-FieldValue -Row $row -Names @('u_department_location','Department'))
+            $keyParts = @(
+                (Normalize-LocationValue -Value $city),
+                (Normalize-LocationValue -Value $location),
+                (Normalize-LocationValue -Value $building),
+                (Normalize-LocationValue -Value $floor),
+                (Normalize-LocationValue -Value $room),
+                (Normalize-LocationValue -Value $department)
+            )
+            $key = [string]::Join('|', [string[]]$keyParts)
             if (-not $seen.ContainsKey($key)) {
                 $seen[$key] = $true
-                [void]$rows.Add([pscustomobject]@{ City=[string]$city; Location=[string]$location; Building=[string]$building; Floor=[string]$floor; Room=[string]$room; Department=[string]$department })
+                $rows += [pscustomobject]@{ City=$city; Location=$location; Building=$building; Floor=$floor; Room=$room; Department=$department }
             }
         }
-        return @($rows)
+        return $rows
     }
 
     function Test-LocationColumnValue {

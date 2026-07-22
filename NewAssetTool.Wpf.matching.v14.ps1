@@ -1775,6 +1775,11 @@ try {
         return Get-FieldValue -Row $Row -Names @($Name,(([char]0xFEFF) + $Name))
     }
 
+    function Get-LocationHierarchyFieldValue {
+        param([object]$Row,[string]$Name)
+        return Get-LocationFieldValue -Row $Row -Name $Name
+    }
+
     function New-LocationHierarchyRow {
         param([string]$City,[string]$Location,[string]$Building,[string]$Floor,[string]$Room,[string]$Department)
         return [pscustomobject]@{ City=[string]$City; Location=[string]$Location; Building=[string]$Building; Floor=[string]$Floor; Room=[string]$Room; Department=[string]$Department }

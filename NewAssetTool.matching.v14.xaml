@@ -959,6 +959,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby Scope (Location): 0" Foreground="#111111" FontSize="13" FontWeight="Normal" LineHeight="18" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="FileEditorButton" Content="✎ File Editor" ToolTip="File Editor" Style="{StaticResource SuccessButtonStyle}" Margin="0,0,8,0"/>
                                 <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
                                 <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource SuccessButtonStyle}" Margin="0,0,8,0"/>
                                 <Button x:Name="IsolateNearbyButton" Content="Isolate" Visibility="Collapsed" Style="{StaticResource NearbyButtonStyle}" Margin="0,0,8,0"/>

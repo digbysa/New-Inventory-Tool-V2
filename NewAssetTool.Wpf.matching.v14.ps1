@@ -2095,11 +2095,77 @@ try {
         return ''
     }
 
+    function Get-NearbyRowStateKey {
+        param([object]$Row)
+        if (-not $Row) { return '' }
+        $assetTag = if ($Row.PSObject.Properties.Name -contains 'AssetTag') { [string]$Row.AssetTag } else { '' }
+        $hostName = if ($Row.PSObject.Properties.Name -contains 'HostName') { [string]$Row.HostName } else { '' }
+        if (-not [string]::IsNullOrWhiteSpace($assetTag)) { return ('AssetTag|' + $assetTag.Trim().ToUpperInvariant()) }
+        if (-not [string]::IsNullOrWhiteSpace($hostName)) { return ('HostName|' + $hostName.Trim().ToUpperInvariant()) }
+        return ''
+    }
+
+    function Get-NearbyReturnState {
+        param([hashtable]$Ui,[object]$Row)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return $null }
+        $scrollViewer = Find-VisualChildByType -Root $Ui.NearbyDataGrid -Type ([System.Windows.Controls.ScrollViewer])
+        $selectedKeys = @($Ui.NearbyDataGrid.SelectedItems | Where-Object { $_ } | ForEach-Object { Get-NearbyRowStateKey -Row $_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $rowKey = Get-NearbyRowStateKey -Row $Row
+        if ($selectedKeys.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($rowKey)) { $selectedKeys = @($rowKey) }
+        return [pscustomobject]@{
+            SelectedKeys=$selectedKeys
+            CurrentKey=$rowKey
+            VerticalOffset=$(if ($scrollViewer) { $scrollViewer.VerticalOffset } else { 0 })
+            HorizontalOffset=$(if ($scrollViewer) { $scrollViewer.HorizontalOffset } else { 0 })
+        }
+    }
+
+    function Restore-NearbyReturnState {
+        param([hashtable]$Ui,[object]$State)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid -or -not $State) { return }
+        $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{
+            try {
+                $Ui.MainTabControl.SelectedItem = $Ui.NearbyTab
+                $Ui.MainTabControl.SelectedIndex = $Ui.MainTabControl.Items.IndexOf($Ui.NearbyTab)
+            } catch {}
+            try {
+                $Ui.NearbyDataGrid.SelectedItems.Clear()
+                $currentItem = $null
+                $keys = @($State.SelectedKeys)
+                foreach ($item in @($Ui.NearbyDataGrid.ItemsSource)) {
+                    $key = Get-NearbyRowStateKey -Row $item
+                    if ($keys -contains $key) {
+                        [void]$Ui.NearbyDataGrid.SelectedItems.Add($item)
+                        if (-not $currentItem -or $key -eq $State.CurrentKey) { $currentItem = $item }
+                    }
+                }
+                if ($currentItem) {
+                    $Ui.NearbyDataGrid.SelectedItem = $currentItem
+                    $Ui.NearbyDataGrid.CurrentItem = $currentItem
+                    $Ui.NearbyDataGrid.ScrollIntoView($currentItem)
+                }
+            } catch {}
+            try {
+                $Ui.NearbyDataGrid.UpdateLayout()
+                $scrollViewer = Find-VisualChildByType -Root $Ui.NearbyDataGrid -Type ([System.Windows.Controls.ScrollViewer])
+                if ($scrollViewer) {
+                    $scrollViewer.ScrollToVerticalOffset([double]$State.VerticalOffset)
+                    $scrollViewer.ScrollToHorizontalOffset([double]$State.HorizontalOffset)
+                }
+            } catch {}
+            Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Event Saved'
+        }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+    }
+
     function Invoke-NearbyRowQuery {
         param([hashtable]$Ui,[object]$Row)
         if (-not $Ui -or -not $Row) { return }
         $searchText = Get-NearbyRowSearchText -Row $Row
         if ([string]::IsNullOrWhiteSpace($searchText)) { return }
+        if ($script:AppState) {
+            $script:AppState.NearbyReturnState = Get-NearbyReturnState -Ui $Ui -Row $Row
+            $script:AppState.QueryStartedFromNearby = $true
+        }
         if ($Ui.MainTabControl -and $Ui.SystemTab) {
             $Ui.MainTabControl.SelectedItem = $Ui.SystemTab
             $Ui.MainTabControl.SelectedIndex = $Ui.MainTabControl.Items.IndexOf($Ui.SystemTab)
@@ -2913,7 +2979,7 @@ function Find-SampleDevice {
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
         $script:ManualRoundUsed = $false
-        [System.Windows.MessageBox]::Show("Saved parent computer event to:`n$csvPath", 'Save Event') | Out-Null
+        Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Event Saved'
         return $true
     }
 
@@ -3116,7 +3182,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]') }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -3199,9 +3265,12 @@ function Find-SampleDevice {
     $ui.RoomComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Room' } })
 
     $ui.QueryButton.Add_Click({
+        $queryStartedFromNearby = ($script:AppState -and $script:AppState.QueryStartedFromNearby)
+        if ($script:AppState) { $script:AppState.QueryStartedFromNearby = $false }
         $searchTerm = $ui.SearchTextBox.Text
         $match = Find-InventoryMatch -SearchTerm $searchTerm -Inventory $script:AppState.Inventory
         if ($null -eq $match) {
+            if (-not $queryStartedFromNearby -and $script:AppState) { $script:AppState.NearbyReturnState = $null }
             $script:AppState.CurrentDevice = $null
             $script:ManualRoundUsed = $false
             Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
@@ -3211,6 +3280,7 @@ function Find-SampleDevice {
             }
             return
         }
+        if (-not $queryStartedFromNearby -and $script:AppState) { $script:AppState.NearbyReturnState = $null }
         $script:AppState.CurrentDevice = $match
         $script:ManualRoundUsed = $false
         $maintenanceType = ''
@@ -3396,6 +3466,9 @@ function Find-SampleDevice {
         if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)
         Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+        $returnState = $script:AppState.NearbyReturnState
+        $script:AppState.NearbyReturnState = $null
+        if ($returnState) { Restore-NearbyReturnState -Ui $ui -State $returnState }
         $script:RoundingBaseMinutes = 3
         Reset-RoundingFormForNextScan -Ui $ui
     })

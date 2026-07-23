@@ -1818,6 +1818,12 @@ try {
             }
             $lastRoundedBackground = Get-RoundingStatusBackground -RoundedDate $lastRoundedDate
             $maintenanceType = Get-FieldValue -Row $row -Names @('u_device_rounding','MaintenanceType')
+            $roundingFlag = ([string]$maintenanceType).Trim()
+            $isToday = (-not [string]::IsNullOrWhiteSpace($assetKey)) -and $script:AppState.NearbyRoundedTodayAssetTags -and $script:AppState.NearbyRoundedTodayAssetTags.Contains($assetKey)
+            $isExcluded = $roundingFlag -match '^(?i)Excluded$'
+            $isCriticalClinical = $roundingFlag -match '^(?i)Critical Clinical$'
+            $isRecent = $false
+            if ($lastRoundedDate -and $daysAgo -is [int]) { $isRecent = ($daysAgo -ge 1 -and $daysAgo -le 35) }
             $rows += [pscustomobject]@{
                 HostName=$computer.Name
                 IPAddress=(Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache')
@@ -1832,6 +1838,11 @@ try {
                 LastRounded=(Format-DateLong $computer.LastRounded)
                 LastRoundedBackground=$lastRoundedBackground
                 DaysAgo=$daysAgo
+                IsRoundedToday=$isToday
+                IsExcluded=$isExcluded
+                IsCriticalClinical=$isCriticalClinical
+                IsRecentlyRounded=$isRecent
+                RowForeground=$(if ($isToday) { '#808080' } else { '#000000' })
                 Status='-'
                 StatusOptions=@('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
                 IsStatusEditable=$true
@@ -1853,10 +1864,48 @@ try {
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value $text
     }
 
+    function Update-NearbyCheckboxLabels {
+        param([hashtable]$Ui,[object[]]$Rows)
+        if (-not $Ui) { return }
+        $allRows = @($Rows | Where-Object { $_ })
+        if ($Ui.TodaysRoundedCheckBox) { Set-ControlText -Control $Ui.TodaysRoundedCheckBox -Value ("Today's Rounded ({0})" -f @($allRows | Where-Object { $_.IsRoundedToday }).Count) }
+        if ($Ui.ExcludedCheckBox) { Set-ControlText -Control $Ui.ExcludedCheckBox -Value ("Excluded ({0})" -f @($allRows | Where-Object { $_.IsExcluded }).Count) }
+        if ($Ui.RecentlyRoundedCheckBox) { Set-ControlText -Control $Ui.RecentlyRoundedCheckBox -Value ("Recently Rounded ({0})" -f @($allRows | Where-Object { $_.IsRecentlyRounded }).Count) }
+        if ($Ui.CriticalClinicalCheckBox) { Set-ControlText -Control $Ui.CriticalClinicalCheckBox -Value ("Critical Clinical ({0})" -f @($allRows | Where-Object { $_.IsCriticalClinical }).Count) }
+        if ($Ui.ShowAllNearbyCheckBox) { Set-ControlText -Control $Ui.ShowAllNearbyCheckBox -Value ("Show All ({0})" -f $allRows.Count) }
+    }
+
+    function Test-NearbyRowVisible {
+        param([hashtable]$Ui,[object]$Row)
+        if (-not $Row) { return $false }
+        if ($Row.IsRoundedToday -and $Ui.TodaysRoundedCheckBox -and -not [bool]$Ui.TodaysRoundedCheckBox.IsChecked) { return $false }
+        if ($Row.IsExcluded -and $Ui.ExcludedCheckBox -and -not [bool]$Ui.ExcludedCheckBox.IsChecked) { return $false }
+        if ($Row.IsCriticalClinical -and $Ui.CriticalClinicalCheckBox -and -not [bool]$Ui.CriticalClinicalCheckBox.IsChecked) { return $false }
+        $criticalOverride = $Row.IsCriticalClinical -and $Ui.CriticalClinicalCheckBox -and [bool]$Ui.CriticalClinicalCheckBox.IsChecked
+        if ($Row.IsRecentlyRounded -and -not $criticalOverride -and $Ui.RecentlyRoundedCheckBox -and -not [bool]$Ui.RecentlyRoundedCheckBox.IsChecked) { return $false }
+        return $true
+    }
+
+    function AutoFit-NearbyColumns {
+        param([hashtable]$Ui)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
+        foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
+            $column.Width = [System.Windows.Controls.DataGridLength]::Auto
+        }
+        try { $Ui.NearbyDataGrid.UpdateLayout() } catch {}
+    }
+
     function Update-NearbyRows {
         param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
-        $rows = Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory
+        if (-not [string]::IsNullOrWhiteSpace($ResolvedXamlPath)) { Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath }
+        $allRows = @(Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory)
+        Update-NearbyCheckboxLabels -Ui $Ui -Rows $allRows
+        $rows = @($allRows | Where-Object { Test-NearbyRowVisible -Ui $Ui -Row $_ })
         $Ui.NearbyDataGrid.ItemsSource = $rows
+        if ($script:AppState -and $script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending' -and $script:AppState.NearbyColumnsAutoFitPending) {
+            $script:AppState.NearbyColumnsAutoFitPending = $false
+            $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+        }
         if ($script:AppState) {
             $associated = @()
             try { $associated = @($Ui.AssociatedDevicesDataGrid.ItemsSource) } catch {}
@@ -3078,6 +3127,19 @@ function Find-SampleDevice {
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         $combo.Items.Clear()
         Set-ControlText -Control $combo -Value ''
+    }
+
+    if ($script:AppState -and -not ($script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending')) {
+        $script:AppState | Add-Member -NotePropertyName NearbyColumnsAutoFitPending -NotePropertyValue $true -Force
+    }
+    if ($ui.MainTabControl -and $ui.NearbyTab) {
+        $ui.MainTabControl.Add_SelectionChanged({
+            param($sender,$e)
+            if ($sender.SelectedItem -eq $ui.NearbyTab -and $script:AppState.NearbyColumnsAutoFitPending) {
+                $script:AppState.NearbyColumnsAutoFitPending = $false
+                $ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+            }
+        })
     }
 
     $script:IsUpdatingNearbyFilters = $false

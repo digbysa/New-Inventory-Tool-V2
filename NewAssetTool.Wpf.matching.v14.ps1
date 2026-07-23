@@ -2935,7 +2935,7 @@ function Find-SampleDevice {
     function Reset-RoundingFormForNextScan {
         param([hashtable]$Ui)
         foreach ($cb in @($Ui.ValidateCableCheckBox,$Ui.LabelMonitorCheckBox,$Ui.ValidatePeripheralsCheckBox,$Ui.CablingNeededCheckBox,$Ui.PhysicalCartCheckBox,$Ui.AddDeviceToTrackerCheckBox)) { $cb.IsChecked = $false }
-        Set-ControlText -Control $Ui.CheckStatusComboBox -Value '-'
+        Set-ControlText -Control $Ui.CheckStatusComboBox -Value 'Complete'
         Set-ControlText -Control $Ui.MaintenanceTypeComboBox -Value 'General Rounding'
         Set-ControlText -Control $Ui.CommentsTextBox -Value ''
         Set-ControlText -Control $Ui.SearchTextBox -Value ''
@@ -3071,7 +3071,7 @@ function Find-SampleDevice {
         } else {
             foreach ($cb in $enabled) { $cb.IsChecked = $true }
         }
-        Set-ControlText -Control $ui.CheckStatusComboBox -Value '-'
+        Set-ControlText -Control $ui.CheckStatusComboBox -Value 'Complete'
     })
     $ui.SaveEventButton.Add_Click({
         if (-not $script:AppState.CurrentDevice) { return }

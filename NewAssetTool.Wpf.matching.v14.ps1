@@ -1851,10 +1851,19 @@ try {
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging 0 of $total $ScopeLabel..."
         Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging 0 of $total devices..."
 
-        $pingWorker = [Action]{
+        # Do not use Task.Run with a PowerShell scriptblock here. Task.Run executes on a
+        # raw .NET thread that may not have a PowerShell runspace, which can prevent the
+        # worker from starting and leaves the UI stuck at "Pinging 0 of ...".  A
+        # BackgroundWorker keeps the ping loop off the UI thread while its progress and
+        # completion events are safely raised back to the WPF synchronization context.
+        $worker = New-Object System.ComponentModel.BackgroundWorker
+        $worker.WorkerReportsProgress = $true
+
+        $worker.Add_DoWork({
+            param($sender,$eventArgs)
             $updated = 0
             foreach ($row in $pingRows) {
-                $hostName = [string]$row.HostName
+                $hostName = ([string]$row.HostName).Trim()
                 $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' }
                 $ping = $null
                 try {
@@ -1872,22 +1881,37 @@ try {
                     try { if ($ping) { $ping.Dispose() } } catch {}
                 }
                 $updated++
-                $completed = $updated
-                $Ui.MainTabControl.Dispatcher.Invoke([Action]{
-                    Update-NearbyRowWithPingResult -Row $row -Result $result
-                    try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-                    Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $completed of $total $ScopeLabel..."
-                    Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $completed of $total devices..."
-                }) | Out-Null
+                $sender.ReportProgress(0, [pscustomobject]@{ Row=$row; Result=$result; Completed=$updated })
             }
-            $Ui.MainTabControl.Dispatcher.Invoke([Action]{
-                try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-                if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
+            $eventArgs.Result = $updated
+        })
+
+        $worker.Add_ProgressChanged({
+            param($sender,$eventArgs)
+            $progress = $eventArgs.UserState
+            if (-not $progress) { return }
+            Update-NearbyRowWithPingResult -Row $progress.Row -Result $progress.Result
+            try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+            Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($progress.Completed) of $total $ScopeLabel..."
+            Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $($progress.Completed) of $total devices..."
+        })
+
+        $worker.Add_RunWorkerCompleted({
+            param($sender,$eventArgs)
+            $updated = if ($eventArgs.Error) { 0 } else { [int]$eventArgs.Result }
+            try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+            if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
+            if ($eventArgs.Error) {
+                Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping failed after $updated of $total $ScopeLabel."
+                Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Ping failed: $($eventArgs.Error.Message)"
+            } else {
                 Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated of $total $ScopeLabel."
                 Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
-            }) | Out-Null
-        }
-        [System.Threading.Tasks.Task]::Run($pingWorker) | Out-Null
+            }
+            try { $sender.Dispose() } catch {}
+        })
+
+        $worker.RunWorkerAsync()
     }
 
     function Invoke-SelectedNearbyPing {

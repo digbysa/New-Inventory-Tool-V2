@@ -1715,6 +1715,46 @@ try {
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'ActiveNearbyScopes') -or -not $script:AppState.ActiveNearbyScopes) {
             $script:AppState | Add-Member -NotePropertyName ActiveNearbyScopes -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
         }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyIpCache') -or -not $script:AppState.NearbyIpCache) {
+            $script:AppState | Add-Member -NotePropertyName NearbyIpCache -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,string]') -Force
+        }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyHostColorCache') -or -not $script:AppState.NearbyHostColorCache) {
+            $script:AppState | Add-Member -NotePropertyName NearbyHostColorCache -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,string]') -Force
+        }
+    }
+
+    function Get-NearbyPingCacheKey {
+        param([string]$HostName)
+        if ([string]::IsNullOrWhiteSpace($HostName)) { return $null }
+        return $HostName.Trim().ToUpperInvariant()
+    }
+
+    function Get-NearbyCachedValue {
+        param([string]$HostName,[string]$CacheName)
+        Ensure-NearbyState
+        $key = Get-NearbyPingCacheKey -HostName $HostName
+        if (-not $key -or -not $script:AppState -or -not ($script:AppState.PSObject.Properties.Name -contains $CacheName)) { return '' }
+        $cache = $script:AppState.PSObject.Properties[$CacheName].Value
+        if (-not $cache) { return '' }
+        if ($cache.ContainsKey($key)) { return [string]$cache[$key] }
+        return ''
+    }
+
+    function Set-NearbyCachedValue {
+        param([string]$HostName,[string]$CacheName,[string]$Value)
+        Ensure-NearbyState
+        $key = Get-NearbyPingCacheKey -HostName $HostName
+        if (-not $key -or -not $script:AppState -or -not ($script:AppState.PSObject.Properties.Name -contains $CacheName)) { return }
+        $cache = $script:AppState.PSObject.Properties[$CacheName].Value
+        if (-not $cache) { return }
+        if ($cache.ContainsKey($key)) { $cache[$key] = $Value }
+        else { $cache.Add($key, $Value) }
+    }
+
+    function Get-NearbySubnetValue {
+        param([string]$IpAddress,[string]$DataRoot)
+        if ([string]::IsNullOrWhiteSpace($IpAddress)) { return '' }
+        try { return Resolve-SubnetName -IpAddress $IpAddress -DataRoot $DataRoot } catch { return 'Unknown' }
     }
 
     function Add-NearbyScope {
@@ -1759,8 +1799,8 @@ try {
             $maintenanceType = Get-FieldValue -Row $row -Names @('u_device_rounding','MaintenanceType')
             $rows += [pscustomobject]@{
                 HostName=$computer.Name
-                IPAddress=''
-                Subnet=''
+                IPAddress=(Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache')
+                Subnet=(Get-NearbySubnetValue -IpAddress (Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache') -DataRoot $script:AppState.DataRoot)
                 AssetTag=$computer.AssetTag
                 Location=$computer.Location
                 Building=$computer.Building
@@ -1773,6 +1813,7 @@ try {
                 Status='-'
                 StatusOptions=@('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
                 IsStatusEditable=$true
+                PingStatus=(Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyHostColorCache')
                 Device=$computer
             }
         }
@@ -1832,8 +1873,11 @@ try {
     function Update-NearbyRowWithPingResult {
         param([object]$Row,[object]$Result)
         if (-not $Row) { return }
-        $Row.IPAddress = if ($Result -and $Result.IpAddress) { [string]$Result.IpAddress } else { 'Unknown' }
-        $Row.Subnet = if ($Result -and $Result.Subnet) { [string]$Result.Subnet } else { 'Unknown' }
+        $Row.IPAddress = if ($Result -and $Result.IpAddress) { [string]$Result.IpAddress } else { '' }
+        $Row.Subnet = if ($Result -and $Result.Subnet) { [string]$Result.Subnet } else { '' }
+        $Row.PingStatus = if ($Result -and $Result.Success) { 'Success' } else { 'Fail' }
+        Set-NearbyCachedValue -HostName $Row.HostName -CacheName 'NearbyIpCache' -Value $Row.IPAddress
+        Set-NearbyCachedValue -HostName $Row.HostName -CacheName 'NearbyHostColorCache' -Value $Row.PingStatus
     }
 
     function Start-NearbyRowsPingAsync {
@@ -1864,19 +1908,19 @@ try {
             $updated = 0
             foreach ($row in $pingRows) {
                 $hostName = ([string]$row.HostName).Trim()
-                $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' }
+                $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
                 $ping = $null
                 try {
                     $ping = New-Object System.Net.NetworkInformation.Ping
                     $reply = $ping.Send($hostName, 2000)
                     if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
                         $ipAddress = if ($reply.Address) { [string]$reply.Address } else { 'Unknown' }
-                        $subnet = 'Unknown'
-                        try { $subnet = Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                        $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet }
+                        $subnet = ''
+                        try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
+                        $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$true }
                     }
                 } catch {
-                    $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' }
+                    $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
                 } finally {
                     try { if ($ping) { $ping.Dispose() } } catch {}
                 }

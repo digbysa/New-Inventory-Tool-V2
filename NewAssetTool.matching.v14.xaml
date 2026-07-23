@@ -334,6 +334,17 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         </Style>
 
+        <Style x:Key="NearbyHostCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding PingStatus}" Value="Success">
+                    <Setter Property="Foreground" Value="ForestGreen"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding PingStatus}" Value="Fail">
+                    <Setter Property="Foreground" Value="Crimson"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#F8FAFC"/>
             <Setter Property="BorderBrush" Value="#E6EAEE"/>
@@ -1022,7 +1033,7 @@
                                 </Style>
                             </DataGrid.Resources>
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Host Name" Width="115" Binding="{Binding HostName}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Host Name" Width="115" Binding="{Binding HostName}" ElementStyle="{StaticResource NearbyHostCellTextStyle}"/>
                                 <DataGridTextColumn Header="IP Address" Width="110" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Subnet" Width="80" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Asset Tag" Width="100" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>

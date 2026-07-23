@@ -1892,14 +1892,18 @@ try {
     function AutoFit-NearbyColumns {
         param([hashtable]$Ui)
         if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
+
+        # Measure each Nearby column against its cells, then lock in a pixel width with
+        # a small comfort buffer so values are not pressed directly against dividers.
+        $extraColumnSpace = 18
         foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
-            $column.Width = [System.Windows.Controls.DataGridLength]::Auto
+            $column.Width = New-Object System.Windows.Controls.DataGridLength -ArgumentList 1, ([System.Windows.Controls.DataGridLengthUnitType]::SizeToCells)
         }
         try { $Ui.NearbyDataGrid.UpdateLayout() } catch {}
         foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
             if ($column.ActualWidth -gt 0) {
-                # Keep each Nearby column content-sized, then add 10 px so adjacent values do not crowd each other.
-                $column.Width = New-Object System.Windows.Controls.DataGridLength ($column.ActualWidth + 10)
+                $targetWidth = [Math]::Max($column.ActualWidth + $extraColumnSpace, $column.MinWidth)
+                $column.Width = New-Object System.Windows.Controls.DataGridLength $targetWidth
             }
         }
     }

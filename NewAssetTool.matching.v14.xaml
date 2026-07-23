@@ -983,7 +983,7 @@
                             <CheckBox x:Name="CriticalClinicalCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Critical Clinical (0)"/>
                         </WrapPanel>
 
-                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow" IsReadOnly="False">
+                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow" IsReadOnly="False" EnableColumnVirtualization="False">
                             <DataGrid.Resources>
                                 <Style TargetType="{x:Type ScrollBar}">
                                     <Setter Property="Width" Value="13"/>
@@ -1036,25 +1036,25 @@
                                 </Style>
                             </DataGrid.Resources>
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Host Name" IsReadOnly="True" Width="115" Binding="{Binding HostName}" ElementStyle="{StaticResource NearbyHostCellTextStyle}"/>
-                                <DataGridTextColumn Header="IP Address" IsReadOnly="True" Width="110" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Subnet" IsReadOnly="True" Width="80" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Asset Tag" IsReadOnly="True" Width="100" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="500" Binding="{Binding Location}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Building" IsReadOnly="True" Width="145" Binding="{Binding Building}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Floor" IsReadOnly="True" Width="65" Binding="{Binding Floor}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Room" IsReadOnly="True" Width="145" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Department" IsReadOnly="True" Width="85" Binding="{Binding Department}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Maintenance Type" IsReadOnly="True" Width="60" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Last Rounded" IsReadOnly="True" Width="65" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}">
+                                <DataGridTextColumn Header="Host Name" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding HostName}" ElementStyle="{StaticResource NearbyHostCellTextStyle}"/>
+                                <DataGridTextColumn Header="IP Address" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Subnet" IsReadOnly="True" Width="Auto" MinWidth="65" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Asset Tag" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="Auto" MinWidth="110" Binding="{Binding Location}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Building" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Building}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Floor" IsReadOnly="True" Width="Auto" MinWidth="55" Binding="{Binding Floor}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Room" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Department" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding Department}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Maintenance Type" IsReadOnly="True" Width="Auto" MinWidth="120" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Last Rounded" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}">
                                     <DataGridTextColumn.CellStyle>
                                         <Style TargetType="{x:Type DataGridCell}" BasedOn="{StaticResource {x:Type DataGridCell}}">
                                             <Setter Property="Background" Value="{Binding LastRoundedBackground}"/>
                                         </Style>
                                     </DataGridTextColumn.CellStyle>
                                 </DataGridTextColumn>
-                                <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="55" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="185" IsReadOnly="False">
+                                <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="Auto" MinWidth="75" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="205" IsReadOnly="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <ComboBox ItemsSource="{Binding StatusOptions}"

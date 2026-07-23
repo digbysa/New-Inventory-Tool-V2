@@ -465,15 +465,15 @@
         </Border>
 
         <!-- Main content -->
-        <ScrollViewer Grid.Row="2"
-                      Background="{StaticResource WindowSurfaceBrush}"
-                      Margin="18,12,18,10"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      CanContentScroll="False">
-            <TabControl x:Name="MainTabControl">
+        <TabControl x:Name="MainTabControl"
+                    Grid.Row="2"
+                    Background="{StaticResource WindowSurfaceBrush}"
+                    Margin="18,12,18,10">
                 <TabItem x:Name="SystemTab"><TabItem.Header><TextBlock Text="System" Margin="0,0,8,0"/></TabItem.Header>
-                    <Grid Background="Transparent">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  CanContentScroll="False">
+                        <Grid Background="Transparent">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -929,7 +929,8 @@
                                 </Grid>
                             </Border>
                         </Grid>
-                    </Grid>
+                        </Grid>
+                    </ScrollViewer>
                 </TabItem>
 
                 <TabItem x:Name="NearbyTab"><TabItem.Header><TextBlock Text="Nearby" Margin="0,0,8,0"/></TabItem.Header>
@@ -1028,8 +1029,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
-            </TabControl>
-        </ScrollViewer>
+        </TabControl>
 
         <!-- Footer -->
         <Border Grid.Row="3" Background="#EEF2F5" BorderBrush="#CCD6E0" BorderThickness="0,1,0,0">

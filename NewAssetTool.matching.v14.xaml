@@ -306,15 +306,7 @@
             <Setter Property="Padding" Value="10,3"/>
         </Style>
 
-        <Style x:Key="NearbySaveButtonStyle" TargetType="Button" BasedOn="{StaticResource NearbyButtonStyle}">
-            <Setter Property="Background" Value="#EEEEEE"/>
-            <Setter Property="BorderBrush" Value="#E1E1E1"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Width" Value="118"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="MinHeight" Value="28"/>
-            <Setter Property="Padding" Value="10,3"/>
-        </Style>
+        <Style x:Key="NearbySaveButtonStyle" TargetType="Button" BasedOn="{StaticResource SuccessButtonStyle}"/>
 
         <Style x:Key="NearbyCheckBoxStyle" TargetType="CheckBox">
             <Setter Property="FontSize" Value="13"/>
@@ -965,12 +957,12 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 0" Foreground="#111111" FontSize="13" FontWeight="Normal" LineHeight="18" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby Scope (Location): 0" Foreground="#111111" FontSize="13" FontWeight="Normal" LineHeight="18" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
-                                <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
+                                <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
+                                <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource SuccessButtonStyle}" Margin="0,0,8,0"/>
                                 <Button x:Name="IsolateNearbyButton" Content="Isolate" Visibility="Collapsed" Style="{StaticResource NearbyButtonStyle}" Margin="0,0,8,0"/>
-                                <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
+                                <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
                             </StackPanel>
                         </Grid>
 
@@ -1109,8 +1101,8 @@
                     <Border x:Name="RemainingPerDayBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
                         <TextBlock x:Name="RemainingPerDayBadgeText" Text="Week remaining 0" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
-                    <Border x:Name="StatusMessageBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource RedBadgeBrush}" Margin="0,0,6,0">
-                        <TextBlock Text="Found Computer / Computer" Foreground="{StaticResource RedBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                    <Border x:Name="StatusMessageBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
+                        <TextBlock Text="Ready — enter a device and click Query." Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="DataFileBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource AmberBadgeBrush}" Cursor="Hand" ToolTip="Click to view data file ages">
                         <TextBlock x:Name="DataFileBadgeText" Text="Data File" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>

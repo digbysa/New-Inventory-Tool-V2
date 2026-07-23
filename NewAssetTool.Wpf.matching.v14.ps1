@@ -137,18 +137,34 @@ try {
     }
 
     function Set-StatusMessage {
-        param([hashtable]$Ui,[ValidateSet('Found','PingComplete','Warning')][string]$Mode,[string]$CustomText)
+        param([hashtable]$Ui,[ValidateSet('Ready','Found','NotFound','Saved','Pinging','PingComplete','Warning')][string]$Mode,[string]$CustomText)
         switch ($Mode) {
+            'Ready' {
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ready — enter a device and click Query.' })
+                Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
+            }
             'Found' {
-                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Found Computer / Computer' })
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Computer Found' })
+                Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
+            }
+            'NotFound' {
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Computer Not Found' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C'
             }
+            'Saved' {
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Event Saved to File' })
+                Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
+            }
+            'Pinging' {
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Pinging 0 of 0 devices…' })
+                Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309'
+            }
             'PingComplete' {
-                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ping complete' })
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ping Complete' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
             }
             'Warning' {
-                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'No matching device found' })
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Warning' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309'
             }
         }
@@ -1862,7 +1878,7 @@ try {
         $scopeCount = if ($script:AppState -and $script:AppState.ActiveNearbyScopes) { $script:AppState.ActiveNearbyScopes.Count } else { 0 }
         $rowCount = 0
         try { $rowCount = @($Ui.NearbyDataGrid.ItemsSource).Count } catch {}
-        $text = "Nearby scopes (Location): $scopeCount"
+        $text = "Nearby Scope (Location): $scopeCount"
         if ($rowCount -gt 0) { $text += " - Showing $rowCount" }
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value $text
     }
@@ -1951,7 +1967,7 @@ try {
             $row.Status = $Status
         }
         try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Updated status for $($selected.Count) selected Nearby device(s)."
+        Update-NearbySummary -Ui $Ui
     }
 
     function Update-NearbyRowWithPingResult {
@@ -1976,8 +1992,7 @@ try {
         if ($total -eq 0) { return }
 
         if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $false }
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging 0 of $total $ScopeLabel..."
-        Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging 0 of $total devices..."
+        Set-StatusMessage -Ui $Ui -Mode 'Pinging' -CustomText "Pinging 0 of $total devices…"
 
         # Keep ping work on the WPF dispatcher instead of a raw .NET worker thread.
         # PowerShell event scriptblocks invoked on BackgroundWorker/Task threads can run
@@ -2003,12 +2018,11 @@ try {
                 try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
                 if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
                 if ($s -and $s.HadError) {
-                    Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping failed after $($s.Updated) of $($s.Total) $ScopeLabel."
                     Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Ping failed: $($s.ErrorMessage)"
                 } else {
                     $updated = if ($s) { [int]$s.Updated } else { 0 }
-                    Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated of $total $ScopeLabel."
-                    Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
+                    Update-NearbySummary -Ui $Ui
+                    Set-StatusMessage -Ui $Ui -Mode 'PingComplete'
                 }
                 return
             }
@@ -2047,8 +2061,7 @@ try {
             $s.Updated++
             Update-NearbyRowWithPingResult -Row $row -Result $result
             try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-            Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($s.Updated) of $($s.Total) $ScopeLabel..."
-            Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $($s.Updated) of $($s.Total) devices..."
+            Set-StatusMessage -Ui $Ui -Mode 'Pinging' -CustomText "Pinging $($s.Updated) of $($s.Total) devices…"
         }.GetNewClosure())
         $timer.Start()
     }
@@ -2153,7 +2166,7 @@ try {
                     $scrollViewer.ScrollToHorizontalOffset([double]$State.HorizontalOffset)
                 }
             } catch {}
-            Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Event Saved'
+            Set-StatusMessage -Ui $Ui -Mode 'Saved'
         }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
     }
 
@@ -2623,7 +2636,7 @@ try {
                 if ($script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 $Ui.AssociatedDevicesDataGrid.ItemsSource = $associated
                 $Ui.NearbyDataGrid.ItemsSource = @()
-                Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
+                Update-NearbySummary -Ui $Ui
                 $script:AppState.SampleData = [pscustomobject]@{ Device=$Device; Associated=$associated; Nearby=@() }
             }) | Out-Null
         }) | Out-Null
@@ -2691,7 +2704,7 @@ try {
         $Ui.DepartmentTextBox.Text = $device.Department
         if ($script:AppState -and $script:AppState.Inventory) { Set-LocationValidationStyle -Ui $Ui -Inventory $script:AppState.Inventory }
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm')"
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
+        Update-NearbySummary -Ui $Ui
         $Ui.AssociatedDevicesDataGrid.ItemsSource = $SampleData.Associated
         $Ui.NearbyDataGrid.ItemsSource = $SampleData.Nearby
     }
@@ -2816,7 +2829,7 @@ try {
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
-                Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Device found; ping updated'
+                Set-StatusMessage -Ui $Ui -Mode 'Found'
             }) | Out-Null
         }) | Out-Null
     }
@@ -2843,10 +2856,10 @@ try {
 
         if ($StartContinuous) {
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
-            Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Continuous ping started; device status updated'
+            Set-StatusMessage -Ui $Ui -Mode 'PingComplete'
         }
         else {
-            Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Ping complete; device status updated'
+            Set-StatusMessage -Ui $Ui -Mode 'PingComplete'
         }
     }
 
@@ -2876,7 +2889,7 @@ try {
         foreach ($box in @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)) { Set-ControlText -Control $box -Value ''; $box.Background = New-Brush '#CCF2D3'; $box.BorderBrush = New-Brush '#7CE0A6' }
         $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
         if ($ClearNearby) {
-            Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value 'Nearby disabled'
+            Update-NearbySummary -Ui $Ui
             $Ui.NearbyDataGrid.ItemsSource = @()
         } else {
             Update-NearbySummary -Ui $Ui
@@ -2979,7 +2992,7 @@ function Find-SampleDevice {
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
         $script:ManualRoundUsed = $false
-        Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText 'Event Saved'
+        Set-StatusMessage -Ui $Ui -Mode 'Saved'
         return $true
     }
 
@@ -3036,6 +3049,7 @@ function Find-SampleDevice {
             if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
             Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
             Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
+            Set-StatusMessage -Ui $Ui -Mode 'Saved'
             [System.Windows.MessageBox]::Show("Saved $saved nearby rounding event(s) to:`n$csvPath", 'Nearby Save') | Out-Null
         } else {
             [System.Windows.MessageBox]::Show('Nothing to save. Pick a Nearby status first.', 'Nearby Save') | Out-Null
@@ -3187,7 +3201,7 @@ function Find-SampleDevice {
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
     Increment-Fonts -Root $window
-    Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
+    Set-StatusMessage -Ui $ui -Mode 'Ready'
     Update-DataFileBadge -Ui $ui -DataFiles $dataFiles
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
     Register-SummaryClipboardCopy -Ui $ui
@@ -3266,7 +3280,9 @@ function Find-SampleDevice {
 
     $ui.QueryButton.Add_Click({
         $queryStartedFromNearby = ($script:AppState -and $script:AppState.QueryStartedFromNearby)
+        $queryInvokedWhileViewingNearby = ($ui.MainTabControl -and $ui.NearbyTab -and $ui.MainTabControl.SelectedItem -eq $ui.NearbyTab)
         if ($script:AppState) { $script:AppState.QueryStartedFromNearby = $false }
+        if ($queryInvokedWhileViewingNearby -and $ui.SystemTab) { $ui.MainTabControl.SelectedItem = $ui.SystemTab }
         $searchTerm = $ui.SearchTextBox.Text
         $match = Find-InventoryMatch -SearchTerm $searchTerm -Inventory $script:AppState.Inventory
         if ($null -eq $match) {
@@ -3274,7 +3290,7 @@ function Find-SampleDevice {
             $script:AppState.CurrentDevice = $null
             $script:ManualRoundUsed = $false
             Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
-            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'No matching device found'
+            Set-StatusMessage -Ui $ui -Mode 'NotFound'
             if (-not [string]::IsNullOrWhiteSpace($searchTerm)) {
                 [System.Windows.MessageBox]::Show("No device was found for:`n$searchTerm", 'Device Not Found') | Out-Null
             }
@@ -3335,7 +3351,7 @@ function Find-SampleDevice {
             Clear-WindowData -Ui $ui -ClearNearby:$false
             Set-RoundingMinutes -Ui $ui -Minutes 3
             Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
-            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText 'Ready. Enter a device and click Query.'
+            Set-StatusMessage -Ui $ui -Mode 'Ready'
         }
     })
 

@@ -1786,13 +1786,16 @@ try {
         $rowCount = 0
         try { $rowCount = @($Ui.NearbyDataGrid.ItemsSource).Count } catch {}
         $text = "Nearby scopes (Location): $scopeCount"
-        if ($rowCount -gt 0) { $text += " - Showing $rowCount" }
+        if ($rowCount -gt 0) { $text += " — Showing $rowCount" }
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value $text
     }
 
     function Update-NearbyRows {
         param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
         $rows = Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory
+        foreach ($row in @($rows)) {
+            if ($row -and $row.PSObject.Properties.Name -contains 'Status' -and [string]$row.Status -eq 'â€”') { $row.Status = '—' }
+        }
         $Ui.NearbyDataGrid.ItemsSource = $rows
         if ($script:AppState) {
             $associated = @()

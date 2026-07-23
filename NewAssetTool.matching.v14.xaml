@@ -249,18 +249,88 @@
 
 
         <Style x:Key="LegacyNearbyDataGridStyle" TargetType="DataGrid" BasedOn="{StaticResource CompactDataGridStyle}">
-            <Setter Property="BorderThickness" Value="0,1,0,0"/>
-            <Setter Property="BorderBrush" Value="#B8C1CC"/>
-            <Setter Property="AlternatingRowBackground" Value="#F8FBFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#E1E5EA"/>
+            <Setter Property="AlternatingRowBackground" Value="#F7F9FB"/>
             <Setter Property="RowBackground" Value="White"/>
             <Setter Property="RowHeight" Value="28"/>
             <Setter Property="ColumnHeaderHeight" Value="23"/>
-            <Setter Property="HorizontalGridLinesBrush" Value="#DDE3EA"/>
-            <Setter Property="VerticalGridLinesBrush" Value="#D7DEE7"/>
-            <Setter Property="ScrollViewer.CanContentScroll" Value="False"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#E1E5EA"/>
+            <Setter Property="VerticalGridLinesBrush" Value="#E1E5EA"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible"/>
         </Style>
+
+        <Style x:Key="NearbyButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#111111"/>
+            <Setter Property="Background" Value="#F4F4F4"/>
+            <Setter Property="BorderBrush" Value="#E1E4E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#EEEEEE"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#E6E6E6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="NearbyShowAllButtonStyle" TargetType="Button" BasedOn="{StaticResource NearbyButtonStyle}">
+            <Setter Property="Background" Value="#F5F6F8"/>
+            <Setter Property="BorderBrush" Value="#D5DBE3"/>
+            <Setter Property="Width" Value="66"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="10,3"/>
+        </Style>
+
+        <Style x:Key="NearbySaveButtonStyle" TargetType="Button" BasedOn="{StaticResource NearbyButtonStyle}">
+            <Setter Property="Background" Value="#EEEEEE"/>
+            <Setter Property="BorderBrush" Value="#E1E1E1"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Width" Value="118"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="10,3"/>
+        </Style>
+
+        <Style x:Key="NearbyCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="5,0,0,0"/>
+        </Style>
+
+        <Style x:Key="NearbyCellTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="LineHeight" Value="18"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#F8FAFC"/>
             <Setter Property="BorderBrush" Value="#E4E9F0"/>
@@ -871,32 +941,32 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Margin="2,0,2,2">
+                        <Grid Grid.Row="0" Margin="6,4,4,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 0" Foreground="#111827" FontSize="13" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="NearbyScopeSummaryText" Text="Nearby scopes (Location): 0" Foreground="#111111" FontSize="13" FontWeight="Normal" LineHeight="18" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4" Margin="0,0,8,0"/>
-                                <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4" Margin="0,0,8,0"/>
-                                <Button x:Name="IsolateNearbyButton" Content="Isolate" Visibility="Collapsed" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
-                                <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4" Margin="0,0,8,0"/>
-                                <Button x:Name="NearbyCollapseButton" Content="-" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4" Width="74" Margin="0,0,8,0"/>
-                                <Button x:Name="NearbyExpandButton" Content="+" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4" Width="74"/>
+                                <Button x:Name="RebuildNearbyButton" Content="Rebuild Nearby" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
+                                <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
+                                <Button x:Name="IsolateNearbyButton" Content="Isolate" Visibility="Collapsed" Style="{StaticResource NearbyButtonStyle}" Margin="0,0,8,0"/>
+                                <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
+                                <Button x:Name="NearbyCollapseButton" Content="-" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Width="74" Margin="0,0,8,0"/>
+                                <Button x:Name="NearbyExpandButton" Content="+" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Width="74"/>
                             </StackPanel>
                         </Grid>
 
-                        <WrapPanel Grid.Row="1" Margin="2,0,2,2" VerticalAlignment="Center">
-                            <Button x:Name="ShowAllNearbyButton" Content="Show All" Style="{StaticResource SecondaryButtonStyle}" Padding="10,3" Margin="0,0,22,0"/>
-                            <CheckBox x:Name="ShowAllNearbyCheckBox" Content="Show All (0)" Visibility="Collapsed" Margin="0,0,16,0"/>
-                            <CheckBox x:Name="TodaysRoundedCheckBox" Content="Today's Rounded (0)" Margin="0,0,16,0"/>
-                            <CheckBox x:Name="ExcludedCheckBox" Content="Excluded (0)" Margin="0,0,16,0"/>
-                            <CheckBox x:Name="RecentlyRoundedCheckBox" Content="Recently Rounded (0)" IsChecked="True" Margin="0,0,16,0"/>
-                            <CheckBox x:Name="CriticalClinicalCheckBox" Content="Critical Clinical (0)"/>
+                        <WrapPanel Grid.Row="1" Margin="6,0,4,2" Height="28" VerticalAlignment="Center">
+                            <Button x:Name="ShowAllNearbyButton" Content="Show All" Style="{StaticResource NearbyShowAllButtonStyle}" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="ShowAllNearbyCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Show All (0)" Visibility="Collapsed" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="TodaysRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Today's Rounded (0)" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="ExcludedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Excluded (0)" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="RecentlyRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Recently Rounded (0)" IsChecked="True" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="CriticalClinicalCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Critical Clinical (0)"/>
                         </WrapPanel>
 
-                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" MinHeight="320" MaxHeight="520" SelectionMode="Extended" SelectionUnit="FullRow">
+                        <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow">
                             <DataGrid.Resources>
                                 <Style TargetType="{x:Type ScrollBar}">
                                     <Setter Property="Width" Value="13"/>
@@ -912,48 +982,49 @@
                                     <Setter Property="Foreground" Value="#000000"/>
                                     <Setter Property="FontWeight" Value="Bold"/>
                                     <Setter Property="FontSize" Value="12"/>
-                                    <Setter Property="Padding" Value="3,2"/>
-                                    <Setter Property="BorderBrush" Value="#B8C1CC"/>
+                                    <Setter Property="Padding" Value="5,2"/>
+                                    <Setter Property="BorderBrush" Value="#E1E5EA"/>
                                     <Setter Property="BorderThickness" Value="0,0,1,1"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Left"/>
                                 </Style>
                                 <Style TargetType="{x:Type DataGridCell}">
-                                    <Setter Property="FontSize" Value="12"/>
-                                    <Setter Property="Padding" Value="3,2"/>
-                                    <Setter Property="BorderBrush" Value="#D7DEE7"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="Padding" Value="5,2"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="BorderBrush" Value="#E1E5EA"/>
                                     <Setter Property="BorderThickness" Value="0,0,1,1"/>
                                 </Style>
                             </DataGrid.Resources>
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Host Name" Width="140" Binding="{Binding HostName}"/>
-                                <DataGridTextColumn Header="IP Address" Width="145" Binding="{Binding IPAddress}"/>
-                                <DataGridTextColumn Header="Subnet" Width="145" Binding="{Binding Subnet}"/>
-                                <DataGridTextColumn Header="Asset Tag" Width="145" Binding="{Binding AssetTag}"/>
-                                <DataGridTextColumn Header="Location" Width="145" Binding="{Binding Location}"/>
-                                <DataGridTextColumn Header="Building" Width="145" Binding="{Binding Building}"/>
-                                <DataGridTextColumn Header="Floor" Width="145" Binding="{Binding Floor}"/>
-                                <DataGridTextColumn Header="Room" Width="145" Binding="{Binding Room}"/>
-                                <DataGridTextColumn Header="Department" Width="145" Binding="{Binding Department}"/>
-                                <DataGridTextColumn Header="Maintenance Type" Width="145" Binding="{Binding MaintenanceType}"/>
-                                <DataGridTextColumn Header="Last Rounded" Width="145" Binding="{Binding LastRounded}"/>
-                                <DataGridTextColumn Header="Days Ago" Width="145" Binding="{Binding DaysAgo}"/>
-                                <DataGridTemplateColumn Header="Status" Width="*">
+                                <DataGridTextColumn Header="Host Name" Width="115" Binding="{Binding HostName}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="IP Address" Width="110" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Subnet" Width="80" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Asset Tag" Width="100" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Location" Width="500" Binding="{Binding Location}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Building" Width="145" Binding="{Binding Building}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Floor" Width="65" Binding="{Binding Floor}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Room" Width="145" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Department" Width="85" Binding="{Binding Department}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Maintenance Type" Width="60" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Last Rounded" Width="65" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Days Ago" Width="55" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTemplateColumn Header="Status" Width="185">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" Style="{StaticResource EditorComboStyle}" MinWidth="120" Padding="2,0"/>
+                                            <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" Height="26" MinHeight="24" FontSize="13" Padding="4,1" MinWidth="0"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
 
-                        <Grid Grid.Row="3" Margin="6,8,12,8">
+                        <Grid Grid.Row="3" Margin="8,4,12,4" Height="36">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Bulk Save adds events with selected Status, 3 min each." Foreground="#111827" FontSize="12" VerticalAlignment="Center"/>
-                            <Button x:Name="NearbySaveButton" Grid.Column="1" Content="Save" Style="{StaticResource SuccessButtonStyle}" MinWidth="118" Padding="12,5"/>
+                            <Button x:Name="NearbySaveButton" Grid.Column="1" Content="Save" Style="{StaticResource NearbySaveButtonStyle}"/>
                         </Grid>
                     </Grid>
                 </TabItem>

@@ -1898,6 +1898,7 @@ try {
         try { $Ui.NearbyDataGrid.UpdateLayout() } catch {}
         foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
             if ($column.ActualWidth -gt 0) {
+                # Keep each Nearby column content-sized, then add 10 px so adjacent values do not crowd each other.
                 $column.Width = New-Object System.Windows.Controls.DataGridLength ($column.ActualWidth + 10)
             }
         }
@@ -1910,9 +1911,9 @@ try {
         Update-NearbyCheckboxLabels -Ui $Ui -Rows $allRows
         $rows = @($allRows | Where-Object { Test-NearbyRowVisible -Ui $Ui -Row $_ })
         $Ui.NearbyDataGrid.ItemsSource = $rows
-        if ($script:AppState -and $script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending' -and $script:AppState.NearbyColumnsAutoFitPending) {
+        $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+        if ($script:AppState -and $script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending') {
             $script:AppState.NearbyColumnsAutoFitPending = $false
-            $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
         }
         if ($script:AppState) {
             $associated = @()
@@ -2146,6 +2147,11 @@ try {
         })
         $Ui.NearbyDataGrid.Add_MouseDoubleClick({
             param($sender,$e)
+            $source = $e.OriginalSource -as [System.Windows.DependencyObject]
+            while ($source) {
+                if ($source -is [System.Windows.Controls.ComboBox]) { return }
+                try { $source = [System.Windows.Media.VisualTreeHelper]::GetParent($source) } catch { $source = $null }
+            }
             $row = Get-NearbyRowFromMouseEvent -OriginalSource $e.OriginalSource
             if (-not $row) { $row = $sender.SelectedItem }
             Invoke-NearbyRowQuery -Ui $ui -Row $row

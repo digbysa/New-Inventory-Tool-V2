@@ -1069,7 +1069,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Bulk Save adds events with selected Status, 3 min each." Foreground="#111827" FontSize="12" VerticalAlignment="Center"/>
-                            <Button x:Name="NearbySaveButton" Grid.Column="1" Content="Save" Style="{StaticResource NearbySaveButtonStyle}"/>
+                            <Button x:Name="NearbySaveButton" Grid.Column="1" Content="Save" Style="{StaticResource NearbySaveButtonStyle}" Width="{Binding ActualWidth, ElementName=PingAllButton}" Height="{Binding ActualHeight, ElementName=PingAllButton}"/>
                         </Grid>
                     </Grid>
                 </TabItem>
@@ -1102,7 +1102,7 @@
                         <TextBlock x:Name="RemainingPerDayBadgeText" Text="Week remaining 0" Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="StatusMessageBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource GoodBadgeBrush}" Margin="0,0,6,0">
-                        <TextBlock Text="Ready — enter a device and click Query." Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="Ready - enter a device and click Query." Foreground="{StaticResource GoodBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>
                     </Border>
                     <Border x:Name="DataFileBadge" Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource AmberBadgeBrush}" Cursor="Hand" ToolTip="Click to view data file ages">
                         <TextBlock x:Name="DataFileBadgeText" Text="Data File" Foreground="{StaticResource AmberBadgeTextBrush}" FontWeight="SemiBold" FontSize="12"/>

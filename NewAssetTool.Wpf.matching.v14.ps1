@@ -140,7 +140,7 @@ try {
         param([hashtable]$Ui,[ValidateSet('Ready','Found','NotFound','Saved','Pinging','PingComplete','Warning')][string]$Mode,[string]$CustomText)
         switch ($Mode) {
             'Ready' {
-                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ready — enter a device and click Query.' })
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ready - enter a device and click Query.' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
             }
             'Found' {
@@ -152,7 +152,7 @@ try {
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#FCE3E5' -ForegroundHex '#BE123C'
             }
             'Saved' {
-                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Event Saved to File' })
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Event Saved to File - Ready' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
             }
             'Pinging' {
@@ -2829,7 +2829,7 @@ try {
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if (-not [string]::IsNullOrWhiteSpace($QueryToken) -and $script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
-                Set-StatusMessage -Ui $Ui -Mode 'Found'
+                if ($script:AppState.LastStatusMode -ne 'Saved' -and $script:AppState.CurrentDevice) { Set-StatusMessage -Ui $Ui -Mode 'Found' }
             }) | Out-Null
         }) | Out-Null
     }
@@ -3196,7 +3196,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -3522,8 +3522,10 @@ function Find-SampleDevice {
 
     $ui.MainTabControl.Add_SelectionChanged({
         if ($window.IsLoaded) {
+            if ($script:AppState.LastStatusMode -eq 'Saved') { return }
             if ($script:AppState.LastStatusMode -eq 'PingComplete') { Set-StatusMessage -Ui $ui -Mode 'PingComplete' }
-            else { Set-StatusMessage -Ui $ui -Mode 'Found' }
+            elseif ($script:AppState.CurrentDevice -and $ui.MainTabControl.SelectedItem -eq $ui.SystemTab) { Set-StatusMessage -Ui $ui -Mode 'Found' }
+            elseif (-not $script:AppState.CurrentDevice) { Set-StatusMessage -Ui $ui -Mode 'Ready' }
         }
     })
 

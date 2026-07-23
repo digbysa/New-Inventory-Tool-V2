@@ -243,7 +243,7 @@
             <Setter Property="HorizontalGridLinesBrush" Value="#E6EAEE"/>
             <Setter Property="VerticalGridLinesBrush" Value="#E6EAEE"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
 
@@ -259,7 +259,7 @@
             <Setter Property="HorizontalGridLinesBrush" Value="#E6EAEE"/>
             <Setter Property="VerticalGridLinesBrush" Value="#E6EAEE"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible"/>
         </Style>
 
@@ -1054,22 +1054,20 @@
                                     </DataGridTextColumn.CellStyle>
                                 </DataGridTextColumn>
                                 <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="55" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridComboBoxColumn Header="Status" Width="Auto" MinWidth="185" SelectedItemBinding="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding StatusOptions}" IsReadOnly="False">
-                                    <DataGridComboBoxColumn.ElementStyle>
-                                        <Style TargetType="ComboBox">
-                                            <Setter Property="Padding" Value="2,0"/>
-                                            <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                            <Setter Property="IsHitTestVisible" Value="False"/>
-                                            <Setter Property="Focusable" Value="False"/>
-                                        </Style>
-                                    </DataGridComboBoxColumn.ElementStyle>
-                                    <DataGridComboBoxColumn.EditingElementStyle>
-                                        <Style TargetType="ComboBox">
-                                            <Setter Property="Padding" Value="2,0"/>
-                                            <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                        </Style>
-                                    </DataGridComboBoxColumn.EditingElementStyle>
-                                </DataGridComboBoxColumn>
+                                <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="185" IsReadOnly="False">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding StatusOptions}"
+                                                      SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Padding="2,0"
+                                                      BorderThickness="0"
+                                                      Background="Transparent"
+                                                      VerticalContentAlignment="Center"
+                                                      HorizontalContentAlignment="Stretch"
+                                                      IsEnabled="{Binding IsStatusEditable}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
 

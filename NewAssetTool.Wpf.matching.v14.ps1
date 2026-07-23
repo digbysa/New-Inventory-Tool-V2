@@ -1851,13 +1851,26 @@ try {
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging 0 of $total $ScopeLabel..."
         Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging 0 of $total devices..."
 
-        [System.Threading.Tasks.Task]::Run([Action]{
+        $pingWorker = [Action]{
             $updated = 0
             foreach ($row in $pingRows) {
                 $hostName = [string]$row.HostName
-                $result = $null
-                try { $result = Invoke-DevicePing -ComputerName $hostName -DataRoot $DataRoot }
-                catch { $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' } }
+                $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' }
+                $ping = $null
+                try {
+                    $ping = New-Object System.Net.NetworkInformation.Ping
+                    $reply = $ping.Send($hostName, 2000)
+                    if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+                        $ipAddress = if ($reply.Address) { [string]$reply.Address } else { 'Unknown' }
+                        $subnet = 'Unknown'
+                        try { $subnet = Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
+                        $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet }
+                    }
+                } catch {
+                    $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' }
+                } finally {
+                    try { if ($ping) { $ping.Dispose() } } catch {}
+                }
                 $updated++
                 $completed = $updated
                 $Ui.MainTabControl.Dispatcher.Invoke([Action]{
@@ -1873,7 +1886,8 @@ try {
                 Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated of $total $ScopeLabel."
                 Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
             }) | Out-Null
-        }) | Out-Null
+        }
+        [System.Threading.Tasks.Task]::Run($pingWorker) | Out-Null
     }
 
     function Invoke-SelectedNearbyPing {

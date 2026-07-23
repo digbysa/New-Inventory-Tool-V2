@@ -1043,7 +1043,13 @@
                                 <DataGridTextColumn Header="Room" Width="145" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Department" Width="85" Binding="{Binding Department}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Maintenance Type" Width="60" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Last Rounded" Width="65" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Last Rounded" Width="65" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}">
+                                    <DataGridTextColumn.CellStyle>
+                                        <Style TargetType="{x:Type DataGridCell}" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                            <Setter Property="Background" Value="{Binding LastRoundedBackground}"/>
+                                        </Style>
+                                    </DataGridTextColumn.CellStyle>
+                                </DataGridTextColumn>
                                 <DataGridTextColumn Header="Days Ago" Width="55" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTemplateColumn Header="Status" Width="*" MinWidth="185">
                                     <DataGridTemplateColumn.CellTemplate>

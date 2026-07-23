@@ -1904,76 +1904,78 @@ try {
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging 0 of $total $ScopeLabel..."
         Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging 0 of $total devices..."
 
-        # Do not use Task.Run with a PowerShell scriptblock here. Task.Run executes on a
-        # raw .NET thread that may not have a PowerShell runspace, which can prevent the
-        # worker from starting and leaves the UI stuck at "Pinging 0 of ...".  A
-        # BackgroundWorker keeps the ping loop off the UI thread while its progress and
-        # completion events are safely raised back to the WPF synchronization context.
-        $worker = New-Object System.ComponentModel.BackgroundWorker
-        $worker.WorkerReportsProgress = $true
-
-        $worker.Add_DoWork({
+        # Keep ping work on the WPF dispatcher instead of a raw .NET worker thread.
+        # PowerShell event scriptblocks invoked on BackgroundWorker/Task threads can run
+        # without a DefaultRunspace, which surfaces as "There is no Runspace available"
+        # when the scriptblock calls helper functions.  The dispatcher timer avoids that
+        # runspace error and still lets the UI repaint between host pings.
+        $state = [pscustomobject]@{
+            Rows = $pingRows
+            Total = $total
+            Index = 0
+            Updated = 0
+            HadError = $false
+            ErrorMessage = ''
+        }
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds(25)
+        $timer.Tag = $state
+        $timer.Add_Tick({
             param($sender,$eventArgs)
-            $updated = 0
-            foreach ($row in $pingRows) {
-                $hostName = ([string]$row.HostName).Trim()
-                $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
-                $ping = $null
-                try {
-                    $ping = New-Object System.Net.NetworkInformation.Ping
-                    $reply = $ping.Send($hostName, 2000)
-                    if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
-                        $ipAddress = if ($reply.Address) { [string]$reply.Address } else { '' }
-                        if ([string]::IsNullOrWhiteSpace($ipAddress)) { $ipAddress = Resolve-HostIPv4Address -HostName $hostName }
-                        $subnet = ''
-                        try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                        $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$true }
-                    } else {
-                        $ipAddress = Resolve-HostIPv4Address -HostName $hostName
-                        $subnet = ''
-                        try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                        $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
-                    }
-                } catch {
+            $s = $sender.Tag
+            if (-not $s -or $s.Index -ge $s.Total) {
+                $sender.Stop()
+                try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+                if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
+                if ($s -and $s.HadError) {
+                    Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping failed after $($s.Updated) of $($s.Total) $ScopeLabel."
+                    Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Ping failed: $($s.ErrorMessage)"
+                } else {
+                    $updated = if ($s) { [int]$s.Updated } else { 0 }
+                    Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated of $total $ScopeLabel."
+                    Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
+                }
+                return
+            }
+
+            $row = $s.Rows[$s.Index]
+            $s.Index++
+            $hostName = ([string]$row.HostName).Trim()
+            $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
+            $ping = $null
+            try {
+                $ping = New-Object System.Net.NetworkInformation.Ping
+                $reply = $ping.Send($hostName, 2000)
+                $ipAddress = ''
+                $subnet = ''
+                if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+                    $ipAddress = if ($reply.Address) { [string]$reply.Address } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($ipAddress)) { $ipAddress = Resolve-HostIPv4Address -HostName $hostName }
+                    try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
+                    $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$true }
+                } else {
                     $ipAddress = Resolve-HostIPv4Address -HostName $hostName
-                    $subnet = ''
                     try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
                     $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
-                } finally {
-                    try { if ($ping) { $ping.Dispose() } } catch {}
                 }
-                $updated++
-                try { $sender.ReportProgress(0, [pscustomobject]@{ Row=$row; Result=$result; Completed=$updated }) } catch {}
+            } catch {
+                $s.HadError = $true
+                $s.ErrorMessage = $_.Exception.Message
+                $ipAddress = Resolve-HostIPv4Address -HostName $hostName
+                $subnet = ''
+                try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
+                $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
+            } finally {
+                try { if ($ping) { $ping.Dispose() } } catch {}
             }
-            $eventArgs.Result = $updated
-        }.GetNewClosure())
 
-        $worker.Add_ProgressChanged({
-            param($sender,$eventArgs)
-            $progress = $eventArgs.UserState
-            if (-not $progress) { return }
-            Update-NearbyRowWithPingResult -Row $progress.Row -Result $progress.Result
+            $s.Updated++
+            Update-NearbyRowWithPingResult -Row $row -Result $result
             try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-            Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($progress.Completed) of $total $ScopeLabel..."
-            Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $($progress.Completed) of $total devices..."
+            Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($s.Updated) of $($s.Total) $ScopeLabel..."
+            Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $($s.Updated) of $($s.Total) devices..."
         }.GetNewClosure())
-
-        $worker.Add_RunWorkerCompleted({
-            param($sender,$eventArgs)
-            $updated = if ($eventArgs.Error) { 0 } else { [int]$eventArgs.Result }
-            try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-            if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
-            if ($eventArgs.Error) {
-                Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping failed after $updated of $total $ScopeLabel."
-                Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Ping failed: $($eventArgs.Error.Message)"
-            } else {
-                Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated of $total $ScopeLabel."
-                Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
-            }
-            try { $sender.Dispose() } catch {}
-        }.GetNewClosure())
-
-        $worker.RunWorkerAsync()
+        $timer.Start()
     }
 
     function Invoke-SelectedNearbyPing {
@@ -2023,13 +2025,19 @@ try {
         if (-not $Ui -or -not $Row) { return }
         $searchText = Get-NearbyRowSearchText -Row $Row
         if ([string]::IsNullOrWhiteSpace($searchText)) { return }
-        if ($Ui.MainTabControl -and $Ui.SystemTab) { $Ui.MainTabControl.SelectedItem = $Ui.SystemTab }
+        if ($Ui.MainTabControl -and $Ui.SystemTab) {
+            $Ui.MainTabControl.SelectedItem = $Ui.SystemTab
+            $Ui.MainTabControl.SelectedIndex = $Ui.MainTabControl.Items.IndexOf($Ui.SystemTab)
+        }
         Set-ControlText -Control $Ui.SearchTextBox -Value $searchText
         if ($Ui.SearchTextBox) {
             $Ui.SearchTextBox.Focus() | Out-Null
             $Ui.SearchTextBox.CaretIndex = $Ui.SearchTextBox.Text.Length
         }
         if ($Ui.QueryButton) { $Ui.QueryButton.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Button]::ClickEvent))) }
+        if ($Ui.MainTabControl -and $Ui.SystemTab) {
+            $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{ $Ui.MainTabControl.SelectedItem = $Ui.SystemTab }, [System.Windows.Threading.DispatcherPriority]::Background) | Out-Null
+        }
     }
 
     function Get-NearbyRowFromMouseEvent {

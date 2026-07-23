@@ -1829,17 +1829,51 @@ try {
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Updated status for $($selected.Count) selected Nearby device(s)."
     }
 
-    function Update-NearbyRowsWithPing {
-        param([object[]]$Rows,[string]$DataRoot)
-        $updated = 0
-        foreach ($row in @($Rows)) {
-            if (-not $row -or [string]::IsNullOrWhiteSpace([string]$row.HostName)) { continue }
-            $result = Invoke-DevicePing -ComputerName ([string]$row.HostName) -DataRoot $DataRoot
-            $row.IPAddress = if ($result.IpAddress) { [string]$result.IpAddress } else { 'Unknown' }
-            $row.Subnet = if ($result.Subnet) { [string]$result.Subnet } else { 'Unknown' }
-            $updated++
-        }
-        return $updated
+    function Update-NearbyRowWithPingResult {
+        param([object]$Row,[object]$Result)
+        if (-not $Row) { return }
+        $Row.IPAddress = if ($Result -and $Result.IpAddress) { [string]$Result.IpAddress } else { 'Unknown' }
+        $Row.Subnet = if ($Result -and $Result.Subnet) { [string]$Result.Subnet } else { 'Unknown' }
+    }
+
+    function Start-NearbyRowsPingAsync {
+        param(
+            [hashtable]$Ui,
+            [object[]]$Rows,
+            [string]$DataRoot,
+            [string]$ScopeLabel='Nearby host(s)'
+        )
+        $pingRows = @($Rows | Where-Object { $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.HostName) })
+        $total = $pingRows.Count
+        if ($total -eq 0) { return }
+
+        if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $false }
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging 0 of $total $ScopeLabel..."
+        Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging 0 of $total devices..."
+
+        [System.Threading.Tasks.Task]::Run([Action]{
+            $updated = 0
+            foreach ($row in $pingRows) {
+                $hostName = [string]$row.HostName
+                $result = $null
+                try { $result = Invoke-DevicePing -ComputerName $hostName -DataRoot $DataRoot }
+                catch { $result = [pscustomobject]@{ IpAddress='Unknown'; Subnet='Unknown' } }
+                $updated++
+                $completed = $updated
+                $Ui.MainTabControl.Dispatcher.Invoke([Action]{
+                    Update-NearbyRowWithPingResult -Row $row -Result $result
+                    try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+                    Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $completed of $total $ScopeLabel..."
+                    Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $completed of $total devices..."
+                }) | Out-Null
+            }
+            $Ui.MainTabControl.Dispatcher.Invoke([Action]{
+                try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+                if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
+                Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated of $total $ScopeLabel."
+                Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
+            }) | Out-Null
+        }) | Out-Null
     }
 
     function Invoke-SelectedNearbyPing {
@@ -1849,9 +1883,7 @@ try {
             [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Ping selected host(s)') | Out-Null
             return
         }
-        $updated = Update-NearbyRowsWithPing -Rows $selected -DataRoot $DataRoot
-        try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated selected Nearby host(s)."
+        Start-NearbyRowsPingAsync -Ui $Ui -Rows $selected -DataRoot $DataRoot -ScopeLabel 'selected Nearby host(s)'
     }
 
     function Invoke-AllVisibleNearbyPing {
@@ -1864,10 +1896,7 @@ try {
             [System.Windows.MessageBox]::Show('There are no visible Nearby devices to ping.', 'Ping All') | Out-Null
             return
         }
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($rows.Count) visible Nearby host(s)..."
-        $updated = Update-NearbyRowsWithPing -Rows $rows -DataRoot $DataRoot
-        try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated visible Nearby host(s)."
+        Start-NearbyRowsPingAsync -Ui $Ui -Rows $rows -DataRoot $DataRoot -ScopeLabel 'visible Nearby host(s)'
     }
 
     function Initialize-NearbyContextMenu {

@@ -1829,6 +1829,19 @@ try {
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Updated status for $($selected.Count) selected Nearby device(s)."
     }
 
+    function Update-NearbyRowsWithPing {
+        param([object[]]$Rows,[string]$DataRoot)
+        $updated = 0
+        foreach ($row in @($Rows)) {
+            if (-not $row -or [string]::IsNullOrWhiteSpace([string]$row.HostName)) { continue }
+            $result = Invoke-DevicePing -ComputerName ([string]$row.HostName) -DataRoot $DataRoot
+            $row.IPAddress = if ($result.IpAddress) { [string]$result.IpAddress } else { 'Unknown' }
+            $row.Subnet = if ($result.Subnet) { [string]$result.Subnet } else { 'Unknown' }
+            $updated++
+        }
+        return $updated
+    }
+
     function Invoke-SelectedNearbyPing {
         param([hashtable]$Ui,[string]$DataRoot)
         $selected = @(Get-NearbySelectedRows -Ui $Ui)
@@ -1836,16 +1849,25 @@ try {
             [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Ping selected host(s)') | Out-Null
             return
         }
-        $updated = 0
-        foreach ($row in $selected) {
-            if (-not $row -or [string]::IsNullOrWhiteSpace([string]$row.HostName)) { continue }
-            $result = Invoke-DevicePing -ComputerName ([string]$row.HostName) -DataRoot $DataRoot
-            $row.IPAddress = if ($result.IpAddress) { [string]$result.IpAddress } else { 'Unknown' }
-            $row.Subnet = if ($result.Subnet) { [string]$result.Subnet } else { 'Unknown' }
-            $updated++
-        }
+        $updated = Update-NearbyRowsWithPing -Rows $selected -DataRoot $DataRoot
         try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated selected Nearby host(s)."
+    }
+
+    function Invoke-AllVisibleNearbyPing {
+        param([hashtable]$Ui,[string]$DataRoot)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
+        $rows = @($Ui.NearbyDataGrid.Items | Where-Object {
+            $_ -and $_ -ne [System.ComponentModel.CollectionView]::NewItemPlaceholder
+        })
+        if ($rows.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('There are no visible Nearby devices to ping.', 'Ping All') | Out-Null
+            return
+        }
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($rows.Count) visible Nearby host(s)..."
+        $updated = Update-NearbyRowsWithPing -Rows $rows -DataRoot $DataRoot
+        try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
+        Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Ping updated $updated visible Nearby host(s)."
     }
 
     function Initialize-NearbyContextMenu {
@@ -3100,7 +3122,7 @@ function Find-SampleDevice {
     })
     $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory })
     $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
-    $ui.PingAllButton.Add_Click({ Set-ControlText -Control $ui.NearbyScopeSummaryText -Value 'Nearby disabled' })
+    $ui.PingAllButton.Add_Click({ Invoke-AllVisibleNearbyPing -Ui $ui -DataRoot $dataRoot })
     $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath })
     $ui.AssociatedDevicesDataGrid.Add_MouseDoubleClick({
         $row = $ui.AssociatedDevicesDataGrid.SelectedItem

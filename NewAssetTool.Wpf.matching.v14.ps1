@@ -1741,6 +1741,9 @@ try {
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyHostColorCache') -or -not $script:AppState.NearbyHostColorCache) {
             $script:AppState | Add-Member -NotePropertyName NearbyHostColorCache -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,string]') -Force
         }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedTodayAssetTags') -or -not $script:AppState.NearbyRoundedTodayAssetTags) {
+            $script:AppState | Add-Member -NotePropertyName NearbyRoundedTodayAssetTags -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
+        }
     }
 
     function Get-NearbyPingCacheKey {
@@ -3096,7 +3099,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]') }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Found'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]') }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -3375,7 +3378,7 @@ function Find-SampleDevice {
         $nearbyScopeDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
         if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)
-        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
         $script:RoundingBaseMinutes = 3
         Reset-RoundingFormForNextScan -Ui $ui
     })

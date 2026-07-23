@@ -598,10 +598,21 @@ try {
     function Get-RoundingStatus {
         param([Nullable[datetime]]$RoundedDate)
         if (-not $RoundedDate) { return 'Red' }
-        $daysAgo = [int](((Get-Date).Date - $RoundedDate.Date).TotalDays)
-        if ($daysAgo -lt 7) { return 'Green' }
-        if ($daysAgo -lt 35) { return 'Yellow' }
+        $today = (Get-Date).Date
+        $dayOfWeek = [int](Get-Date $today -UFormat %u)
+        $monday = $today.AddDays(-($dayOfWeek - 1))
+        if ($RoundedDate.Date -ge $monday) { return 'Green' }
+        if ($RoundedDate.Date -ge $today.AddDays(-35)) { return 'Yellow' }
         return 'Red'
+    }
+
+    function Get-RoundingStatusBackground {
+        param([Nullable[datetime]]$RoundedDate)
+        switch (Get-RoundingStatus -RoundedDate $RoundedDate) {
+            'Green' { return 'PaleGreen' }
+            'Yellow' { return 'LightYellow' }
+            default { return 'MistyRose' }
+        }
     }
 
     function Set-LastRoundedDisplay {
@@ -1805,6 +1816,7 @@ try {
             if ($lastRoundedDate) {
                 $daysAgo = [int]((Get-Date).Date - $lastRoundedDate.Date).TotalDays
             }
+            $lastRoundedBackground = Get-RoundingStatusBackground -RoundedDate $lastRoundedDate
             $maintenanceType = Get-FieldValue -Row $row -Names @('u_device_rounding','MaintenanceType')
             $rows += [pscustomobject]@{
                 HostName=$computer.Name
@@ -1818,6 +1830,7 @@ try {
                 Department=$computer.Department
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
                 LastRounded=(Format-DateLong $computer.LastRounded)
+                LastRoundedBackground=$lastRoundedBackground
                 DaysAgo=$daysAgo
                 Status='-'
                 StatusOptions=@('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
@@ -2509,11 +2522,11 @@ try {
 
         $nearbyStatusOptions = @('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $nearby = @(
-            [pscustomobject]@{ HostName='LD065898'; IPAddress='';             Subnet='';       AssetTag='HSS-8077199'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#6 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Asset not found' },
-            [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Laptop is not onsite' },
-            [pscustomobject]@{ HostName='LD062047'; IPAddress='10.64.47.15';  Subnet='VPN';    AssetTag='HSS-1037495'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#8 Charge Cabinet)'; Department='CHS (Reception)'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Inaccessible - Laptop is not onsite' },
-            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; DaysAgo='45'; Status='-' },
-            [pscustomobject]@{ HostName='LD072236'; IPAddress='10.209.233.47'; Subnet='Unknown';AssetTag='HSS-1037488'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='104 (Chart Room)'; Department='Charting'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='-' }
+            [pscustomobject]@{ HostName='LD065898'; IPAddress='';             Subnet='';       AssetTag='HSS-8077199'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#6 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; LastRoundedBackground='PaleGreen'; DaysAgo='0';   Status='Inaccessible - Asset not found' },
+            [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; LastRoundedBackground='PaleGreen'; DaysAgo='0';   Status='Inaccessible - Laptop is not onsite' },
+            [pscustomobject]@{ HostName='LD062047'; IPAddress='10.64.47.15';  Subnet='VPN';    AssetTag='HSS-1037495'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#8 Charge Cabinet)'; Department='CHS (Reception)'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; LastRoundedBackground='PaleGreen'; DaysAgo='0'; Status='Inaccessible - Laptop is not onsite' },
+            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; LastRoundedBackground='MistyRose'; DaysAgo='45'; Status='-' },
+            [pscustomobject]@{ HostName='LD072236'; IPAddress='10.209.233.47'; Subnet='Unknown';AssetTag='HSS-1037488'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='104 (Chart Room)'; Department='Charting'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; LastRoundedBackground='PaleGreen'; DaysAgo='0'; Status='-' }
         )
         foreach ($nearbyRow in $nearby) {
             $nearbyRow | Add-Member -NotePropertyName StatusOptions -NotePropertyValue $nearbyStatusOptions -Force

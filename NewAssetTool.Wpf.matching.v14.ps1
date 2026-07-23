@@ -1307,17 +1307,23 @@ try {
         return 'Unknown'
     }
 
+    function Resolve-HostIPv4Address {
+        param([string]$HostName)
+        if ([string]::IsNullOrWhiteSpace($HostName)) { return '' }
+        try {
+            $addresses = [System.Net.Dns]::GetHostAddresses($HostName.Trim()) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork }
+            if ($addresses) { return [string]$addresses[0] }
+        } catch {}
+        return ''
+    }
+
     function Get-IPv4AddressFromPingReply {
         param([object]$Reply,[string]$ComputerName)
         foreach ($name in @('IPV4Address','ProtocolAddress','Address')) {
             $value = Get-FieldValue -Row $Reply -Names @($name)
             if ($value -match '^\d{1,3}(\.\d{1,3}){3}$') { return $value }
         }
-        try {
-            $addresses = [System.Net.Dns]::GetHostAddresses($ComputerName) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork }
-            if ($addresses) { return [string]$addresses[0] }
-        } catch {}
-        return ''
+        return (Resolve-HostIPv4Address -HostName $ComputerName)
     }
 
     function Start-ContinuousPingWindow {
@@ -1337,7 +1343,10 @@ try {
         $reply = Invoke-PingOnce -ComputerName $ComputerName -TimeoutMilliseconds 1000
         if (-not $reply -or $reply.Status -ne [System.Net.NetworkInformation.IPStatus]::Success) {
             $errorMessage = if ($reply) { [string]$reply.Status } else { 'Timed out' }
-            return [pscustomobject]@{ HostName=$ComputerName; Success=$false; IpAddress='Unknown'; ResponseTime='Timed out'; Subnet='Unknown'; ErrorMessage=$errorMessage }
+            $ipAddress = Resolve-HostIPv4Address -HostName $ComputerName
+            $subnet = if (-not [string]::IsNullOrWhiteSpace($ipAddress)) { Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot } else { 'Unknown' }
+            $displayIpAddress = if ([string]::IsNullOrWhiteSpace($ipAddress)) { 'Unknown' } else { $ipAddress }
+            return [pscustomobject]@{ HostName=$ComputerName; Success=$false; IpAddress=$displayIpAddress; ResponseTime='Timed out'; Subnet=$subnet; ErrorMessage=$errorMessage }
         }
 
         $ipAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $ComputerName
@@ -1914,18 +1923,27 @@ try {
                     $ping = New-Object System.Net.NetworkInformation.Ping
                     $reply = $ping.Send($hostName, 2000)
                     if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
-                        $ipAddress = if ($reply.Address) { [string]$reply.Address } else { 'Unknown' }
+                        $ipAddress = if ($reply.Address) { [string]$reply.Address } else { '' }
+                        if ([string]::IsNullOrWhiteSpace($ipAddress)) { $ipAddress = Resolve-HostIPv4Address -HostName $hostName }
                         $subnet = ''
                         try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
                         $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$true }
+                    } else {
+                        $ipAddress = Resolve-HostIPv4Address -HostName $hostName
+                        $subnet = ''
+                        try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
+                        $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
                     }
                 } catch {
-                    $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
+                    $ipAddress = Resolve-HostIPv4Address -HostName $hostName
+                    $subnet = ''
+                    try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
+                    $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
                 } finally {
                     try { if ($ping) { $ping.Dispose() } } catch {}
                 }
                 $updated++
-                $sender.ReportProgress(0, [pscustomobject]@{ Row=$row; Result=$result; Completed=$updated })
+                try { $sender.ReportProgress(0, [pscustomobject]@{ Row=$row; Result=$result; Completed=$updated }) } catch {}
             }
             $eventArgs.Result = $updated
         }.GetNewClosure())
@@ -2563,6 +2581,7 @@ try {
                     $result.IpAddress = Get-IPv4AddressFromPingReply -Reply $reply -ComputerName $HostName
                 }
             } catch {}
+            if ([string]::IsNullOrWhiteSpace($result.IpAddress)) { $result.IpAddress = Resolve-HostIPv4Address -HostName $HostName }
             if (-not [string]::IsNullOrWhiteSpace($result.IpAddress) -and -not [string]::IsNullOrWhiteSpace($DataRoot)) { $result.Subnet = Resolve-SubnetName -IpAddress $result.IpAddress -DataRoot $DataRoot }
         }
         return $result

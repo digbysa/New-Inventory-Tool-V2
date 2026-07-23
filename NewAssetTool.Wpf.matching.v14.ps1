@@ -1770,8 +1770,8 @@ try {
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
                 LastRounded=(Format-DateLong $computer.LastRounded)
                 DaysAgo=$daysAgo
-                Status='—'
-                StatusOptions=@('—','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
+                Status='-'
+                StatusOptions=@('-','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
                 IsStatusEditable=$true
                 Device=$computer
             }
@@ -1786,16 +1786,13 @@ try {
         $rowCount = 0
         try { $rowCount = @($Ui.NearbyDataGrid.ItemsSource).Count } catch {}
         $text = "Nearby scopes (Location): $scopeCount"
-        if ($rowCount -gt 0) { $text += " — Showing $rowCount" }
+        if ($rowCount -gt 0) { $text += " - Showing $rowCount" }
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value $text
     }
 
     function Update-NearbyRows {
         param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
         $rows = Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory
-        foreach ($row in @($rows)) {
-            if ($row -and $row.PSObject.Properties.Name -contains 'Status' -and [string]$row.Status -eq 'â€”') { $row.Status = '—' }
-        }
         $Ui.NearbyDataGrid.ItemsSource = $rows
         if ($script:AppState) {
             $associated = @()
@@ -1859,7 +1856,7 @@ try {
         $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $dataRoot })
         [void]$menu.Items.Add($pingItem)
         [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
-        foreach ($status in @('—','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')) {
+        foreach ($status in @('-','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')) {
             $item = New-Object System.Windows.Controls.MenuItem -Property @{ Header=$status; Tag=$status }
             $item.Add_Click({ param($sender,$e) Set-NearbySelectedStatus -Ui $ui -Status ([string]$sender.Tag) })
             [void]$menu.Items.Add($item)
@@ -2297,12 +2294,12 @@ try {
             [pscustomobject]@{ Role='Child'; Type='Cart'; Name='AO400568-CRT'; AssetTag='CO09167'; Serial='1896875-0016'; Model='Capsa Cart'; SerialForeground='#1F2937'; SerialToolTip=''; RITM='-'; Retire='-' }
         )
 
-        $nearbyStatusOptions = @('—','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
+        $nearbyStatusOptions = @('-','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $nearby = @(
             [pscustomobject]@{ HostName='LD065898'; IPAddress='';             Subnet='';       AssetTag='HSS-8077199'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#6 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Asset not found' },
             [pscustomobject]@{ HostName='LD065911'; IPAddress='10.64.45.232'; Subnet='VPN';    AssetTag='HSS-8077204'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#7 Charge Cabinet)'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0';   Status='Inaccessible - Laptop is not onsite' },
             [pscustomobject]@{ HostName='LD062047'; IPAddress='10.64.47.15';  Subnet='VPN';    AssetTag='HSS-1037495'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='101 (#8 Charge Cabinet)'; Department='CHS (Reception)'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Inaccessible - Laptop is not onsite' },
-            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; DaysAgo='45'; Status='—' },
+            [pscustomobject]@{ HostName='PC077708'; IPAddress='10.209.233.167';Subnet='Unknown';AssetTag='HSS-1037501'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='102'; Department='CHS - Community Health Se...'; MaintenanceType='General Rounding'; LastRounded='06 March 2026'; DaysAgo='45'; Status='-' },
             [pscustomobject]@{ HostName='LD072236'; IPAddress='10.209.233.47'; Subnet='Unknown';AssetTag='HSS-1037488'; Location='VIHA-DNDR-Duncan Norcr...'; Building='Main Building'; Floor='1'; Room='104 (Chart Room)'; Department='Charting'; MaintenanceType='General Rounding'; LastRounded='20 April 2026'; DaysAgo='0'; Status='Complete' }
         )
         foreach ($nearbyRow in $nearby) {
@@ -2642,7 +2639,7 @@ function Find-SampleDevice {
             if (-not $item) { continue }
             if ($item.PSObject.Properties.Name -contains 'IsStatusEditable' -and -not [bool]$item.IsStatusEditable) { continue }
             $status = [string]$item.Status
-            if ([string]::IsNullOrWhiteSpace($status) -or $status -in @('-','—')) { continue }
+            if ([string]::IsNullOrWhiteSpace($status) -or $status -eq '-') { continue }
 
             $assetKey = if ($item.AssetTag) { $item.AssetTag.Trim().ToUpperInvariant() } else { '' }
             if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyRoundedTodayAssetTags -and $script:AppState.NearbyRoundedTodayAssetTags.Contains($assetKey)) { continue }
@@ -2663,7 +2660,7 @@ function Find-SampleDevice {
             $row = [pscustomobject]([ordered]@{
                 Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                 AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
-                CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -in @('-','—')) { 'Complete' } else { $item.Status })
+                CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -eq '-') { 'Complete' } else { $item.Status })
                 RoundingMinutes=3; CableMgmtOK='No'; CablingNeeded='No'; LabelOK='No'; CartOK='No'; PeripheralsOK='No'
                 MaintenanceType=$item.MaintenanceType; Department=$item.Department
                 RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $device -RoundingByAssetTag $RoundingByAssetTag)
@@ -2938,7 +2935,7 @@ function Find-SampleDevice {
     function Reset-RoundingFormForNextScan {
         param([hashtable]$Ui)
         foreach ($cb in @($Ui.ValidateCableCheckBox,$Ui.LabelMonitorCheckBox,$Ui.ValidatePeripheralsCheckBox,$Ui.CablingNeededCheckBox,$Ui.PhysicalCartCheckBox,$Ui.AddDeviceToTrackerCheckBox)) { $cb.IsChecked = $false }
-        Set-ControlText -Control $Ui.CheckStatusComboBox -Value '—'
+        Set-ControlText -Control $Ui.CheckStatusComboBox -Value '-'
         Set-ControlText -Control $Ui.MaintenanceTypeComboBox -Value 'General Rounding'
         Set-ControlText -Control $Ui.CommentsTextBox -Value ''
         Set-ControlText -Control $Ui.SearchTextBox -Value ''
@@ -3074,7 +3071,7 @@ function Find-SampleDevice {
         } else {
             foreach ($cb in $enabled) { $cb.IsChecked = $true }
         }
-        Set-ControlText -Control $ui.CheckStatusComboBox -Value '—'
+        Set-ControlText -Control $ui.CheckStatusComboBox -Value '-'
     })
     $ui.SaveEventButton.Add_Click({
         if (-not $script:AppState.CurrentDevice) { return }

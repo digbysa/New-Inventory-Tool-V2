@@ -1858,7 +1858,7 @@ try {
         param([hashtable]$Ui,[string]$DataRoot)
         if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
         $rows = @($Ui.NearbyDataGrid.Items | Where-Object {
-            $_ -and $_ -ne [System.ComponentModel.CollectionView]::NewItemPlaceholder
+            $_ -and $_ -ne [System.Windows.Data.CollectionView]::NewItemPlaceholder
         })
         if ($rows.Count -eq 0) {
             [System.Windows.MessageBox]::Show('There are no visible Nearby devices to ping.', 'Ping All') | Out-Null

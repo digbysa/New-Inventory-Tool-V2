@@ -1884,7 +1884,7 @@ try {
                 $sender.ReportProgress(0, [pscustomobject]@{ Row=$row; Result=$result; Completed=$updated })
             }
             $eventArgs.Result = $updated
-        })
+        }.GetNewClosure())
 
         $worker.Add_ProgressChanged({
             param($sender,$eventArgs)
@@ -1894,7 +1894,7 @@ try {
             try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
             Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value "Pinging $($progress.Completed) of $total $ScopeLabel..."
             Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Pinging $($progress.Completed) of $total devices..."
-        })
+        }.GetNewClosure())
 
         $worker.Add_RunWorkerCompleted({
             param($sender,$eventArgs)
@@ -1909,7 +1909,7 @@ try {
                 Set-StatusMessage -Ui $Ui -Mode 'PingComplete' -CustomText "Ping complete: $updated of $total devices updated"
             }
             try { $sender.Dispose() } catch {}
-        })
+        }.GetNewClosure())
 
         $worker.RunWorkerAsync()
     }

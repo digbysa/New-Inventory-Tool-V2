@@ -325,7 +325,7 @@
         </Style>
 
         <Style x:Key="NearbyCellTextStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#000000"/>
+            <Setter Property="Foreground" Value="{Binding RowForeground}"/>
             <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="LineHeight" Value="18"/>
@@ -341,6 +341,9 @@
                 </DataTrigger>
                 <DataTrigger Binding="{Binding PingStatus}" Value="Fail">
                     <Setter Property="Foreground" Value="Crimson"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsRoundedToday}" Value="True">
+                    <Setter Property="Foreground" Value="#808080"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>

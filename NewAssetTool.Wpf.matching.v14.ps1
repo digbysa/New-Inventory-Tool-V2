@@ -235,6 +235,129 @@ try {
     function Get-OutputFolder { param([string]$ResolvedXamlPath) Join-Path (Split-Path -Parent $ResolvedXamlPath) 'Output' }
     function Get-RoundingEventsPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingEvents.csv' }
 
+
+
+    function Show-RoundingEventsFileEditor {
+        param([hashtable]$Ui,[string]$ResolvedXamlPath)
+
+        Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
+        $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
+        $columns = @($script:RoundingEventColumns)
+        $rows = @()
+        if (Test-Path -LiteralPath $csvPath) {
+            try {
+                $imported = @(Import-Csv -LiteralPath $csvPath)
+                if ($imported.Count -gt 0) { $columns = @($imported[0].PSObject.Properties.Name) }
+                $rows = $imported
+            } catch {
+                [System.Windows.MessageBox]::Show("Unable to open RoundingEvents.csv:`n$($_.Exception.Message)", 'File Editor') | Out-Null
+                return
+            }
+        }
+
+        $state = [pscustomobject]@{ IsDirty=$false; IsSaving=$false }
+        $table = New-Object System.Data.DataTable
+        foreach ($column in $columns) { [void]$table.Columns.Add([string]$column, [string]) }
+        foreach ($row in $rows) {
+            $dataRow = $table.NewRow()
+            foreach ($column in $columns) { $dataRow[$column] = if ($row.PSObject.Properties.Name -contains $column) { [string]$row.$column } else { '' } }
+            [void]$table.Rows.Add($dataRow)
+        }
+        $table.AcceptChanges()
+        $table.Add_ColumnChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } })
+        $table.Add_RowDeleted({ if (-not $state.IsSaving) { $state.IsDirty = $true } })
+        $table.Add_RowChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } })
+
+        $editor = New-Object System.Windows.Window
+        $editor.Title = 'File Editor - RoundingEvents.csv'
+        $editor.Width = 1200; $editor.Height = 720; $editor.MinWidth = 900; $editor.MinHeight = 520
+        $editor.WindowStartupLocation = 'CenterOwner'; $editor.ResizeMode = 'CanResize'
+        $editor.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#F3F5F7')
+        if ($Ui.Window) { $editor.Owner = $Ui.Window }
+        Set-WindowIconFromFile -Window $editor -ResolvedXamlPath $ResolvedXamlPath
+
+        $root = New-Object System.Windows.Controls.Grid
+        $root.Margin = New-Object System.Windows.Thickness(12)
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' }))
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='*' }))
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' }))
+
+        $header = New-Object System.Windows.Controls.TextBlock
+        $header.Text = "Editing: $csvPath"; $header.FontSize = 13; $header.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#374151'); $header.Margin = New-Object System.Windows.Thickness(0,0,0,8)
+        [System.Windows.Controls.Grid]::SetRow($header, 0); $root.Children.Add($header) | Out-Null
+
+        $grid = New-Object System.Windows.Controls.DataGrid
+        $grid.AutoGenerateColumns = $false; $grid.CanUserAddRows = $false; $grid.CanUserDeleteRows = $false; $grid.IsReadOnly = $false
+        $grid.SelectionUnit = 'CellOrRowHeader'; $grid.GridLinesVisibility = 'All'; $grid.HeadersVisibility = 'All'; $grid.EnableColumnVirtualization = $true; $grid.EnableRowVirtualization = $true
+        $grid.Background = [System.Windows.Media.Brushes]::White; $grid.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D1D8E0')
+        $blankBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#FCE3E5')
+        foreach ($column in $columns) {
+            $textColumn = New-Object System.Windows.Controls.DataGridTextColumn
+            $textColumn.Header = $column
+            $binding = New-Object System.Windows.Data.Binding("[$column]"); $binding.Mode = 'TwoWay'; $binding.UpdateSourceTrigger = 'PropertyChanged'
+            $textColumn.Binding = $binding
+            $elementStyle = New-Object System.Windows.Style([System.Windows.Controls.TextBlock])
+            $elementStyle.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(4,2,4,2)))))
+            $trigger = New-Object System.Windows.DataTrigger; $trigger.Binding = (New-Object System.Windows.Data.Binding("[$column]")); $trigger.Value = ''
+            $trigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBlock]::BackgroundProperty, $blankBrush)))
+            $elementStyle.Triggers.Add($trigger)
+            $editingStyle = New-Object System.Windows.Style([System.Windows.Controls.TextBox])
+            $editingStyle.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBox]::PaddingProperty, (New-Object System.Windows.Thickness(4,2,4,2)))))
+            $editTrigger = New-Object System.Windows.DataTrigger; $editTrigger.Binding = (New-Object System.Windows.Data.Binding("[$column]")); $editTrigger.Value = ''
+            $editTrigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBox]::BackgroundProperty, $blankBrush)))
+            $editingStyle.Triggers.Add($editTrigger)
+            $textColumn.ElementStyle = $elementStyle; $textColumn.EditingElementStyle = $editingStyle
+            [void]$grid.Columns.Add($textColumn)
+        }
+        $deleteColumn = New-Object System.Windows.Controls.DataGridTemplateColumn; $deleteColumn.Header = '' ; $deleteColumn.Width = 44
+        $factory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Button])
+        $factory.SetValue([System.Windows.Controls.Button]::ContentProperty, '✕')
+        $factory.SetValue([System.Windows.Controls.Button]::ToolTipProperty, 'Delete row')
+        $factory.SetValue([System.Windows.Controls.Button]::ForegroundProperty, [System.Windows.Media.BrushConverter]::new().ConvertFromString('#BE123C'))
+        $factory.SetValue([System.Windows.Controls.Button]::BackgroundProperty, [System.Windows.Media.Brushes]::Transparent)
+        $factory.SetValue([System.Windows.Controls.Button]::BorderBrushProperty, [System.Windows.Media.Brushes]::Transparent)
+        $factory.AddHandler([System.Windows.Controls.Button]::ClickEvent, [System.Windows.RoutedEventHandler]{ param($sender,$e)
+            $view = $sender.DataContext
+            if (-not $view) { return }
+            $answer = [System.Windows.MessageBox]::Show('Delete this row from RoundingEvents.csv when you save?', 'Confirm Delete', [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
+            if ($answer -eq [System.Windows.MessageBoxResult]::Yes) { $view.Row.Delete(); $state.IsDirty = $true }
+        })
+        $template = New-Object System.Windows.DataTemplate; $template.VisualTree = $factory; $deleteColumn.CellTemplate = $template
+        [void]$grid.Columns.Add($deleteColumn)
+        $grid.ItemsSource = $table.DefaultView
+        [System.Windows.Controls.Grid]::SetRow($grid, 1); $root.Children.Add($grid) | Out-Null
+
+        $buttons = New-Object System.Windows.Controls.StackPanel; $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = New-Object System.Windows.Thickness(0,10,0,0)
+        $save = New-Object System.Windows.Controls.Button; $save.Content = 'Save'; $save.MinWidth = 104; $save.Height = 32; $save.Margin = New-Object System.Windows.Thickness(0,0,8,0)
+        $save.Foreground = [System.Windows.Media.Brushes]::White; $save.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $save.BorderBrush = $save.Background; $save.FontWeight = 'SemiBold'; $save.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $save -CornerRadius 8
+        $close = New-Object System.Windows.Controls.Button; $close.Content = 'Close'; $close.MinWidth = 104; $close.Height = 32
+        $close.Foreground = [System.Windows.Media.Brushes]::White; $close.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2A44'); $close.BorderBrush = $close.Background; $close.FontWeight = 'SemiBold'; $close.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $close -CornerRadius 8
+        $saveAction = {
+            $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Cell, $true) | Out-Null; $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) | Out-Null
+            $state.IsSaving = $true
+            try {
+                $outRows = @($table.Select('', '', [System.Data.DataViewRowState]::CurrentRows) | ForEach-Object { $obj=[ordered]@{}; foreach($c in $columns){ $obj[$c] = [string]$_[$c] }; [pscustomobject]$obj })
+                if ($outRows.Count -gt 0) { $outRows | Export-Csv -LiteralPath $csvPath -NoTypeInformation } else { ($columns | ForEach-Object { '"' + ($_ -replace '"','""') + '"' }) -join ',' | Set-Content -LiteralPath $csvPath -Encoding UTF8 }
+                $table.AcceptChanges(); $state.IsDirty = $false; Set-StatusMessage -Ui $Ui -Mode 'Saved' -CustomText 'File Saved'
+                if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
+                Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
+            } finally { $state.IsSaving = $false }
+            return $true
+        }
+        $save.Add_Click({ & $saveAction | Out-Null })
+        $close.Add_Click({ $editor.Close() })
+        $buttons.Children.Add($save) | Out-Null; $buttons.Children.Add($close) | Out-Null
+        [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
+        $editor.Content = $root
+        $editor.Add_Closing({ param($sender,$e)
+            if (-not $state.IsDirty) { return }
+            $choice = [System.Windows.MessageBox]::Show('Save changes before closing the File Editor?', 'Unsaved Changes', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)
+            if ($choice -eq [System.Windows.MessageBoxResult]::Cancel) { $e.Cancel = $true; return }
+            if ($choice -eq [System.Windows.MessageBoxResult]::Yes) { if (-not (& $saveAction)) { $e.Cancel = $true } }
+        })
+        $editor.Show() | Out-Null
+    }
+
     function Load-NearbyRoundingEvents {
         param([string]$ResolvedXamlPath)
         if (-not $script:AppState) { return }
@@ -3166,7 +3289,7 @@ function Find-SampleDevice {
         'ValidateCableCheckBox','LabelMonitorCheckBox','ValidatePeripheralsCheckBox',
         'CablingNeededCheckBox','PhysicalCartCheckBox','AddDeviceToTrackerCheckBox',
         'CheckCompleteButton','SaveEventButton','ManualRoundButton','CommentsTextBox',
-        'NearbyScopeSummaryText','RebuildNearbyButton','PingAllButton','IsolateNearbyButton','ClearNearbyButton',
+        'NearbyScopeSummaryText','FileEditorButton','RebuildNearbyButton','PingAllButton','IsolateNearbyButton','ClearNearbyButton',
         'NearbyDataGrid','NearbySaveButton','ShowAllNearbyButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
         'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'
@@ -3496,6 +3619,7 @@ function Find-SampleDevice {
         $script:ManualRoundUsed = $true
         Start-Process -FilePath $ui.ManualRoundButton.Tag
     })
+    $ui.FileEditorButton.Add_Click({ Show-RoundingEventsFileEditor -Ui $ui -ResolvedXamlPath $resolvedXamlPath })
     $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory })
     $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
     $ui.PingAllButton.Add_Click({ Invoke-AllVisibleNearbyPing -Ui $ui -DataRoot $dataRoot })

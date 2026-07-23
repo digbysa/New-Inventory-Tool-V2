@@ -250,13 +250,13 @@
 
         <Style x:Key="LegacyNearbyDataGridStyle" TargetType="DataGrid" BasedOn="{StaticResource CompactDataGridStyle}">
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#E1E5EA"/>
+            <Setter Property="BorderBrush" Value="#E8ECEF"/>
             <Setter Property="AlternatingRowBackground" Value="#F7F9FB"/>
             <Setter Property="RowBackground" Value="White"/>
             <Setter Property="RowHeight" Value="28"/>
             <Setter Property="ColumnHeaderHeight" Value="23"/>
-            <Setter Property="HorizontalGridLinesBrush" Value="#E1E5EA"/>
-            <Setter Property="VerticalGridLinesBrush" Value="#E1E5EA"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#E8ECEF"/>
+            <Setter Property="VerticalGridLinesBrush" Value="#E8ECEF"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible"/>
@@ -324,6 +324,8 @@
         </Style>
 
         <Style x:Key="NearbyCellTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#000000"/>
+            <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="LineHeight" Value="18"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -981,19 +983,42 @@
                                 <Style TargetType="{x:Type DataGridColumnHeader}">
                                     <Setter Property="Background" Value="#F3F4F6"/>
                                     <Setter Property="Foreground" Value="#000000"/>
-                                    <Setter Property="FontWeight" Value="Bold"/>
+                                    <Setter Property="FontWeight" Value="Normal"/>
                                     <Setter Property="FontSize" Value="12"/>
                                     <Setter Property="Padding" Value="5,2"/>
-                                    <Setter Property="BorderBrush" Value="#E1E5EA"/>
+                                    <Setter Property="BorderBrush" Value="#E8ECEF"/>
                                     <Setter Property="BorderThickness" Value="0,0,1,1"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Left"/>
                                 </Style>
+                                <Style TargetType="{x:Type DataGridRow}">
+                                    <Setter Property="Foreground" Value="#000000"/>
+                                    <Setter Property="FontWeight" Value="Normal"/>
+                                    <Setter Property="BorderBrush" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#DDEBF7"/>
+                                            <Setter Property="Foreground" Value="#000000"/>
+                                            <Setter Property="BorderBrush" Value="#B7D7F3"/>
+                                            <Setter Property="BorderThickness" Value="1"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
                                 <Style TargetType="{x:Type DataGridCell}">
+                                    <Setter Property="Foreground" Value="#000000"/>
+                                    <Setter Property="FontWeight" Value="Normal"/>
                                     <Setter Property="FontSize" Value="13"/>
                                     <Setter Property="Padding" Value="5,2"/>
                                     <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    <Setter Property="BorderBrush" Value="#E1E5EA"/>
+                                    <Setter Property="BorderBrush" Value="#E8ECEF"/>
                                     <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#DDEBF7"/>
+                                            <Setter Property="Foreground" Value="#000000"/>
+                                            <Setter Property="BorderBrush" Value="#B7D7F3"/>
+                                        </Trigger>
+                                    </Style.Triggers>
                                 </Style>
                             </DataGrid.Resources>
                             <DataGrid.Columns>

@@ -1896,6 +1896,11 @@ try {
             $column.Width = [System.Windows.Controls.DataGridLength]::Auto
         }
         try { $Ui.NearbyDataGrid.UpdateLayout() } catch {}
+        foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
+            if ($column.ActualWidth -gt 0) {
+                $column.Width = New-Object System.Windows.Controls.DataGridLength ($column.ActualWidth + 10)
+            }
+        }
     }
 
     function Update-NearbyRows {
@@ -2133,7 +2138,9 @@ try {
             param($sender,$e)
             $row = Get-NearbyRowFromMouseEvent -OriginalSource $e.OriginalSource
             if ($row) {
-                $sender.SelectedItem = $row
+                if (-not $sender.SelectedItems.Contains($row)) {
+                    $sender.SelectedItem = $row
+                }
                 $sender.CurrentItem = $row
             }
         })

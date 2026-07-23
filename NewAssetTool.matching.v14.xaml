@@ -813,7 +813,6 @@
                                                     <ComboBoxItem Content="Excluded"/>
                                                     <ComboBoxItem Content="General Rounding" IsSelected="True"/>
                                                     <ComboBoxItem Content="Mobile Cart"/>
-                                                    <ComboBoxItem Content="Complete"/>
                                                     <ComboBoxItem Content="Critical Clinical"/>
                                                 </ComboBox>
                                             </StackPanel>
@@ -823,7 +822,8 @@
                                             <StackPanel>
                                                 <TextBlock Text="CHECK STATUS" Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
                                                 <ComboBox x:Name="CheckStatusComboBox" Style="{StaticResource EditorComboStyle}" Margin="0,6,0,0">
-                                                    <ComboBoxItem Content="—" IsSelected="True"/>
+                                                    <ComboBoxItem Content="Complete" IsSelected="True"/>
+                                                    <ComboBoxItem Content="—"/>
                                                     <ComboBoxItem Content="Inaccessible - Asset not found"/>
                                                     <ComboBoxItem Content="Inaccessible - In storage"/>
                                                     <ComboBoxItem Content="Inaccessible - In use by Customer"/>
@@ -986,8 +986,8 @@
                                     <Setter Property="FontWeight" Value="Normal"/>
                                     <Setter Property="FontSize" Value="12"/>
                                     <Setter Property="Padding" Value="5,2"/>
-                                    <Setter Property="BorderBrush" Value="#E6EAEE"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="BorderBrush" Value="#A0A0A0"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Left"/>
                                 </Style>
                                 <Style TargetType="{x:Type DataGridRow}">

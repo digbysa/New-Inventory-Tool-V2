@@ -255,8 +255,8 @@
             <Setter Property="RowBackground" Value="White"/>
             <Setter Property="RowHeight" Value="28"/>
             <Setter Property="ColumnHeaderHeight" Value="23"/>
-            <Setter Property="HorizontalGridLinesBrush" Value="#E8ECEF"/>
-            <Setter Property="VerticalGridLinesBrush" Value="#E8ECEF"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#F1F3F5"/>
+            <Setter Property="VerticalGridLinesBrush" Value="#F1F3F5"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible"/>
@@ -821,7 +821,6 @@
                                                 <TextBlock Text="CHECK STATUS" Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
                                                 <ComboBox x:Name="CheckStatusComboBox" Style="{StaticResource EditorComboStyle}" Margin="0,6,0,0">
                                                     <ComboBoxItem Content="—" IsSelected="True"/>
-                                                    <ComboBoxItem Content="Complete"/>
                                                     <ComboBoxItem Content="Inaccessible - Asset not found"/>
                                                     <ComboBoxItem Content="Inaccessible - In storage"/>
                                                     <ComboBoxItem Content="Inaccessible - In use by Customer"/>
@@ -955,8 +954,6 @@
                                 <Button x:Name="PingAllButton" Content="Ping All" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
                                 <Button x:Name="IsolateNearbyButton" Content="Isolate" Visibility="Collapsed" Style="{StaticResource NearbyButtonStyle}" Margin="0,0,8,0"/>
                                 <Button x:Name="ClearNearbyButton" Content="Clear List" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Margin="0,0,8,0"/>
-                                <Button x:Name="NearbyCollapseButton" Content="-" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Width="74" Margin="0,0,8,0"/>
-                                <Button x:Name="NearbyExpandButton" Content="+" Style="{StaticResource NearbyButtonStyle}" Padding="10,3" Width="74"/>
                             </StackPanel>
                         </Grid>
 
@@ -986,8 +983,8 @@
                                     <Setter Property="FontWeight" Value="Normal"/>
                                     <Setter Property="FontSize" Value="12"/>
                                     <Setter Property="Padding" Value="5,2"/>
-                                    <Setter Property="BorderBrush" Value="#E8ECEF"/>
-                                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                    <Setter Property="BorderBrush" Value="#F1F3F5"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0.5,0.5"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Left"/>
                                 </Style>
                                 <Style TargetType="{x:Type DataGridRow}">
@@ -1010,8 +1007,8 @@
                                     <Setter Property="FontSize" Value="13"/>
                                     <Setter Property="Padding" Value="5,2"/>
                                     <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    <Setter Property="BorderBrush" Value="#E8ECEF"/>
-                                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                    <Setter Property="BorderBrush" Value="#F1F3F5"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0.5,0.5"/>
                                     <Style.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
                                             <Setter Property="Background" Value="#DDEBF7"/>
@@ -1034,7 +1031,7 @@
                                 <DataGridTextColumn Header="Maintenance Type" Width="60" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Last Rounded" Width="65" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Days Ago" Width="55" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTemplateColumn Header="Status" Width="185">
+                                <DataGridTemplateColumn Header="Status" Width="*" MinWidth="185">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsStatusEditable}" Height="26" MinHeight="24" FontSize="13" Padding="4,1" MinWidth="0"/>

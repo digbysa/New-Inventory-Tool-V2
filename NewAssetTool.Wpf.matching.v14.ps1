@@ -1998,6 +1998,49 @@ try {
         }
         Start-NearbyRowsPingAsync -Ui $Ui -Rows $rows -DataRoot $DataRoot -ScopeLabel 'visible Nearby host(s)'
     }
+    function Get-NearbyRowSearchText {
+        param([object]$Row)
+        if (-not $Row) { return '' }
+        foreach ($propertyName in @('AssetTag','HostName','Serial')) {
+            if ($Row.PSObject.Properties.Name -contains $propertyName) {
+                $value = [string]$Row.$propertyName
+                if (-not [string]::IsNullOrWhiteSpace($value) -and $value -ne '-') { return $value.Trim() }
+            }
+        }
+        if ($Row.PSObject.Properties.Name -contains 'Device' -and $Row.Device) {
+            foreach ($propertyName in @('AssetTag','Name','Serial')) {
+                if ($Row.Device.PSObject.Properties.Name -contains $propertyName) {
+                    $value = [string]$Row.Device.$propertyName
+                    if (-not [string]::IsNullOrWhiteSpace($value) -and $value -ne '-') { return $value.Trim() }
+                }
+            }
+        }
+        return ''
+    }
+
+    function Invoke-NearbyRowQuery {
+        param([hashtable]$Ui,[object]$Row)
+        if (-not $Ui -or -not $Row) { return }
+        $searchText = Get-NearbyRowSearchText -Row $Row
+        if ([string]::IsNullOrWhiteSpace($searchText)) { return }
+        if ($Ui.MainTabControl -and $Ui.SystemTab) { $Ui.MainTabControl.SelectedItem = $Ui.SystemTab }
+        Set-ControlText -Control $Ui.SearchTextBox -Value $searchText
+        if ($Ui.SearchTextBox) {
+            $Ui.SearchTextBox.Focus() | Out-Null
+            $Ui.SearchTextBox.CaretIndex = $Ui.SearchTextBox.Text.Length
+        }
+        if ($Ui.QueryButton) { $Ui.QueryButton.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Button]::ClickEvent))) }
+    }
+
+    function Get-NearbyRowFromMouseEvent {
+        param([object]$OriginalSource)
+        $current = $OriginalSource -as [System.Windows.DependencyObject]
+        while ($current) {
+            if ($current -is [System.Windows.Controls.DataGridRow]) { return $current.Item }
+            try { $current = [System.Windows.Media.VisualTreeHelper]::GetParent($current) } catch { return $null }
+        }
+        return $null
+    }
 
     function Initialize-NearbyContextMenu {
         param([hashtable]$Ui,[string]$DataRoot)
@@ -2014,7 +2057,18 @@ try {
         }
         $Ui.NearbyDataGrid.ContextMenu = $menu
         $Ui.NearbyDataGrid.Add_PreviewMouseRightButtonDown({
-            if (-not $this.SelectedItem -and $this.CurrentItem) { $this.SelectedItem = $this.CurrentItem }
+            param($sender,$e)
+            $row = Get-NearbyRowFromMouseEvent -OriginalSource $e.OriginalSource
+            if ($row) {
+                $sender.SelectedItem = $row
+                $sender.CurrentItem = $row
+            }
+        })
+        $Ui.NearbyDataGrid.Add_MouseDoubleClick({
+            param($sender,$e)
+            $row = Get-NearbyRowFromMouseEvent -OriginalSource $e.OriginalSource
+            if (-not $row) { $row = $sender.SelectedItem }
+            Invoke-NearbyRowQuery -Ui $ui -Row $row
         })
     }
 

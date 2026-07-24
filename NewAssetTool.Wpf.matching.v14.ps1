@@ -413,6 +413,7 @@ try {
             $assetKey = $assetKey.Trim().ToUpperInvariant()
             $dt = [DateTime]::MinValue
             if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) { continue }
+            if (-not (Test-RoundingEventMarkedRounded -Row $row)) { continue }
             $event = [pscustomobject]@{ Timestamp=$dt; Row=$row }
             $existing = $null
             if ($script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) { $existing = $script:AppState.NearbyRoundedEventsByAsset[$assetKey] }
@@ -2179,13 +2180,65 @@ try {
         }
     }
 
+    function Get-NearbySortState {
+        param([hashtable]$Ui)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid) { return @() }
+        $sortState = @()
+        try {
+            $view = [System.Windows.Data.CollectionViewSource]::GetDefaultView($Ui.NearbyDataGrid.ItemsSource)
+            if ($view) {
+                foreach ($sort in @($view.SortDescriptions)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$sort.PropertyName)) {
+                        $sortState += [pscustomobject]@{ PropertyName=[string]$sort.PropertyName; Direction=$sort.Direction }
+                    }
+                }
+            }
+        } catch {}
+        return $sortState
+    }
+
+    function Get-NearbyColumnSortPropertyName {
+        param([object]$Column)
+        if (-not $Column) { return '' }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Column.SortMemberPath)) { return [string]$Column.SortMemberPath }
+        try {
+            if ($Column -is [System.Windows.Controls.DataGridBoundColumn] -and $Column.Binding -and $Column.Binding.Path) {
+                return [string]$Column.Binding.Path.Path
+            }
+        } catch {}
+        return ''
+    }
+
+    function Restore-NearbySortState {
+        param([hashtable]$Ui,[object[]]$SortState)
+        if (-not $Ui -or -not $Ui.NearbyDataGrid -or -not $SortState -or $SortState.Count -eq 0) { return }
+        try {
+            $view = [System.Windows.Data.CollectionViewSource]::GetDefaultView($Ui.NearbyDataGrid.ItemsSource)
+            if (-not $view) { return }
+            $view.SortDescriptions.Clear()
+            foreach ($sort in @($SortState)) {
+                if (-not $sort -or [string]::IsNullOrWhiteSpace([string]$sort.PropertyName)) { continue }
+                $view.SortDescriptions.Add((New-Object System.ComponentModel.SortDescription -ArgumentList @([string]$sort.PropertyName, $sort.Direction)))
+            }
+            $view.Refresh()
+            foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
+                $column.SortDirection = $null
+                $propertyName = Get-NearbyColumnSortPropertyName -Column $column
+                $matchingSort = @($SortState | Where-Object { $_.PropertyName -eq $propertyName } | Select-Object -First 1)
+                if ($matchingSort.Count -gt 0) { $column.SortDirection = $matchingSort[0].Direction }
+            }
+        } catch {}
+    }
+
     function Update-NearbyRows {
         param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
+        $sortState = @(Get-NearbySortState -Ui $Ui)
         if (-not [string]::IsNullOrWhiteSpace($ResolvedXamlPath)) { Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath }
         $allRows = @(Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory)
         Update-NearbyCheckboxLabels -Ui $Ui -Rows $allRows
         $rows = @($allRows | Where-Object { Test-NearbyRowVisible -Ui $Ui -Row $_ })
         $Ui.NearbyDataGrid.ItemsSource = $rows
+        Restore-NearbySortState -Ui $Ui -SortState $sortState
         $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
         if ($script:AppState -and $script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending') {
             $script:AppState.NearbyColumnsAutoFitPending = $false

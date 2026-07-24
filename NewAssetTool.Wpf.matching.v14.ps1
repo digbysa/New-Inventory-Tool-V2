@@ -256,7 +256,7 @@ try {
         }
 
         $state = [pscustomobject]@{ IsDirty=$false; IsSaving=$false }
-        $nearbyStatusOptions = @('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
+        $nearbyStatusOptions = @('-','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $table = New-Object System.Data.DataTable
         foreach ($column in $columns) { [void]$table.Columns.Add([string]$column, [string]) }
         foreach ($row in $rows) {
@@ -348,7 +348,7 @@ try {
         [System.Windows.Controls.Grid]::SetRow($grid, 1); $root.Children.Add($grid) | Out-Null
 
         $buttons = New-Object System.Windows.Controls.StackPanel; $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = New-Object System.Windows.Thickness(0,10,0,0)
-        $save = New-Object System.Windows.Controls.Button; $save.Content = 'Save && Close'; $save.MinWidth = 128; $save.Height = 32
+        $save = New-Object System.Windows.Controls.Button; $save.Content = 'Save & Close'; $save.MinWidth = 128; $save.Height = 32
         $save.Foreground = [System.Windows.Media.Brushes]::White; $save.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $save.BorderBrush = $save.Background; $save.FontWeight = 'SemiBold'; $save.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $save -CornerRadius 8
         $saveAction = {
             $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Cell, $true) | Out-Null; $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) | Out-Null
@@ -373,6 +373,13 @@ try {
             if ($choice -eq [System.Windows.MessageBoxResult]::Yes) { if (-not (& $saveAction)) { $e.Cancel = $true } }
         }.GetNewClosure())
         $editor.Show() | Out-Null
+    }
+
+    function Test-RoundingEventMarkedRounded {
+        param([object]$Row)
+        if (-not $Row -or -not ($Row.PSObject.Properties.Name -contains 'Rounded')) { return $false }
+        $rounded = ([string]$Row.Rounded).Trim()
+        return $rounded -match '^(?i)(Yes|True|1|Rounded)$'
     }
 
     function Load-NearbyRoundingEvents {
@@ -2043,6 +2050,15 @@ try {
             $isCriticalClinical = $roundingFlag -match '^(?i)Critical Clinical$'
             $isRecent = $false
             if ($lastRoundedDate -and $daysAgo -is [int]) { $isRecent = ($daysAgo -ge 1 -and $daysAgo -le 35) }
+            $csvRoundedRow = if ($csvRoundedEvent) { $csvRoundedEvent.Row } else { $null }
+            $isRoundedInCsv = Test-RoundingEventMarkedRounded -Row $csvRoundedRow
+            $csvStatus = if ($csvRoundedRow -and $csvRoundedRow.PSObject.Properties.Name -contains 'CheckStatus' -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.CheckStatus)) { [string]$csvRoundedRow.CheckStatus } else { 'Complete' }
+            $status = '-'
+            $isStatusEditable = $true
+            if ($isRoundedInCsv -and ((-not $isCriticalClinical) -or $isToday)) {
+                $status = $csvStatus
+                $isStatusEditable = $false
+            }
             $rows += [pscustomobject]@{
                 HostName=$computer.Name
                 IPAddress=(Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache')
@@ -2064,9 +2080,9 @@ try {
                 IsCriticalClinical=$isCriticalClinical
                 IsRecentlyRounded=$isRecent
                 RowForeground=$(if ($isToday) { '#808080' } else { '#000000' })
-                Status='-'
+                Status=$status
                 StatusOptions=@('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
-                IsStatusEditable=$true
+                IsStatusEditable=$isStatusEditable
                 PingStatus=(Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyHostColorCache')
                 Device=$computer
             }

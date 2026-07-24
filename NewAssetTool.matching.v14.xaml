@@ -970,7 +970,7 @@
                         <WrapPanel Grid.Row="1" Margin="6,0,4,2" Height="28" VerticalAlignment="Center">
                             <Button x:Name="ShowAllNearbyButton" Content="Show All" Style="{StaticResource NearbyShowAllButtonStyle}" Margin="0,0,18,0"/>
                             <CheckBox x:Name="ShowAllNearbyCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Show All (0)" Visibility="Collapsed" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="TodaysRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Today's Rounded (0)" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="TodaysRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Rounded Today (0)" Margin="0,0,18,0"/>
                             <CheckBox x:Name="ExcludedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Excluded (0)" Margin="0,0,18,0"/>
                             <CheckBox x:Name="RecentlyRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Recently Rounded (0)" IsChecked="True" Margin="0,0,18,0"/>
                             <CheckBox x:Name="CriticalClinicalCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Critical Clinical (0)"/>

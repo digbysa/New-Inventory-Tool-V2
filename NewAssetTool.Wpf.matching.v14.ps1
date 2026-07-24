@@ -2293,6 +2293,41 @@ try {
         }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
     }
 
+    function Restore-NearbySelectionByKey {
+        param([hashtable]$Ui,[string[]]$Keys,[string]$CurrentKey='')
+        if (-not $Ui -or -not $Ui.NearbyDataGrid -or -not $Keys -or $Keys.Count -eq 0) { return }
+        $keySet = @()
+        foreach ($key in @($Keys)) {
+            if (-not [string]::IsNullOrWhiteSpace($key) -and $keySet -inotcontains $key) { $keySet += $key }
+        }
+        if ($keySet.Count -eq 0) { return }
+
+        $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{
+            try {
+                $Ui.NearbyDataGrid.SelectedItems.Clear()
+                $currentItem = $null
+                foreach ($item in @($Ui.NearbyDataGrid.ItemsSource)) {
+                    if (-not $item) { continue }
+                    $key = Get-NearbyRowStateKey -Row $item
+                    if (-not [string]::IsNullOrWhiteSpace($key) -and $keySet -icontains $key) {
+                        [void]$Ui.NearbyDataGrid.SelectedItems.Add($item)
+                        if (-not $currentItem -or (-not [string]::IsNullOrWhiteSpace($CurrentKey) -and $key -ieq $CurrentKey)) {
+                            $currentItem = $item
+                        }
+                    }
+                }
+                if ($currentItem) {
+                    $Ui.NearbyDataGrid.SelectedItem = $currentItem
+                    $Ui.NearbyDataGrid.CurrentItem = $currentItem
+                    $Ui.NearbyDataGrid.ScrollIntoView($currentItem)
+                    $Ui.NearbyDataGrid.UpdateLayout()
+                    $Ui.NearbyDataGrid.Focus() | Out-Null
+                    [System.Windows.Input.Keyboard]::Focus($Ui.NearbyDataGrid) | Out-Null
+                }
+            } catch {}
+        }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+    }
+
     function Invoke-NearbyRowQuery {
         param([hashtable]$Ui,[object]$Row)
         if (-not $Ui -or -not $Row) { return }
@@ -3133,6 +3168,8 @@ function Find-SampleDevice {
         }
 
         $saved = 0
+        $savedNearbyKeys = @()
+        $savedCurrentKey = ''
         foreach ($item in $nearbyRows) {
             if (-not $item) { continue }
             if ($item.PSObject.Properties.Name -contains 'IsStatusEditable' -and -not [bool]$item.IsStatusEditable) { continue }
@@ -3166,12 +3203,21 @@ function Find-SampleDevice {
             })
             Add-RoundingCsvRow -Path $csvPath -Row $row
             $saved++
+            $nearbyKey = Get-NearbyRowStateKey -Row $item
+            if (-not [string]::IsNullOrWhiteSpace($nearbyKey)) {
+                $savedNearbyKeys += $nearbyKey
+                if ([string]::IsNullOrWhiteSpace($savedCurrentKey)) { $savedCurrentKey = $nearbyKey }
+            }
         }
 
         if ($saved -gt 0) {
+            $restoreSavedNearbySelection = $Ui.TodaysRoundedCheckBox -and [bool]$Ui.TodaysRoundedCheckBox.IsChecked -and $savedNearbyKeys.Count -gt 0
             if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
             Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
             Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
+            if ($restoreSavedNearbySelection) {
+                Restore-NearbySelectionByKey -Ui $Ui -Keys $savedNearbyKeys -CurrentKey $savedCurrentKey
+            }
             Set-StatusMessage -Ui $Ui -Mode 'Saved'
             [System.Windows.MessageBox]::Show("Saved $saved nearby rounding event(s) to:`n$csvPath", 'Nearby Save') | Out-Null
         } else {

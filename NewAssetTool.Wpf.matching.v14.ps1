@@ -351,7 +351,7 @@ try {
                 Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
             } finally { $state.IsSaving = $false }
             return $true
-        }
+        }.GetNewClosure()
         $save.Add_Click({ & $saveAction | Out-Null }.GetNewClosure())
         $close.Add_Click({ $editor.Close() }.GetNewClosure())
         $buttons.Children.Add($save) | Out-Null; $buttons.Children.Add($close) | Out-Null
@@ -2039,6 +2039,7 @@ try {
                 IPAddress=(Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache')
                 Subnet=(Get-NearbySubnetValue -IpAddress (Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache') -DataRoot $script:AppState.DataRoot)
                 AssetTag=$computer.AssetTag
+                Serial=$computer.Serial
                 Location=$computer.Location
                 Building=$computer.Building
                 Floor=$computer.Floor
@@ -3255,15 +3256,22 @@ function Find-SampleDevice {
             }
             if (-not $device) {
                 $device = [pscustomobject]@{
-                    Name=$item.HostName; AssetTag=$item.AssetTag; Serial=''; City=''
+                    Name=$item.HostName; AssetTag=$item.AssetTag; Serial=$item.Serial; City=''
                     Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
                     Department=$item.Department; DetectedType='Computer'
                 }
             }
+            $serial = ''
+            if ($item.PSObject.Properties.Name -contains 'Serial' -and -not [string]::IsNullOrWhiteSpace([string]$item.Serial)) {
+                $serial = [string]$item.Serial
+            } elseif ($device -and $device.PSObject.Properties.Name -contains 'Serial') {
+                $serial = [string]$device.Serial
+            }
+            $city = if ($device -and $device.PSObject.Properties.Name -contains 'City' -and -not [string]::IsNullOrWhiteSpace([string]$device.City)) { [string]$device.City } else { '' }
 
             $row = [pscustomobject]([ordered]@{
                 Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-                AssetTag=$item.AssetTag; Name=$item.HostName; Serial=''; City='Duncan'; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
+                AssetTag=$item.AssetTag; Name=$item.HostName; Serial=$serial; City=$city; Location=$item.Location; Building=$item.Building; Floor=$item.Floor; Room=$item.Room
                 CheckStatus=$(if ([string]::IsNullOrWhiteSpace($item.Status) -or $item.Status -eq '-') { 'Complete' } else { $item.Status })
                 RoundingMinutes=3; CableMgmtOK='No'; CablingNeeded='No'; LabelOK='No'; CartOK='No'; PeripheralsOK='No'
                 MaintenanceType=$item.MaintenanceType; Department=$item.Department

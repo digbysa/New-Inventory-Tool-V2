@@ -2143,7 +2143,7 @@ try {
         param([hashtable]$Ui,[object[]]$Rows)
         if (-not $Ui) { return }
         $allRows = @($Rows | Where-Object { $_ })
-        if ($Ui.TodaysRoundedCheckBox) { Set-ControlText -Control $Ui.TodaysRoundedCheckBox -Value ("Today's Rounded ({0})" -f @($allRows | Where-Object { $_.IsRoundedToday }).Count) }
+        if ($Ui.TodaysRoundedCheckBox) { Set-ControlText -Control $Ui.TodaysRoundedCheckBox -Value ("Rounded Today ({0})" -f @($allRows | Where-Object { $_.IsRoundedToday }).Count) }
         if ($Ui.ExcludedCheckBox) { Set-ControlText -Control $Ui.ExcludedCheckBox -Value ("Excluded ({0})" -f @($allRows | Where-Object { $_.IsExcluded }).Count) }
         if ($Ui.RecentlyRoundedCheckBox) { Set-ControlText -Control $Ui.RecentlyRoundedCheckBox -Value ("Recently Rounded ({0})" -f @($allRows | Where-Object { $_.IsRecentlyRounded }).Count) }
         if ($Ui.CriticalClinicalCheckBox) { Set-ControlText -Control $Ui.CriticalClinicalCheckBox -Value ("Critical Clinical ({0})" -f @($allRows | Where-Object { $_.IsCriticalClinical }).Count) }
@@ -3330,7 +3330,7 @@ function Find-SampleDevice {
             PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
             MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$parentDevice.Department
             RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $parentDevice -RoundingByAssetTag $RoundingByAssetTag); Comments=$Ui.CommentsTextBox.Text
-            Rounded=$(if($script:ManualRoundUsed){'Yes'}else{'No'})
+            Rounded='Yes'
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
@@ -3859,7 +3859,7 @@ function Find-SampleDevice {
         Start-Process -FilePath $ui.ManualRoundButton.Tag
     })
     $ui.FileEditorButton.Add_Click({ Show-RoundingEventsFileEditor -Ui $ui -ResolvedXamlPath $resolvedXamlPath })
-    $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory })
+    $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath })
     $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
     $ui.PingAllButton.Add_Click({ Invoke-AllVisibleNearbyPing -Ui $ui -DataRoot $dataRoot })
     $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath })

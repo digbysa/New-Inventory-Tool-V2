@@ -382,33 +382,66 @@ try {
         return $rounded -match '^(?i)(Yes|True|1|Rounded)$'
     }
 
+    function Get-RoundingPlanDateKeys {
+        $keys = @{}
+        if ($script:RoundingPlan -and $script:RoundingPlan.Dates) {
+            foreach ($date in @($script:RoundingPlan.Dates)) { $keys[$date.Date.ToString('yyyy-MM-dd')] = $true }
+        }
+        if ($keys.Count -eq 0) { $keys[(Get-Date).Date.ToString('yyyy-MM-dd')] = $true }
+        return $keys
+    }
+
     function Load-NearbyRoundingEvents {
         param([string]$ResolvedXamlPath)
         if (-not $script:AppState) { return }
-        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedTodayAssetTags') -or -not $script:AppState.NearbyRoundedTodayAssetTags) {
-            $script:AppState | Add-Member -NotePropertyName NearbyRoundedTodayAssetTags -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
-        }
-        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedEventsByAsset') -or -not $script:AppState.NearbyRoundedEventsByAsset) {
-            $script:AppState | Add-Member -NotePropertyName NearbyRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
-        }
+        Ensure-NearbyState
         $script:AppState.NearbyRoundedTodayAssetTags.Clear()
         $script:AppState.NearbyRoundedEventsByAsset.Clear()
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedWeekEventsByAsset') -or -not $script:AppState.NearbyRoundedWeekEventsByAsset) {
+            $script:AppState | Add-Member -NotePropertyName NearbyRoundedWeekEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
+        }
+        $script:AppState.NearbyRoundedWeekEventsByAsset.Clear()
         $path = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
         if (-not (Test-Path -LiteralPath $path)) { return }
         $today = (Get-Date).Date
-        foreach ($row in @(Import-Csv -LiteralPath $path)) {
+        $weekDateKeys = Get-RoundingPlanDateKeys
+        $events = @()
+        try { $events = @(Import-Csv -LiteralPath $path -ErrorAction Stop) } catch { return }
+        foreach ($row in $events) {
             $assetKey = [string]$row.AssetTag
             if ([string]::IsNullOrWhiteSpace($assetKey)) { continue }
             $assetKey = $assetKey.Trim().ToUpperInvariant()
             $dt = [DateTime]::MinValue
             if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) { continue }
+            $event = [pscustomobject]@{ Timestamp=$dt; Row=$row }
             $existing = $null
             if ($script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) { $existing = $script:AppState.NearbyRoundedEventsByAsset[$assetKey] }
-            if (-not $existing -or $dt -gt $existing.Timestamp) {
-                $script:AppState.NearbyRoundedEventsByAsset[$assetKey] = [pscustomobject]@{ Timestamp=$dt; Row=$row }
-            }
+            if (-not $existing -or $dt -gt $existing.Timestamp) { $script:AppState.NearbyRoundedEventsByAsset[$assetKey] = $event }
             if ($dt.Date -eq $today) { [void]$script:AppState.NearbyRoundedTodayAssetTags.Add($assetKey) }
+            if ($weekDateKeys.ContainsKey($dt.Date.ToString('yyyy-MM-dd'))) {
+                $weekExisting = $null
+                if ($script:AppState.NearbyRoundedWeekEventsByAsset.ContainsKey($assetKey)) { $weekExisting = $script:AppState.NearbyRoundedWeekEventsByAsset[$assetKey] }
+                if (-not $weekExisting -or $dt -gt $weekExisting.Timestamp) { $script:AppState.NearbyRoundedWeekEventsByAsset[$assetKey] = $event }
+            }
         }
+    }
+
+    function Get-NearbyQualifyingRoundedEvent {
+        param([string]$AssetKey,[bool]$IsCriticalClinical)
+        if ([string]::IsNullOrWhiteSpace($AssetKey) -or -not $script:AppState) { return $null }
+        $key = $AssetKey.Trim().ToUpperInvariant()
+        if ($IsCriticalClinical) {
+            if ($script:AppState.NearbyRoundedEventsByAsset -and $script:AppState.NearbyRoundedEventsByAsset.ContainsKey($key)) {
+                $event = $script:AppState.NearbyRoundedEventsByAsset[$key]
+                if ($event -and $event.Timestamp.Date -eq (Get-Date).Date -and (Test-RoundingEventMarkedRounded -Row $event.Row)) { return $event }
+            }
+            return $null
+        }
+        if ($script:AppState.NearbyRoundedWeekEventsByAsset -and $script:AppState.NearbyRoundedWeekEventsByAsset.ContainsKey($key)) {
+            $event = $script:AppState.NearbyRoundedWeekEventsByAsset[$key]
+            if ($event -and (Test-RoundingEventMarkedRounded -Row $event.Row)) { return $event }
+        }
+        return $null
     }
 
     function Get-RoundingPlanPath { param([string]$ResolvedXamlPath) Join-Path (Get-OutputFolder -ResolvedXamlPath $ResolvedXamlPath) 'RoundingPlan.json' }
@@ -1962,6 +1995,9 @@ try {
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedEventsByAsset') -or -not $script:AppState.NearbyRoundedEventsByAsset) {
             $script:AppState | Add-Member -NotePropertyName NearbyRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
         }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedWeekEventsByAsset') -or -not $script:AppState.NearbyRoundedWeekEventsByAsset) {
+            $script:AppState | Add-Member -NotePropertyName NearbyRoundedWeekEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
+        }
     }
 
     function Get-NearbyPingCacheKey {
@@ -2050,12 +2086,13 @@ try {
             $isCriticalClinical = $roundingFlag -match '^(?i)Critical Clinical$'
             $isRecent = $false
             if ($lastRoundedDate -and $daysAgo -is [int]) { $isRecent = ($daysAgo -ge 1 -and $daysAgo -le 35) }
-            $csvRoundedRow = if ($csvRoundedEvent) { $csvRoundedEvent.Row } else { $null }
+            $qualifyingRoundedEvent = Get-NearbyQualifyingRoundedEvent -AssetKey $assetKey -IsCriticalClinical:$isCriticalClinical
+            $csvRoundedRow = if ($qualifyingRoundedEvent) { $qualifyingRoundedEvent.Row } else { $null }
             $isRoundedInCsv = Test-RoundingEventMarkedRounded -Row $csvRoundedRow
             $csvStatus = if ($csvRoundedRow -and $csvRoundedRow.PSObject.Properties.Name -contains 'CheckStatus' -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.CheckStatus)) { [string]$csvRoundedRow.CheckStatus } else { 'Complete' }
             $status = '-'
             $isStatusEditable = $true
-            if ($isRoundedInCsv -and ((-not $isCriticalClinical) -or $isToday)) {
+            if ($isRoundedInCsv) {
                 $status = $csvStatus
                 $isStatusEditable = $false
             }
@@ -3272,7 +3309,8 @@ function Find-SampleDevice {
             if ([string]::IsNullOrWhiteSpace($status) -or $status -eq '-') { continue }
 
             $assetKey = if ($item.AssetTag) { $item.AssetTag.Trim().ToUpperInvariant() } else { '' }
-            if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyRoundedTodayAssetTags -and $script:AppState.NearbyRoundedTodayAssetTags.Contains($assetKey)) { continue }
+            $isCriticalClinical = ($item.PSObject.Properties.Name -contains 'IsCriticalClinical') -and [bool]$item.IsCriticalClinical
+            if (Get-NearbyQualifyingRoundedEvent -AssetKey $assetKey -IsCriticalClinical:$isCriticalClinical) { continue }
 
             $device = $null
             if ($item.PSObject.Properties.Name -contains 'Device') { $device = $item.Device }
@@ -3467,7 +3505,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3

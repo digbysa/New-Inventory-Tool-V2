@@ -256,6 +256,7 @@ try {
         }
 
         $state = [pscustomobject]@{ IsDirty=$false; IsSaving=$false }
+        $nearbyStatusOptions = @('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $table = New-Object System.Data.DataTable
         foreach ($column in $columns) { [void]$table.Columns.Add([string]$column, [string]) }
         foreach ($row in $rows) {
@@ -292,9 +293,20 @@ try {
         $grid.Background = [System.Windows.Media.Brushes]::White; $grid.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D1D8E0')
         $blankBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#FCE3E5')
         foreach ($column in $columns) {
+            $binding = New-Object System.Windows.Data.Binding("[$column]"); $binding.Mode = 'TwoWay'; $binding.UpdateSourceTrigger = 'PropertyChanged'
+            if ([string]$column -eq 'CheckStatus') {
+                $comboColumn = New-Object System.Windows.Controls.DataGridComboBoxColumn
+                $comboColumn.Header = $column
+                $comboColumn.SortMemberPath = [string]$column
+                $comboColumn.ItemsSource = $nearbyStatusOptions
+                $comboColumn.SelectedItemBinding = $binding
+                [void]$grid.Columns.Add($comboColumn)
+                continue
+            }
+
             $textColumn = New-Object System.Windows.Controls.DataGridTextColumn
             $textColumn.Header = $column
-            $binding = New-Object System.Windows.Data.Binding("[$column]"); $binding.Mode = 'TwoWay'; $binding.UpdateSourceTrigger = 'PropertyChanged'
+            $textColumn.SortMemberPath = [string]$column
             $textColumn.Binding = $binding
             $elementStyle = New-Object System.Windows.Style([System.Windows.Controls.TextBlock])
             $elementStyle.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(4,2,4,2)))))
@@ -336,10 +348,8 @@ try {
         [System.Windows.Controls.Grid]::SetRow($grid, 1); $root.Children.Add($grid) | Out-Null
 
         $buttons = New-Object System.Windows.Controls.StackPanel; $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = New-Object System.Windows.Thickness(0,10,0,0)
-        $save = New-Object System.Windows.Controls.Button; $save.Content = 'Save'; $save.MinWidth = 104; $save.Height = 32; $save.Margin = New-Object System.Windows.Thickness(0,0,8,0)
+        $save = New-Object System.Windows.Controls.Button; $save.Content = 'Save && Close'; $save.MinWidth = 128; $save.Height = 32
         $save.Foreground = [System.Windows.Media.Brushes]::White; $save.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#16A34A'); $save.BorderBrush = $save.Background; $save.FontWeight = 'SemiBold'; $save.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $save -CornerRadius 8
-        $close = New-Object System.Windows.Controls.Button; $close.Content = 'Close'; $close.MinWidth = 104; $close.Height = 32
-        $close.Foreground = [System.Windows.Media.Brushes]::White; $close.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#1F2A44'); $close.BorderBrush = $close.Background; $close.FontWeight = 'SemiBold'; $close.Padding = New-Object System.Windows.Thickness(12,6,12,6); Set-RoundedButtonTemplate -Button $close -CornerRadius 8
         $saveAction = {
             $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Cell, $true) | Out-Null; $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) | Out-Null
             $state.IsSaving = $true
@@ -352,9 +362,8 @@ try {
             } finally { $state.IsSaving = $false }
             return $true
         }.GetNewClosure()
-        $save.Add_Click({ & $saveAction | Out-Null }.GetNewClosure())
-        $close.Add_Click({ $editor.Close() }.GetNewClosure())
-        $buttons.Children.Add($save) | Out-Null; $buttons.Children.Add($close) | Out-Null
+        $save.Add_Click({ if (& $saveAction) { $editor.Close() } }.GetNewClosure())
+        $buttons.Children.Add($save) | Out-Null
         [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
         $editor.Content = $root
         $editor.Add_Closing({ param($sender,$e)

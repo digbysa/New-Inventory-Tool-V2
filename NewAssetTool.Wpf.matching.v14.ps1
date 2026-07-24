@@ -264,9 +264,9 @@ try {
             [void]$table.Rows.Add($dataRow)
         }
         $table.AcceptChanges()
-        $table.Add_ColumnChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } })
-        $table.Add_RowDeleted({ if (-not $state.IsSaving) { $state.IsDirty = $true } })
-        $table.Add_RowChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } })
+        $table.Add_ColumnChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } }.GetNewClosure())
+        $table.Add_RowDeleted({ if (-not $state.IsSaving) { $state.IsDirty = $true } }.GetNewClosure())
+        $table.Add_RowChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } }.GetNewClosure())
 
         $editor = New-Object System.Windows.Window
         $editor.Title = 'File Editor - RoundingEvents.csv'
@@ -298,30 +298,38 @@ try {
             $textColumn.Binding = $binding
             $elementStyle = New-Object System.Windows.Style([System.Windows.Controls.TextBlock])
             $elementStyle.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(4,2,4,2)))))
-            $trigger = New-Object System.Windows.DataTrigger; $trigger.Binding = (New-Object System.Windows.Data.Binding("[$column]")); $trigger.Value = ''
-            $trigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBlock]::BackgroundProperty, $blankBrush)))
-            $elementStyle.Triggers.Add($trigger)
             $editingStyle = New-Object System.Windows.Style([System.Windows.Controls.TextBox])
             $editingStyle.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBox]::PaddingProperty, (New-Object System.Windows.Thickness(4,2,4,2)))))
-            $editTrigger = New-Object System.Windows.DataTrigger; $editTrigger.Binding = (New-Object System.Windows.Data.Binding("[$column]")); $editTrigger.Value = ''
-            $editTrigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBox]::BackgroundProperty, $blankBrush)))
-            $editingStyle.Triggers.Add($editTrigger)
+            if ([string]$column -ne 'Comments') {
+                $trigger = New-Object System.Windows.DataTrigger; $trigger.Binding = (New-Object System.Windows.Data.Binding("[$column]")); $trigger.Value = ''
+                $trigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBlock]::BackgroundProperty, $blankBrush)))
+                $elementStyle.Triggers.Add($trigger)
+                $editTrigger = New-Object System.Windows.DataTrigger; $editTrigger.Binding = (New-Object System.Windows.Data.Binding("[$column]")); $editTrigger.Value = ''
+                $editTrigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.TextBox]::BackgroundProperty, $blankBrush)))
+                $editingStyle.Triggers.Add($editTrigger)
+            }
             $textColumn.ElementStyle = $elementStyle; $textColumn.EditingElementStyle = $editingStyle
             [void]$grid.Columns.Add($textColumn)
         }
         $deleteColumn = New-Object System.Windows.Controls.DataGridTemplateColumn; $deleteColumn.Header = '' ; $deleteColumn.Width = 44
         $factory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Button])
-        $factory.SetValue([System.Windows.Controls.Button]::ContentProperty, '✕')
+        $factory.SetValue([System.Windows.Controls.Button]::ContentProperty, 'X')
         $factory.SetValue([System.Windows.Controls.Button]::ToolTipProperty, 'Delete row')
-        $factory.SetValue([System.Windows.Controls.Button]::ForegroundProperty, [System.Windows.Media.BrushConverter]::new().ConvertFromString('#BE123C'))
+        $factory.SetValue([System.Windows.Controls.Button]::ForegroundProperty, [System.Windows.Media.BrushConverter]::new().ConvertFromString('#DC2626'))
         $factory.SetValue([System.Windows.Controls.Button]::BackgroundProperty, [System.Windows.Media.Brushes]::Transparent)
         $factory.SetValue([System.Windows.Controls.Button]::BorderBrushProperty, [System.Windows.Media.Brushes]::Transparent)
+        $factory.SetValue([System.Windows.Controls.Button]::FontWeightProperty, [System.Windows.FontWeights]::Bold)
+        $factory.SetValue([System.Windows.Controls.Button]::TagProperty, $state)
         $factory.AddHandler([System.Windows.Controls.Button]::ClickEvent, [System.Windows.RoutedEventHandler]{ param($sender,$e)
             $view = $sender.DataContext
+            $editorState = $sender.Tag
             if (-not $view) { return }
             $answer = [System.Windows.MessageBox]::Show('Delete this row from RoundingEvents.csv when you save?', 'Confirm Delete', [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
-            if ($answer -eq [System.Windows.MessageBoxResult]::Yes) { $view.Row.Delete(); $state.IsDirty = $true }
-        })
+            if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
+                $view.Row.Delete()
+                if ($editorState) { $editorState.IsDirty = $true }
+            }
+        }.GetNewClosure())
         $template = New-Object System.Windows.DataTemplate; $template.VisualTree = $factory; $deleteColumn.CellTemplate = $template
         [void]$grid.Columns.Add($deleteColumn)
         $grid.ItemsSource = $table.DefaultView
@@ -344,8 +352,8 @@ try {
             } finally { $state.IsSaving = $false }
             return $true
         }
-        $save.Add_Click({ & $saveAction | Out-Null })
-        $close.Add_Click({ $editor.Close() })
+        $save.Add_Click({ & $saveAction | Out-Null }.GetNewClosure())
+        $close.Add_Click({ $editor.Close() }.GetNewClosure())
         $buttons.Children.Add($save) | Out-Null; $buttons.Children.Add($close) | Out-Null
         [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
         $editor.Content = $root
@@ -354,7 +362,7 @@ try {
             $choice = [System.Windows.MessageBox]::Show('Save changes before closing the File Editor?', 'Unsaved Changes', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)
             if ($choice -eq [System.Windows.MessageBoxResult]::Cancel) { $e.Cancel = $true; return }
             if ($choice -eq [System.Windows.MessageBoxResult]::Yes) { if (-not (& $saveAction)) { $e.Cancel = $true } }
-        })
+        }.GetNewClosure())
         $editor.Show() | Out-Null
     }
 

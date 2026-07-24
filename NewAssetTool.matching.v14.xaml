@@ -1039,7 +1039,12 @@
                                 <DataGridTextColumn Header="Room" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Department" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding Department}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Maintenance Type" IsReadOnly="True" Width="Auto" MinWidth="120" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Last Rounded" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding LastRounded}" ElementStyle="{StaticResource NearbyCellTextStyle}">
+                                <DataGridTextColumn Header="Last Rounded" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding LastRounded}">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
+                                            <Setter Property="Foreground" Value="{Binding LastRoundedForeground}"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
                                     <DataGridTextColumn.CellStyle>
                                         <Style TargetType="{x:Type DataGridCell}" BasedOn="{StaticResource {x:Type DataGridCell}}">
                                             <Setter Property="Background" Value="{Binding LastRoundedBackground}"/>

@@ -707,6 +707,41 @@ try {
         return $dt.ToString('dd MMMM yyyy')
     }
 
+
+    function Update-InventoryComputerLastRoundedDate {
+        param([pscustomobject]$Inventory,[string]$AssetTag,[datetime]$RoundedDate)
+        if (-not $Inventory -or -not $Inventory.Computers -or [string]::IsNullOrWhiteSpace($AssetTag)) { return $false }
+        $assetKey = $AssetTag.Trim().ToUpperInvariant()
+        $dateText = $RoundedDate.ToString('dd MMMM yyyy')
+        $updatedRows = @()
+        foreach ($row in @($Inventory.Computers)) {
+            $rowAssetKey = (Get-FieldValue -Row $row -Names @('asset_tag','AssetTag')).Trim().ToUpperInvariant()
+            if ($rowAssetKey -ne $assetKey) { continue }
+            $targetProperty = $null
+            foreach ($name in @('u_last_rounded_date','LastRounded')) {
+                $prop = $row.PSObject.Properties[$name]
+                if ($prop) { $targetProperty = $prop; break }
+            }
+            if (-not $targetProperty) {
+                $row | Add-Member -NotePropertyName 'u_last_rounded_date' -NotePropertyValue $dateText -Force
+            } else {
+                $targetProperty.Value = $dateText
+            }
+            $updatedRows += $row
+        }
+        if ($updatedRows.Count -eq 0) { return $false }
+
+        $sourcePaths = @($updatedRows | ForEach-Object { $_.__SourceCsvPath } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+        foreach ($sourcePath in $sourcePaths) {
+            $rowsForFile = @($Inventory.Computers | Where-Object { $_.__SourceCsvPath -eq $sourcePath })
+            if ($rowsForFile.Count -eq 0) { continue }
+            $exportRows = @($rowsForFile | Select-Object -Property * -ExcludeProperty __SourceCsvPath)
+            $exportRows | Export-Csv -LiteralPath $sourcePath -NoTypeInformation
+        }
+        Build-InventoryIndices -Inventory $Inventory
+        return $true
+    }
+
     function Extract-Ritm {
         param([string]$Value)
         if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
@@ -815,7 +850,13 @@ try {
 
     function Import-InventoryCsv {
         param([string]$Path)
-        try { return @(Import-Csv -LiteralPath $Path -ErrorAction Stop) } catch { return @() }
+        try {
+            $rows = @(Import-Csv -LiteralPath $Path -ErrorAction Stop)
+            foreach ($row in $rows) {
+                $row | Add-Member -NotePropertyName __SourceCsvPath -NotePropertyValue $Path -Force
+            }
+            return $rows
+        } catch { return @() }
     }
 
     function Get-InventorySites {
@@ -1979,6 +2020,7 @@ try {
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
                 LastRounded=(Format-DateLong $computer.LastRounded)
                 LastRoundedBackground=$lastRoundedBackground
+                LastRoundedForeground=$(if ((Get-RoundingStatus -RoundedDate $lastRoundedDate) -eq 'Green') { '#15803D' } elseif ($isToday) { '#15803D' } else { $(if ($isToday) { '#808080' } else { '#000000' }) })
                 DaysAgo=$daysAgo
                 IsRoundedToday=$isToday
                 IsExcluded=$isExcluded
@@ -3202,6 +3244,7 @@ function Find-SampleDevice {
                 Comments=''; Rounded='No'
             })
             Add-RoundingCsvRow -Path $csvPath -Row $row
+            [void](Update-InventoryComputerLastRoundedDate -Inventory $Inventory -AssetTag $item.AssetTag -RoundedDate (Get-Date))
             $saved++
             $nearbyKey = Get-NearbyRowStateKey -Row $item
             if (-not [string]::IsNullOrWhiteSpace($nearbyKey)) {
@@ -3647,6 +3690,9 @@ function Find-SampleDevice {
         }
         $saved = Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath
         if (-not $saved) { return }
+        $roundedDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
+        if (-not $roundedDevice) { $roundedDevice = $script:AppState.CurrentDevice }
+        [void](Update-InventoryComputerLastRoundedDate -Inventory $script:AppState.Inventory -AssetTag $roundedDevice.AssetTag -RoundedDate (Get-Date))
         $nearbyScopeDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
         if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)

@@ -364,15 +364,26 @@ try {
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedTodayAssetTags') -or -not $script:AppState.NearbyRoundedTodayAssetTags) {
             $script:AppState | Add-Member -NotePropertyName NearbyRoundedTodayAssetTags -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
         }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedEventsByAsset') -or -not $script:AppState.NearbyRoundedEventsByAsset) {
+            $script:AppState | Add-Member -NotePropertyName NearbyRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
+        }
         $script:AppState.NearbyRoundedTodayAssetTags.Clear()
+        $script:AppState.NearbyRoundedEventsByAsset.Clear()
         $path = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
         if (-not (Test-Path -LiteralPath $path)) { return }
         $today = (Get-Date).Date
         foreach ($row in @(Import-Csv -LiteralPath $path)) {
-            $dt = [DateTime]::MinValue
-            if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt) -or $dt.Date -ne $today) { continue }
             $assetKey = [string]$row.AssetTag
-            if (-not [string]::IsNullOrWhiteSpace($assetKey)) { [void]$script:AppState.NearbyRoundedTodayAssetTags.Add($assetKey.Trim().ToUpperInvariant()) }
+            if ([string]::IsNullOrWhiteSpace($assetKey)) { continue }
+            $assetKey = $assetKey.Trim().ToUpperInvariant()
+            $dt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) { continue }
+            $existing = $null
+            if ($script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) { $existing = $script:AppState.NearbyRoundedEventsByAsset[$assetKey] }
+            if (-not $existing -or $dt -gt $existing.Timestamp) {
+                $script:AppState.NearbyRoundedEventsByAsset[$assetKey] = [pscustomobject]@{ Timestamp=$dt; Row=$row }
+            }
+            if ($dt.Date -eq $today) { [void]$script:AppState.NearbyRoundedTodayAssetTags.Add($assetKey) }
         }
     }
 
@@ -1924,6 +1935,9 @@ try {
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedTodayAssetTags') -or -not $script:AppState.NearbyRoundedTodayAssetTags) {
             $script:AppState | Add-Member -NotePropertyName NearbyRoundedTodayAssetTags -NotePropertyValue (New-Object 'System.Collections.Generic.HashSet[string]') -Force
         }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedEventsByAsset') -or -not $script:AppState.NearbyRoundedEventsByAsset) {
+            $script:AppState | Add-Member -NotePropertyName NearbyRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
+        }
     }
 
     function Get-NearbyPingCacheKey {
@@ -1994,7 +2008,12 @@ try {
                 if ($seenAssetTags.ContainsKey($assetKey)) { continue }
                 $seenAssetTags[$assetKey] = $true
             }
-            $lastRoundedDate = Parse-DateLoose -Value $computer.LastRounded
+            $csvRoundedEvent = $null
+            if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyRoundedEventsByAsset -and $script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) {
+                $csvRoundedEvent = $script:AppState.NearbyRoundedEventsByAsset[$assetKey]
+            }
+            $lastRoundedDate = if ($csvRoundedEvent) { $csvRoundedEvent.Timestamp } else { Parse-DateLoose -Value $computer.LastRounded }
+            $lastRoundedText = if ($csvRoundedEvent) { $csvRoundedEvent.Timestamp.ToString('dd MMMM yyyy') } else { Format-DateLong $computer.LastRounded }
             $daysAgo = ''
             if ($lastRoundedDate) {
                 $daysAgo = [int]((Get-Date).Date - $lastRoundedDate.Date).TotalDays
@@ -2018,9 +2037,9 @@ try {
                 Room=$computer.Room
                 Department=$computer.Department
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
-                LastRounded=(Format-DateLong $computer.LastRounded)
+                LastRounded=$lastRoundedText
                 LastRoundedBackground=$lastRoundedBackground
-                LastRoundedForeground=$(if ((Get-RoundingStatus -RoundedDate $lastRoundedDate) -eq 'Green') { '#15803D' } elseif ($isToday) { '#15803D' } else { $(if ($isToday) { '#808080' } else { '#000000' }) })
+                LastRoundedForeground=$(if ($isToday -or (Get-RoundingStatus -RoundedDate $lastRoundedDate) -eq 'Green') { '#15803D' } else { '#000000' })
                 DaysAgo=$daysAgo
                 IsRoundedToday=$isToday
                 IsExcluded=$isExcluded
@@ -3244,7 +3263,6 @@ function Find-SampleDevice {
                 Comments=''; Rounded='No'
             })
             Add-RoundingCsvRow -Path $csvPath -Row $row
-            [void](Update-InventoryComputerLastRoundedDate -Inventory $Inventory -AssetTag $item.AssetTag -RoundedDate (Get-Date))
             $saved++
             $nearbyKey = Get-NearbyRowStateKey -Row $item
             if (-not [string]::IsNullOrWhiteSpace($nearbyKey)) {
@@ -3690,9 +3708,6 @@ function Find-SampleDevice {
         }
         $saved = Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath
         if (-not $saved) { return }
-        $roundedDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
-        if (-not $roundedDevice) { $roundedDevice = $script:AppState.CurrentDevice }
-        [void](Update-InventoryComputerLastRoundedDate -Inventory $script:AppState.Inventory -AssetTag $roundedDevice.AssetTag -RoundedDate (Get-Date))
         $nearbyScopeDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
         if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)

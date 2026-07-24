@@ -65,3 +65,11 @@ def test_clinical_critical_ignores_previous_week_event():
         {"Timestamp": "2026-07-16 10:00:00", "AssetTag": "HSS-5", "CheckStatus": "Inaccessible - Other", "Rounded": "Yes"},
     ], "HSS-5", "Critical Clinical")
     assert (status, editable) == ("-", True)
+
+
+def test_regular_device_uses_latest_completed_event_when_newer_unrounded_event_exists():
+    status, editable = nearby_status([
+        {"Timestamp": "2026-07-23 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - Other", "Rounded": "Yes"},
+        {"Timestamp": "2026-07-24 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - In storage", "Rounded": "No"},
+    ], "HSS-6", "General Rounding")
+    assert (status, editable) == ("Inaccessible - Other", False)

@@ -1176,7 +1176,7 @@ try {
             Serial=Get-FieldValue -Row $Row -Names @('serial_number','Serial')
             Model=Get-FieldValue -Row $Row -Names @('model_id','Model')
             Parent=$parent; RITM=Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number','RITM'))
-            RetireDate=Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','RetireDate'))
+            RetireDate=Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','u_retired_date','RetireDate'))
             LastRounded=Get-FieldValue -Row $Row -Names @('u_last_rounded_date','LastRounded')
             City=Get-FieldValue -Row $Row -Names @('location.city','City')
             Location=Get-FieldValue -Row $Row -Names @('location','Location')

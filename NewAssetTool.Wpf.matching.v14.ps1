@@ -1204,6 +1204,7 @@ try {
         $indexByName = @{}
         $indexByAsset = @{}
         $indexBySerial = @{}
+        $childrenByParent = @{}
 
         foreach ($set in @(
             @{Rows=$Inventory.Computers; Type='Computer'},
@@ -1217,12 +1218,20 @@ try {
                 Add-IndexKey -Index $indexByName -Key $record.Name -Value $record
                 Add-IndexKey -Index $indexByAsset -Key $record.AssetTag -Value $record
                 Add-IndexKey -Index $indexBySerial -Key $record.Serial -Value $record
+                if ($set.Type -ne 'Computer') {
+                    $parentToken = Get-FieldValue -Row $row -Names @('u_parent_asset','Parent')
+                    foreach ($key in (Get-AssociationTokenVariants -Token $parentToken)) {
+                        if (-not $childrenByParent.ContainsKey($key)) { $childrenByParent[$key] = New-Object System.Collections.ArrayList }
+                        [void]$childrenByParent[$key].Add([pscustomobject]@{ Row=$row; Type=$set.Type })
+                    }
+                }
             }
         }
 
         $Inventory | Add-Member -NotePropertyName IndexByName -NotePropertyValue $indexByName -Force
         $Inventory | Add-Member -NotePropertyName IndexByAsset -NotePropertyValue $indexByAsset -Force
         $Inventory | Add-Member -NotePropertyName IndexBySerial -NotePropertyValue $indexBySerial -Force
+        $Inventory | Add-Member -NotePropertyName ChildrenByParent -NotePropertyValue $childrenByParent -Force
     }
 
     function Find-InventoryMatch {
@@ -1278,13 +1287,14 @@ try {
         $tokens = @(@($Device.Parent) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() })
         if (-not $tokens -or $tokens.Count -eq 0) { return $null }
 
-        foreach ($row in $Inventory.Computers) {
-            $record = ConvertTo-DeviceRecord -Row $row -DetectedType 'Computer'
-            $name = if ($record.Name) { $record.Name.Trim().ToUpper() } else { '' }
-            if ($name -notmatch '^(LD|PC|TD|AO|WT)') { continue }
-            $candidates = @($record.Name,$record.AssetTag,$record.Serial) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToUpper() }
-            foreach ($token in $tokens) {
-                if ($candidates -contains $token) { return $record }
+        foreach ($token in $tokens) {
+            foreach ($key in (Get-AssociationTokenVariants -Token $token)) {
+                foreach ($index in @($Inventory.IndexByName,$Inventory.IndexByAsset,$Inventory.IndexBySerial)) {
+                    if ($index -and $index.ContainsKey($key)) {
+                        $record = $index[$key]
+                        if ($record.DetectedType -eq 'Computer' -and $record.Name -match '^(?i)(LD|PC|TD|AO|WT)') { return $record }
+                    }
+                }
             }
         }
         return $null
@@ -1334,19 +1344,7 @@ try {
 
         $parentType = Get-AssociatedDeviceDisplayType -Device $effectiveParent
         $results = @([pscustomobject]@{ Role='Parent'; Type=$parentType; Name=$effectiveParent.Name; AssetTag=$effectiveParent.AssetTag; Serial=$effectiveParent.Serial; Model=$effectiveParent.Model; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$effectiveParent.RITM; Retire=(Format-DateLong $effectiveParent.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $effectiveParent.DetectedType -AssetTag $effectiveParent.AssetTag); Device=$effectiveParent })
-        $childrenByParent = @{}
-        foreach ($collectionName in @('Monitors','Carts','Mics','Scanners')) {
-            $collection = $Inventory.$collectionName
-            if (-not $collection) { continue }
-            foreach ($row in $collection) {
-                $token = Get-FieldValue -Row $row -Names @('u_parent_asset','Parent')
-                if ([string]::IsNullOrWhiteSpace($token)) { continue }
-                foreach ($key in (Get-AssociationTokenVariants -Token $token)) {
-                    if (-not $childrenByParent.ContainsKey($key)) { $childrenByParent[$key] = @() }
-                    $childrenByParent[$key] += ,$row
-                }
-            }
-        }
+        $childrenByParent = $Inventory.ChildrenByParent
 
         $parentTokens = New-Object System.Collections.ArrayList
         foreach ($candidate in @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial,$Device.Parent)) {
@@ -1358,10 +1356,11 @@ try {
         $addedChildAssetTags = @{}
         foreach ($token in $parentTokens) {
             if (-not $childrenByParent.ContainsKey($token)) { continue }
-            foreach ($row in $childrenByParent[$token]) {
+            foreach ($entry in $childrenByParent[$token]) {
+                $row = $entry.Row
                 $childAssetTag = (Get-FieldValue -Row $row -Names @('asset_tag')).Trim().ToUpper()
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag) -and $addedChildAssetTags.ContainsKey($childAssetTag)) { continue }
-                $type = if ($Inventory.Carts -contains $row) { 'Cart' } elseif ($Inventory.Mics -contains $row) { 'Mic' } elseif ($Inventory.Scanners -contains $row) { 'Scanner' } else { 'Monitor' }
+                $type = $entry.Type
                 $role = if ($Device.AssetTag -and ($childAssetTag -eq $Device.AssetTag.Trim().ToUpper())) { $queryRole } else { 'Child' }
                 $childDevice = ConvertTo-DeviceRecord -Row $row -DetectedType $type
                 $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; Model=$childDevice.Model; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
@@ -2726,12 +2725,19 @@ try {
 
     function Get-LocationHierarchyRows {
         param([pscustomobject]$Inventory)
+        if ($Inventory -and $Inventory.PSObject.Properties.Name -contains 'LocationHierarchyRows') {
+            return @($Inventory.LocationHierarchyRows)
+        }
         $rows = New-Object System.Collections.Generic.List[object]
         $seen = @{}
         if (-not $Inventory) { return @() }
         foreach ($row in @($Inventory.Locations)) { Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row }
-        foreach ($row in @($Inventory.Computers)) { Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row }
-        return @($rows.ToArray())
+        # Match the proven legacy workflow: LocationMaster and its user-adds file are
+        # authoritative. Computer exports contain only the currently assigned values
+        # and must not narrow or pollute the available hierarchy choices.
+        $result = @($rows.ToArray())
+        $Inventory | Add-Member -NotePropertyName LocationHierarchyRows -NotePropertyValue $result -Force
+        return $result
     }
 
     function Test-LocationColumnValue {
@@ -2874,7 +2880,7 @@ try {
     }
 
     function Populate-LocationCombos {
-        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ChangedLevel='',[hashtable]$InitialValues=$null)
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ChangedLevel='',[string]$ChangedValue,[hashtable]$InitialValues=$null)
         if (-not $Ui -or -not $Inventory) { return }
         $script:IsPopulatingLocationCombos = $true
         try {
@@ -2902,40 +2908,42 @@ try {
             } elseif ($ChangedLevel -eq 'Room') {
                 Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
             }
-            $cityText = if ($InitialValues -and $InitialValues.ContainsKey('City')) { [string]$InitialValues.City } else { [string]$Ui.CityComboBox.Text }
+            $cityText = if ($ChangedLevel -eq 'City' -and $PSBoundParameters.ContainsKey('ChangedValue')) { $ChangedValue } elseif ($InitialValues -and $InitialValues.ContainsKey('City')) { [string]$InitialValues.City } else { [string]$Ui.CityComboBox.Text }
             Set-ComboItems -Combo $Ui.CityComboBox -Items $cities -Text $cityText
             $validCity = Get-ValidLocationSelection -Value ([string]$Ui.CityComboBox.Text) -Items $cities
 
             $locationRows = if ($validCity) { @(Filter-LocationRows -Rows $rows -City $validCity) } else { @($rows) }
             $locations = @(Get-UniqueLocationValues -Rows $locationRows -Property 'Location')
-            $locationText = if ($InitialValues -and $InitialValues.ContainsKey('Location')) { [string]$InitialValues.Location } else { [string]$Ui.LocationComboBox.Text }
+            $locationText = if ($ChangedLevel -eq 'Location' -and $PSBoundParameters.ContainsKey('ChangedValue')) { $ChangedValue } elseif ($InitialValues -and $InitialValues.ContainsKey('Location')) { [string]$InitialValues.Location } else { [string]$Ui.LocationComboBox.Text }
             if (-not $InitialValues -and -not (Get-ValidLocationSelection -Value $locationText -Items $locations)) { $locationText = '' }
             Set-ComboItems -Combo $Ui.LocationComboBox -Items $locations -Text $locationText
             $validLocation = Get-ValidLocationSelection -Value ([string]$Ui.LocationComboBox.Text) -Items $locations
 
             $buildingRows = if ($validLocation) { @(Filter-LocationRows -Rows $locationRows -Location $validLocation) } else { @($locationRows) }
             $buildings = @(Get-UniqueLocationValues -Rows $buildingRows -Property 'Building')
-            $buildingText = if ($InitialValues -and $InitialValues.ContainsKey('Building')) { [string]$InitialValues.Building } else { [string]$Ui.BuildingComboBox.Text }
+            $buildingText = if ($ChangedLevel -eq 'Building' -and $PSBoundParameters.ContainsKey('ChangedValue')) { $ChangedValue } elseif ($InitialValues -and $InitialValues.ContainsKey('Building')) { [string]$InitialValues.Building } else { [string]$Ui.BuildingComboBox.Text }
             if (-not $InitialValues -and -not (Get-ValidLocationSelection -Value $buildingText -Items $buildings)) { $buildingText = '' }
             Set-ComboItems -Combo $Ui.BuildingComboBox -Items $buildings -Text $buildingText
             $validBuilding = Get-ValidLocationSelection -Value ([string]$Ui.BuildingComboBox.Text) -Items $buildings
 
             $floorRows = if ($validBuilding) { @(Filter-LocationRows -Rows $buildingRows -Building $validBuilding) } else { @($buildingRows) }
             $floors = @(Get-UniqueLocationValues -Rows $floorRows -Property 'Floor' -Floor)
-            $floorText = if ($InitialValues -and $InitialValues.ContainsKey('Floor')) { [string]$InitialValues.Floor } else { [string]$Ui.FloorComboBox.Text }
+            $floorText = if ($ChangedLevel -eq 'Floor' -and $PSBoundParameters.ContainsKey('ChangedValue')) { $ChangedValue } elseif ($InitialValues -and $InitialValues.ContainsKey('Floor')) { [string]$InitialValues.Floor } else { [string]$Ui.FloorComboBox.Text }
             if (-not $InitialValues -and -not (Get-ValidLocationSelection -Value $floorText -Items $floors)) { $floorText = '' }
             Set-ComboItems -Combo $Ui.FloorComboBox -Items $floors -Text $floorText
             $validFloor = Get-ValidLocationSelection -Value ([string]$Ui.FloorComboBox.Text) -Items $floors
 
             $roomRows = if ($validFloor) { @(Filter-LocationRows -Rows $floorRows -Floor $validFloor) } else { @($floorRows) }
             $rooms = @(Get-UniqueLocationValues -Rows $roomRows -Property 'Room')
-            $roomText = if ($InitialValues -and $InitialValues.ContainsKey('Room')) { [string]$InitialValues.Room } else { [string]$Ui.RoomComboBox.Text }
+            $roomText = if ($ChangedLevel -eq 'Room' -and $PSBoundParameters.ContainsKey('ChangedValue')) { $ChangedValue } elseif ($InitialValues -and $InitialValues.ContainsKey('Room')) { [string]$InitialValues.Room } else { [string]$Ui.RoomComboBox.Text }
             if (-not $InitialValues -and -not (Get-ValidLocationSelection -Value $roomText -Items $rooms)) { $roomText = '' }
             Set-ComboItems -Combo $Ui.RoomComboBox -Items $rooms -Text $roomText
             $validRoom = Get-ValidLocationSelection -Value ([string]$Ui.RoomComboBox.Text) -Items $rooms
 
-            $departmentRows = if ($validRoom) { @(Filter-LocationRows -Rows $roomRows -Room $validRoom) } else { @($roomRows) }
-            $departments = @(Get-UniqueLocationValues -Rows $departmentRows -Property 'Department')
+            # The legacy tool intentionally treats Department as a global master list,
+            # not as a child of Room. A department may be valid even when that exact
+            # room/department pairing has not appeared in LocationMaster yet.
+            $departments = @(Get-UniqueLocationValues -Rows $rows -Property 'Department')
             $departmentText = if ($InitialValues -and $InitialValues.ContainsKey('Department')) { [string]$InitialValues.Department } else { [string]$Ui.DepartmentComboBox.Text }
             if (-not $InitialValues -and -not (Get-ValidLocationSelection -Value $departmentText -Items $departments)) { $departmentText = '' }
             Set-ComboItems -Combo $Ui.DepartmentComboBox -Items $departments -Text $departmentText
@@ -3483,6 +3491,9 @@ function Find-SampleDevice {
             @($newRow) | Export-Csv -Path $path -NoTypeInformation -Append:((Test-Path -LiteralPath $path)) -Force
         }
         $Inventory.Locations = @($Inventory.Locations) + $newRow
+        if ($Inventory.PSObject.Properties.Name -contains 'LocationHierarchyRows') {
+            $Inventory.LocationHierarchyRows = @($Inventory.LocationHierarchyRows) + $newRow
+        }
     }
 
     function Save-LocationValues {
@@ -3636,11 +3647,11 @@ function Find-SampleDevice {
         Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
     })
 
-    $ui.CityComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'City' } })
-    $ui.LocationComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Location' } })
-    $ui.BuildingComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Building' } })
-    $ui.FloorComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Floor' } })
-    $ui.RoomComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Room' } })
+    $ui.CityComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos -and $null -ne $ui.CityComboBox.SelectedItem) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'City' -ChangedValue ([string]$ui.CityComboBox.SelectedItem) } })
+    $ui.LocationComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos -and $null -ne $ui.LocationComboBox.SelectedItem) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Location' -ChangedValue ([string]$ui.LocationComboBox.SelectedItem) } })
+    $ui.BuildingComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos -and $null -ne $ui.BuildingComboBox.SelectedItem) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Building' -ChangedValue ([string]$ui.BuildingComboBox.SelectedItem) } })
+    $ui.FloorComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos -and $null -ne $ui.FloorComboBox.SelectedItem) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Floor' -ChangedValue ([string]$ui.FloorComboBox.SelectedItem) } })
+    $ui.RoomComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos -and $null -ne $ui.RoomComboBox.SelectedItem) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'Room' -ChangedValue ([string]$ui.RoomComboBox.SelectedItem) } })
 
     $ui.QueryButton.Add_Click({
         $queryStartedFromNearby = ($script:AppState -and $script:AppState.QueryStartedFromNearby)

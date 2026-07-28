@@ -2707,6 +2707,7 @@ try {
         # the first hierarchy row can be added to the newly-created collection.
         if ($null -eq $Rows -or $null -eq $Seen -or $null -eq $Row) { return }
         $city = Get-LocationFieldValue $Row 'City'
+        if ([string]::IsNullOrWhiteSpace($city)) { $city = Get-FieldValue -Row $Row -Names @('location.city','u_city') }
         $location = Get-LocationFieldValue $Row 'Location'
         if ([string]::IsNullOrWhiteSpace($location)) { $location = Get-FieldValue -Row $Row -Names @('location') }
         $building = Get-LocationFieldValue $Row 'Building'
@@ -2731,10 +2732,19 @@ try {
         $rows = New-Object System.Collections.Generic.List[object]
         $seen = @{}
         if (-not $Inventory) { return @() }
-        foreach ($row in @($Inventory.Locations)) { Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row }
-        # Match the proven legacy workflow: LocationMaster and its user-adds file are
-        # authoritative. Computer exports contain only the currently assigned values
-        # and must not narrow or pollute the available hierarchy choices.
+        # LocationMaster is a set of independent column-wide value lists: values on
+        # the same CSV line do not describe one City/Location/Building hierarchy.
+        # The computer export contains the real relationships used by the cascading
+        # dropdowns.  Saved user additions are complete relationships and can safely
+        # augment it, but treating ordinary LocationMaster rows as relationships can
+        # pair (for example) Ladysmith with an unrelated CDH location.
+        foreach ($row in @($Inventory.Computers)) { Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row }
+        foreach ($row in @($Inventory.Locations)) {
+            $sourcePath = Get-FieldValue -Row $row -Names @('__SourceCsvPath')
+            if (-not [string]::IsNullOrWhiteSpace($sourcePath) -and (Split-Path -Leaf $sourcePath) -like 'LocationMaster-UserAdds*.csv') {
+                Add-LocationHierarchyRow -Rows $rows -Seen $seen -Row $row
+            }
+        }
         $result = @($rows.ToArray())
         $Inventory | Add-Member -NotePropertyName LocationHierarchyRows -NotePropertyValue $result -Force
         return $result

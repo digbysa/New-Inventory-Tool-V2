@@ -69,3 +69,37 @@ def test_selection_handlers_pass_the_selected_item_not_stale_combo_text():
     for level in ("City", "Location", "Building", "Floor", "Room"):
         expected = f"-ChangedLevel '{level}' -ChangedValue ([string]$ui.{level}ComboBox.SelectedItem)"
         assert expected in script
+
+
+def test_device_location_save_is_staged_until_the_rounding_event_is_saved():
+    script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
+    save_location = re.search(
+        r"function Save-LocationValues \{(?P<body>.*?)\n    \}", script, re.DOTALL
+    )
+    save_event = re.search(
+        r"function Save-RoundingEvent \{(?P<body>.*?)\n    \}", script, re.DOTALL
+    )
+
+    assert save_location and save_event
+    location_body = save_location.group("body")
+    event_body = save_event.group("body")
+    assert "$script:AppState.PendingLocation = [pscustomobject]@{" in location_body
+    assert "Add-LocationUserAddRow" not in location_body
+    assert "$target.City =" not in location_body
+    assert "$script:AppState.PendingLocation.Device -eq $parentDevice" in event_body
+    assert "Add-RoundingCsvRow -Path $csvPath -Row $row" in event_body
+    assert event_body.index("Add-RoundingCsvRow -Path $csvPath -Row $row") < event_body.index(
+        "Add-LocationUserAddRow"
+    )
+
+
+def test_selecting_another_device_discards_a_staged_location():
+    script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
+    selection = re.search(
+        r"function Set-SelectedSummaryDevice \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+
+    assert selection
+    assert "$script:AppState.PendingLocation = $null" in selection.group("body")

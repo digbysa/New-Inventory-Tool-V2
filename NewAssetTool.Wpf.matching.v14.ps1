@@ -2963,6 +2963,9 @@ try {
     function Set-SelectedSummaryDevice {
         param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
         if (-not $Device) { return }
+        # A location edited in the Device Location panel belongs only to the
+        # currently displayed device. Navigating to another device abandons it.
+        if ($script:AppState) { $script:AppState.PendingLocation = $null }
         $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
         $locationDevice = if ($parentDevice) { $parentDevice } else { $Device }
         $Ui.SelectedDeviceText.Text = $Device.Name
@@ -3337,22 +3340,45 @@ function Find-SampleDevice {
             return $false
         }
 
+        $eventLocation = $null
+        if ($script:AppState -and $script:AppState.PendingLocation -and $script:AppState.PendingLocation.Device -eq $parentDevice) {
+            $eventLocation = $script:AppState.PendingLocation
+        }
+        $city = if ($eventLocation) { $eventLocation.City } else { $parentDevice.City }
+        $location = if ($eventLocation) { $eventLocation.Location } else { $parentDevice.Location }
+        $building = if ($eventLocation) { $eventLocation.Building } else { $parentDevice.Building }
+        $floor = if ($eventLocation) { $eventLocation.Floor } else { $parentDevice.Floor }
+        $room = if ($eventLocation) { $eventLocation.Room } else { $parentDevice.Room }
+        $department = if ($eventLocation) { $eventLocation.Department } else { $parentDevice.Department }
+
         Ensure-OutputFolder -ResolvedXamlPath $ResolvedXamlPath
         $csvPath = Get-RoundingEventsPath -ResolvedXamlPath $ResolvedXamlPath
         $row = [pscustomobject]([ordered]@{
             Timestamp=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
             AssetTag=$parentDevice.AssetTag; Name=$parentDevice.Name; Serial=$parentDevice.Serial
-            City=$parentDevice.City; Location=$parentDevice.Location; Building=$parentDevice.Building
-            Floor=$parentDevice.Floor; Room=$parentDevice.Room; CheckStatus=$Ui.CheckStatusComboBox.Text
+            City=$city; Location=$location; Building=$building
+            Floor=$floor; Room=$room; CheckStatus=$Ui.CheckStatusComboBox.Text
             RoundingMinutes=(Get-RoundingMinutes -Ui $Ui); CableMgmtOK=$(if($Ui.ValidateCableCheckBox.IsChecked){'Yes'}else{'No'})
             CablingNeeded=$(if($Ui.CablingNeededCheckBox.IsChecked){'Yes'}else{'No'})
             LabelOK=$(if($Ui.LabelMonitorCheckBox.IsChecked){'Yes'}else{'No'}); CartOK=$(if($Ui.PhysicalCartCheckBox.IsChecked){'Yes'}else{'No'})
             PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
-            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$parentDevice.Department
+            MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$department
             RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $parentDevice -RoundingByAssetTag $RoundingByAssetTag); Comments=$Ui.CommentsTextBox.Text
             Rounded='Yes'
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
+        if ($eventLocation) {
+            foreach ($target in @($parentDevice,$CurrentDevice) | Where-Object { $_ } | Select-Object -Unique) {
+                $target.City = $city
+                $target.Location = $location
+                $target.Building = $building
+                $target.Floor = $floor
+                $target.Room = $room
+                $target.Department = $department
+            }
+            Add-LocationUserAddRow -Inventory $Inventory -City $city -Location $location -Building $building -Floor $floor -Room $room -Department $department
+            $script:AppState.PendingLocation = $null
+        }
         if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
         $script:ManualRoundUsed = $false
         Set-StatusMessage -Ui $Ui -Mode 'Saved'
@@ -3516,17 +3542,17 @@ function Find-SampleDevice {
         Set-ControlText -Control $Ui.RoomTextBox -Value $Ui.RoomComboBox.Text
         Set-ControlText -Control $Ui.DepartmentTextBox -Value $Ui.DepartmentComboBox.Text
         if ($script:AppState) {
-            $targets = @($script:AppState.SelectedSummaryParent,$script:AppState.SelectedSummaryDevice,$script:AppState.CurrentDevice) | Where-Object { $_ }
-            foreach ($target in $targets) {
-                $target.City = $Ui.CityTextBox.Text
-                $target.Location = $Ui.LocationTextBox.Text
-                $target.Building = $Ui.BuildingTextBox.Text
-                $target.Floor = $Ui.FloorTextBox.Text
-                $target.Room = $Ui.RoomTextBox.Text
-                $target.Department = $Ui.DepartmentTextBox.Text
+            $locationDevice = if ($script:AppState.SelectedSummaryParent) { $script:AppState.SelectedSummaryParent } else { $script:AppState.SelectedSummaryDevice }
+            $script:AppState.PendingLocation = [pscustomobject]@{
+                Device = $locationDevice
+                City = [string]$Ui.CityTextBox.Text
+                Location = [string]$Ui.LocationTextBox.Text
+                Building = [string]$Ui.BuildingTextBox.Text
+                Floor = [string]$Ui.FloorTextBox.Text
+                Room = [string]$Ui.RoomTextBox.Text
+                Department = [string]$Ui.DepartmentTextBox.Text
             }
             if ($script:AppState.Inventory) {
-                Add-LocationUserAddRow -Inventory $script:AppState.Inventory -City $Ui.CityTextBox.Text -Location $Ui.LocationTextBox.Text -Building $Ui.BuildingTextBox.Text -Floor $Ui.FloorTextBox.Text -Room $Ui.RoomTextBox.Text -Department $Ui.DepartmentTextBox.Text
                 Set-LocationValidationStyle -Ui $Ui -Inventory $script:AppState.Inventory
             }
         }
@@ -3581,7 +3607,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3

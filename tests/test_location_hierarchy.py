@@ -62,6 +62,39 @@ def test_department_choices_are_not_restricted_to_the_selected_room():
     script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
     assert "Get-UniqueLocationValues -Rows $rows -Property 'Department'" in script
     assert "Get-UniqueLocationValues -Rows $departmentRows -Property 'Department'" not in script
+    assert "Set-ControlText -Control $Ui.DepartmentComboBox -Value ''" not in script
+
+
+def test_check_complete_requires_all_location_values_and_dropdowns():
+    script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
+    function = re.search(
+        r"function Update-CheckCompleteButtonState \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+
+    assert function
+    body = function.group("body")
+    for control in (
+        "MaintenanceTypeComboBox",
+        "CheckStatusComboBox",
+        "CityTextBox",
+        "LocationTextBox",
+        "BuildingTextBox",
+        "FloorTextBox",
+        "RoomTextBox",
+        "DepartmentTextBox",
+    ):
+        assert f"$Ui.{control}" in body
+    assert "$Ui.CheckCompleteButton.IsEnabled" in body
+    assert "[string]::IsNullOrWhiteSpace" in body
+
+
+def test_nearby_uses_completed_event_location_instead_of_stale_inventory_location():
+    script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
+    for field in ("Location", "Building", "Floor", "Room", "Department"):
+        assert f"$csvRoundedRow.{field}" in script
+        assert f"{field}=$nearby{field}" in script
 
 
 def test_selection_handlers_pass_the_selected_item_not_stale_combo_text():

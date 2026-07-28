@@ -2090,6 +2090,13 @@ try {
             $csvRoundedRow = if ($qualifyingRoundedEvent) { $qualifyingRoundedEvent.Row } else { $null }
             $isRoundedInCsv = Test-RoundingEventMarkedRounded -Row $csvRoundedRow
             $csvStatus = if ($csvRoundedRow -and $csvRoundedRow.PSObject.Properties.Name -contains 'CheckStatus' -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.CheckStatus)) { [string]$csvRoundedRow.CheckStatus } else { 'Complete' }
+            # RoundingEvents is authoritative after a location edit because the
+            # inventory export remains unchanged until its next refresh.
+            $nearbyLocation = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Location)) { [string]$csvRoundedRow.Location } else { $computer.Location }
+            $nearbyBuilding = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Building)) { [string]$csvRoundedRow.Building } else { $computer.Building }
+            $nearbyFloor = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Floor)) { [string]$csvRoundedRow.Floor } else { $computer.Floor }
+            $nearbyRoom = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Room)) { [string]$csvRoundedRow.Room } else { $computer.Room }
+            $nearbyDepartment = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Department)) { [string]$csvRoundedRow.Department } else { $computer.Department }
             $status = '-'
             $isStatusEditable = $true
             if ($isRoundedInCsv) {
@@ -2102,11 +2109,11 @@ try {
                 Subnet=(Get-NearbySubnetValue -IpAddress (Get-NearbyCachedValue -HostName $computer.Name -CacheName 'NearbyIpCache') -DataRoot $script:AppState.DataRoot)
                 AssetTag=$computer.AssetTag
                 Serial=$computer.Serial
-                Location=$computer.Location
-                Building=$computer.Building
-                Floor=$computer.Floor
-                Room=$computer.Room
-                Department=$computer.Department
+                Location=$nearbyLocation
+                Building=$nearbyBuilding
+                Floor=$nearbyFloor
+                Room=$nearbyRoom
+                Department=$nearbyDepartment
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
                 LastRounded=$lastRoundedText
                 LastRoundedBackground=$lastRoundedBackground
@@ -2817,6 +2824,21 @@ try {
         return $null
     }
 
+    function Update-CheckCompleteButtonState {
+        param([hashtable]$Ui)
+        if (-not $Ui -or -not $Ui.CheckCompleteButton) { return }
+        $requiredControls = @($Ui.MaintenanceTypeComboBox,$Ui.CheckStatusComboBox)
+        $isEditingLocation = $Ui.CityComboBox -and $Ui.CityComboBox.Visibility -eq [System.Windows.Visibility]::Visible
+        if ($isEditingLocation) {
+            $requiredControls += @($Ui.CityComboBox,$Ui.LocationComboBox,$Ui.BuildingComboBox,$Ui.FloorComboBox,$Ui.RoomComboBox,$Ui.DepartmentComboBox)
+        } else {
+            $requiredControls += @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)
+        }
+        $Ui.CheckCompleteButton.IsEnabled = (@($requiredControls | Where-Object {
+            -not $_ -or [string]::IsNullOrWhiteSpace([string]$_.Text)
+        }).Count -eq 0)
+    }
+
     function Set-ComboItems {
         param([System.Windows.Controls.ComboBox]$Combo,[object[]]$Items,[string]$Text)
         if (-not $Combo) { return }
@@ -2902,21 +2924,15 @@ try {
                 Set-ControlText -Control $Ui.BuildingComboBox -Value ''
                 Set-ControlText -Control $Ui.FloorComboBox -Value ''
                 Set-ControlText -Control $Ui.RoomComboBox -Value ''
-                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
             } elseif ($ChangedLevel -eq 'Location') {
                 Set-ControlText -Control $Ui.BuildingComboBox -Value ''
                 Set-ControlText -Control $Ui.FloorComboBox -Value ''
                 Set-ControlText -Control $Ui.RoomComboBox -Value ''
-                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
             } elseif ($ChangedLevel -eq 'Building') {
                 Set-ControlText -Control $Ui.FloorComboBox -Value ''
                 Set-ControlText -Control $Ui.RoomComboBox -Value ''
-                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
             } elseif ($ChangedLevel -eq 'Floor') {
                 Set-ControlText -Control $Ui.RoomComboBox -Value ''
-                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
-            } elseif ($ChangedLevel -eq 'Room') {
-                Set-ControlText -Control $Ui.DepartmentComboBox -Value ''
             }
             $cityText = if ($ChangedLevel -eq 'City' -and $PSBoundParameters.ContainsKey('ChangedValue')) { $ChangedValue } elseif ($InitialValues -and $InitialValues.ContainsKey('City')) { [string]$InitialValues.City } else { [string]$Ui.CityComboBox.Text }
             Set-ComboItems -Combo $Ui.CityComboBox -Items $cities -Text $cityText
@@ -2984,6 +3000,7 @@ try {
         $Ui.RoomTextBox.Text = $locationDevice.Room
         $Ui.DepartmentTextBox.Text = $locationDevice.Department
         Set-LocationValidationStyle -Ui $Ui -Inventory $Inventory
+        Update-CheckCompleteButtonState -Ui $Ui
         $script:AppState.SelectedSummaryDevice = $Device
         $script:AppState.SelectedSummaryParent = $parentDevice
         Update-FixNameButtonState -Ui $Ui -Device $Device -ParentDevice $parentDevice
@@ -3498,6 +3515,7 @@ function Find-SampleDevice {
             }
             Populate-LocationCombos -Ui $Ui -Inventory $Inventory -InitialValues $initialValues
         }
+        Update-CheckCompleteButtonState -Ui $Ui
     }
 
     function Get-LocationUserAddsPath {
@@ -3541,6 +3559,7 @@ function Find-SampleDevice {
         Set-ControlText -Control $Ui.FloorTextBox -Value $Ui.FloorComboBox.Text
         Set-ControlText -Control $Ui.RoomTextBox -Value $Ui.RoomComboBox.Text
         Set-ControlText -Control $Ui.DepartmentTextBox -Value $Ui.DepartmentComboBox.Text
+        Update-CheckCompleteButtonState -Ui $Ui
         if ($script:AppState) {
             $locationDevice = if ($script:AppState.SelectedSummaryParent) { $script:AppState.SelectedSummaryParent } else { $script:AppState.SelectedSummaryDevice }
             $script:AppState.PendingLocation = [pscustomobject]@{
@@ -3638,6 +3657,12 @@ function Find-SampleDevice {
     foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         $combo.Items.Clear()
         Set-ControlText -Control $combo -Value ''
+    }
+    foreach ($control in @($ui.MaintenanceTypeComboBox,$ui.CheckStatusComboBox,$ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
+        if ($control) { $control.Add_SelectionChanged({ Update-CheckCompleteButtonState -Ui $ui }) }
+    }
+    foreach ($box in @($ui.CityTextBox,$ui.LocationTextBox,$ui.BuildingTextBox,$ui.FloorTextBox,$ui.RoomTextBox,$ui.DepartmentTextBox)) {
+        if ($box) { $box.Add_TextChanged({ Update-CheckCompleteButtonState -Ui $ui }) }
     }
 
     if ($script:AppState -and -not ($script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending')) {
@@ -3869,6 +3894,8 @@ function Find-SampleDevice {
     $ui.RoundingTimeUpButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) + 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
     $ui.RoundingTimeDownButton.Add_Click({ Set-RoundingMinutes -Ui $ui -Minutes ((Get-RoundingMinutes -Ui $ui) - 1); $script:RoundingBaseMinutes = (Get-RoundingMinutes -Ui $ui); $roundingTimer.Stop(); $script:RoundingStartTimeUtc = $null })
     $ui.CheckCompleteButton.Add_Click({
+        Update-CheckCompleteButtonState -Ui $ui
+        if (-not $ui.CheckCompleteButton.IsEnabled) { return }
         $checkBoxes = @($ui.ValidateCableCheckBox,$ui.LabelMonitorCheckBox,$ui.ValidatePeripheralsCheckBox,$ui.PhysicalCartCheckBox)
         $enabled = @($checkBoxes | Where-Object { $_.IsEnabled })
         $allChecked = $enabled.Count -gt 0 -and (@($enabled | Where-Object { -not $_.IsChecked }).Count -eq 0)

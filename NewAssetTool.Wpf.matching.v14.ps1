@@ -2704,7 +2704,9 @@ try {
 
     function Add-LocationHierarchyRow {
         param([System.Collections.Generic.List[object]]$Rows,[hashtable]$Seen,[object]$Row)
-        if (-not $Rows -or -not $Seen -or -not $Row) { return }
+        # An empty List evaluates to $false in PowerShell.  Check for null explicitly so
+        # the first hierarchy row can be added to the newly-created collection.
+        if ($null -eq $Rows -or $null -eq $Seen -or $null -eq $Row) { return }
         $city = Get-LocationFieldValue $Row 'City'
         $location = Get-LocationFieldValue $Row 'Location'
         if ([string]::IsNullOrWhiteSpace($location)) { $location = Get-FieldValue -Row $Row -Names @('location') }

@@ -81,3 +81,24 @@ def test_save_event_scopes_nearby_from_the_system_location_value():
     body = handler.group("body")
     assert "$nearbyScopeDevice = [pscustomobject]@{ Location=[string]$ui.LocationTextBox.Text }" in body
     assert "Add-NearbyScope -Device $nearbyScopeDevice" in body
+
+
+def test_rounded_today_is_driven_by_rounded_and_refreshes_after_editor_save():
+    script = script_text()
+    loader = re.search(
+        r"function Load-NearbyRoundingEvents \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+    editor = re.search(
+        r"function Show-RoundingEventsFileEditor \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+
+    assert loader and editor
+    loader_body = loader.group("body")
+    assert "if (Test-RoundingEventMarkedRounded -Row $row)" in loader_body
+    assert "NearbyLastRoundedEventsByAsset[$assetKey] = $event" in loader_body
+    assert "NearbyRoundedTodayAssetTags.Add($assetKey)" in loader_body
+    assert "Update-NearbyRows -Ui $Ui -Inventory $script:AppState.Inventory" in editor.group("body")

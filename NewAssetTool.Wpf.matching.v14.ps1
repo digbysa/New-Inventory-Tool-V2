@@ -138,6 +138,13 @@ try {
 
     function Set-StatusMessage {
         param([hashtable]$Ui,[ValidateSet('Ready','Found','NotFound','Saved','Pinging','PingComplete','Warning')][string]$Mode,[string]$CustomText)
+        # A Nearby batch ping owns the shared status badge until it completes.
+        # Other UI events (including bubbled SelectionChanged events) must not
+        # replace its progress with the normal Ready/Found message mid-run.
+        if ($script:AppState -and
+            ($script:AppState.PSObject.Properties.Name -contains 'NearbyPingInProgress') -and
+            [bool]$script:AppState.NearbyPingInProgress -and
+            $Mode -notin @('Pinging','PingComplete','Warning')) { return }
         switch ($Mode) {
             'Ready' {
                 Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ready - enter a device and click Query.' })
@@ -156,7 +163,7 @@ try {
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
             }
             'Pinging' {
-                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Pinging 0 of 0 devices…' })
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Pinging 0 of 0 devices' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#FEE7C3' -ForegroundHex '#B45309'
             }
             'PingComplete' {
@@ -2336,9 +2343,10 @@ try {
     function Update-NearbyRowWithPingResult {
         param([object]$Row,[object]$Result)
         if (-not $Row) { return }
-        $Row.IPAddress = if ($Result -and $Result.IpAddress) { [string]$Result.IpAddress } else { '' }
-        $Row.Subnet = if ($Result -and $Result.Subnet) { [string]$Result.Subnet } else { '' }
-        $Row.PingStatus = if ($Result -and $Result.Success) { 'Success' } else { 'Fail' }
+        $resolved = $Result -and $Result.Success -and -not [string]::IsNullOrWhiteSpace([string]$Result.IpAddress)
+        $Row.IPAddress = if ($resolved) { [string]$Result.IpAddress } else { '' }
+        $Row.Subnet = if ($resolved -and $Result.Subnet) { [string]$Result.Subnet } else { '' }
+        $Row.PingStatus = if ($resolved) { 'Success' } else { 'Fail' }
         Set-NearbyCachedValue -HostName $Row.HostName -CacheName 'NearbyIpCache' -Value $Row.IPAddress
         Set-NearbyCachedValue -HostName $Row.HostName -CacheName 'NearbyHostColorCache' -Value $Row.PingStatus
     }
@@ -2355,7 +2363,8 @@ try {
         if ($total -eq 0) { return }
 
         if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $false }
-        Set-StatusMessage -Ui $Ui -Mode 'Pinging' -CustomText "Pinging 0 of $total devices…"
+        if ($script:AppState) { $script:AppState.NearbyPingInProgress = $true }
+        Set-StatusMessage -Ui $Ui -Mode 'Pinging' -CustomText "Pinging 0 of $total devices"
 
         # Keep ping work on the WPF dispatcher instead of a raw .NET worker thread.
         # PowerShell event scriptblocks invoked on BackgroundWorker/Task threads can run
@@ -2380,6 +2389,7 @@ try {
                 $sender.Stop()
                 try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
                 if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
+                if ($script:AppState) { $script:AppState.NearbyPingInProgress = $false }
                 if ($s -and $s.HadError) {
                     Set-StatusMessage -Ui $Ui -Mode 'Warning' -CustomText "Ping failed: $($s.ErrorMessage)"
                 } else {
@@ -2408,15 +2418,20 @@ try {
                 } else {
                     $ipAddress = Resolve-HostIPv4Address -HostName $hostName
                     try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                    $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
+                    # ICMP is commonly blocked even though DNS resolution proves the
+                    # hostname is valid.  Treat a resolved IPv4 address as success.
+                    $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=(-not [string]::IsNullOrWhiteSpace($ipAddress)) }
                 }
             } catch {
-                $s.HadError = $true
-                $s.ErrorMessage = $_.Exception.Message
+                $pingErrorMessage = $_.Exception.Message
                 $ipAddress = Resolve-HostIPv4Address -HostName $hostName
                 $subnet = ''
                 try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$false }
+                if ([string]::IsNullOrWhiteSpace($ipAddress)) {
+                    $s.HadError = $true
+                    $s.ErrorMessage = $pingErrorMessage
+                }
+                $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=(-not [string]::IsNullOrWhiteSpace($ipAddress)) }
             } finally {
                 try { if ($ping) { $ping.Dispose() } } catch {}
             }
@@ -2424,7 +2439,7 @@ try {
             $s.Updated++
             Update-NearbyRowWithPingResult -Row $row -Result $result
             try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
-            Set-StatusMessage -Ui $Ui -Mode 'Pinging' -CustomText "Pinging $($s.Updated) of $($s.Total) devices…"
+            Set-StatusMessage -Ui $Ui -Mode 'Pinging' -CustomText "Pinging $($s.Updated) of $($s.Total) devices"
         }.GetNewClosure())
         $timer.Start()
     }
@@ -3704,7 +3719,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3

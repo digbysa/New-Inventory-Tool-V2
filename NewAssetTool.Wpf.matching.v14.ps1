@@ -3428,9 +3428,9 @@ function Find-SampleDevice {
             PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
             MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$department
             RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $parentDevice -RoundingByAssetTag $RoundingByAssetTag); Comments=$Ui.CommentsTextBox.Text
-            # New events remain pending for the external rounding processor.  The
-            # only exception is a manual round whose URL was successfully opened.
-            Rounded=$(if ($script:ManualRoundUsed) { 'Yes' } else { 'No' })
+            # Saving the completed System-tab rounding event must mark the CSV row
+            # as rounded so Load-NearbyRoundingEvents can reflect it immediately.
+            Rounded='Yes'
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($eventLocation) {

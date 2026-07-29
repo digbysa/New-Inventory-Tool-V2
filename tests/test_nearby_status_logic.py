@@ -8,7 +8,7 @@ XAML_PATH = Path(__file__).resolve().parents[1] / "NewAssetTool.matching.v14.xam
 
 
 def completed(row):
-    return str(row.get("Rounded", "")).strip().lower() in {"yes", "true", "1", "rounded"}
+    return str(row.get("NearbyAdded", "")).strip().lower() == "yes"
 
 
 def most_recent_qualifying(events, asset, maintenance_type):
@@ -36,44 +36,44 @@ def nearby_status(events, asset, maintenance_type):
 
 def test_regular_device_uses_most_recent_completed_event_in_current_rounding_week():
     status, editable = nearby_status([
-        {"Timestamp": "2026-07-21 08:00:00", "AssetTag": "HSS-1", "CheckStatus": "Inaccessible - Other", "Rounded": "Yes"},
-        {"Timestamp": "2026-07-23 09:00:00", "AssetTag": "HSS-1", "CheckStatus": "Inaccessible - In use by Customer", "Rounded": "Yes"},
+        {"Timestamp": "2026-07-21 08:00:00", "AssetTag": "HSS-1", "CheckStatus": "Inaccessible - Other", "NearbyAdded": "Yes"},
+        {"Timestamp": "2026-07-23 09:00:00", "AssetTag": "HSS-1", "CheckStatus": "Inaccessible - In use by Customer", "NearbyAdded": "Yes"},
     ], "hss-1", "General Rounding")
     assert (status, editable) == ("Inaccessible - In use by Customer", False)
 
 
 def test_regular_device_ignores_previous_week_event_and_keeps_default_editable_status():
     status, editable = nearby_status([
-        {"Timestamp": "2026-07-17 09:00:00", "AssetTag": "HSS-2", "CheckStatus": "Inaccessible - Other", "Rounded": "Yes"},
+        {"Timestamp": "2026-07-17 09:00:00", "AssetTag": "HSS-2", "CheckStatus": "Inaccessible - Other", "NearbyAdded": "Yes"},
     ], "HSS-2", "General Rounding")
     assert (status, editable) == ("-", True)
 
 
 def test_clinical_critical_uses_today_event():
     status, editable = nearby_status([
-        {"Timestamp": "2026-07-24 10:00:00", "AssetTag": "HSS-3", "CheckStatus": "Inaccessible - Restricted area", "Rounded": "Yes"},
+        {"Timestamp": "2026-07-24 10:00:00", "AssetTag": "HSS-3", "CheckStatus": "Inaccessible - Restricted area", "NearbyAdded": "Yes"},
     ], "HSS-3", "Critical Clinical")
     assert (status, editable) == ("Inaccessible - Restricted area", False)
 
 
 def test_clinical_critical_ignores_previous_day_in_current_week():
     status, editable = nearby_status([
-        {"Timestamp": "2026-07-23 10:00:00", "AssetTag": "HSS-4", "CheckStatus": "Inaccessible - Room locked - Key Lock", "Rounded": "Yes"},
+        {"Timestamp": "2026-07-23 10:00:00", "AssetTag": "HSS-4", "CheckStatus": "Inaccessible - Room locked - Key Lock", "NearbyAdded": "Yes"},
     ], "HSS-4", "Critical Clinical")
     assert (status, editable) == ("-", True)
 
 
 def test_clinical_critical_ignores_previous_week_event():
     status, editable = nearby_status([
-        {"Timestamp": "2026-07-16 10:00:00", "AssetTag": "HSS-5", "CheckStatus": "Inaccessible - Other", "Rounded": "Yes"},
+        {"Timestamp": "2026-07-16 10:00:00", "AssetTag": "HSS-5", "CheckStatus": "Inaccessible - Other", "NearbyAdded": "Yes"},
     ], "HSS-5", "Critical Clinical")
     assert (status, editable) == ("-", True)
 
 
-def test_regular_device_uses_latest_completed_event_when_newer_unrounded_event_exists():
+def test_regular_device_uses_latest_nearby_added_event_when_newer_non_nearby_event_exists():
     status, editable = nearby_status([
-        {"Timestamp": "2026-07-23 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - Other", "Rounded": "Yes"},
-        {"Timestamp": "2026-07-24 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - In storage", "Rounded": "No"},
+        {"Timestamp": "2026-07-23 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - Other", "NearbyAdded": "Yes", "Rounded": "No"},
+        {"Timestamp": "2026-07-24 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - In storage", "NearbyAdded": "No", "Rounded": "Yes"},
     ], "HSS-6", "General Rounding")
     assert (status, editable) == ("Inaccessible - Other", False)
 

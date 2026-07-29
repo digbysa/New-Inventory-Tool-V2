@@ -3267,6 +3267,32 @@ try {
         }
     }
 
+    function Start-DelayedQueryPing {
+        param([hashtable]$Ui,[string]$QueryToken,[int]$DelayMilliseconds=3000)
+        if (-not $Ui.PingButton -or [string]::IsNullOrWhiteSpace($QueryToken)) { return }
+
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds($DelayMilliseconds)
+        $timer.Tag = [pscustomobject]@{ Ui=$Ui; QueryToken=$QueryToken }
+        $timer.Add_Tick({
+            param($sender,$eventArgs)
+            $sender.Stop()
+            $state = $sender.Tag
+            if (-not $state -or -not $script:AppState -or $script:AppState.CurrentQueryToken -ne $state.QueryToken) { return }
+
+            # Route the delayed check through the same button without treating it as
+            # an explicit request for a persistent cmd.exe ping window.
+            $script:AppState.AutomatedPingClick = $true
+            try {
+                $state.Ui.PingButton.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Button]::ClickEvent)))
+            }
+            finally {
+                $script:AppState.AutomatedPingClick = $false
+            }
+        })
+        $timer.Start()
+    }
+
     function Increment-Fonts {
         param([System.Windows.DependencyObject]$Root)
         if ($null -eq $Root) { return }
@@ -3647,7 +3673,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -3781,7 +3807,7 @@ function Find-SampleDevice {
         Set-DeviceNetworkVisibility -Ui $ui -IsVisible:$false
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
-        Start-OnlineStatusUpdateAsync -Ui $ui -HostName (Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory) -QueryToken $script:AppState.CurrentQueryToken
+        Start-DelayedQueryPing -Ui $ui -QueryToken $script:AppState.CurrentQueryToken
     })
 
     function Reset-RoundingFormForNextScan {
@@ -3847,7 +3873,12 @@ function Find-SampleDevice {
     })
     $ui.PingButton.Add_Click({
         try {
-            Invoke-CurrentDevicePing -Ui $ui -Inventory $script:AppState.Inventory -DataRoot $dataRoot -StartContinuous
+            if ($script:AppState.AutomatedPingClick) {
+                Invoke-CurrentDevicePing -Ui $ui -Inventory $script:AppState.Inventory -DataRoot $dataRoot
+            }
+            else {
+                Invoke-CurrentDevicePing -Ui $ui -Inventory $script:AppState.Inventory -DataRoot $dataRoot -StartContinuous
+            }
         } catch {
             [System.Windows.MessageBox]::Show($_.Exception.Message, 'Ping') | Out-Null
         }

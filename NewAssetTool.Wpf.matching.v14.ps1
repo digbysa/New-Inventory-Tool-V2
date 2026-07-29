@@ -447,7 +447,12 @@ try {
             $dt = [DateTime]::MinValue
             if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) { continue }
             $event = [pscustomobject]@{ Timestamp=$dt; Row=$row }
-            if (Test-RoundingEventMarkedRounded -Row $row) {
+            # A Nearby save represents a completed round for the Nearby view even
+            # though Rounded remains No until the external processor handles it.
+            # Use either signal when calculating the displayed last-round date and
+            # today's row styling, and keep the newest event for repeated devices.
+            $countsAsNearbyRound = (Test-RoundingEventMarkedRounded -Row $row) -or (Test-RoundingEventAddedNearby -Row $row)
+            if ($countsAsNearbyRound) {
                 $roundedExisting = $null
                 if ($script:AppState.NearbyLastRoundedEventsByAsset.ContainsKey($assetKey)) { $roundedExisting = $script:AppState.NearbyLastRoundedEventsByAsset[$assetKey] }
                 if (-not $roundedExisting -or $dt -gt $roundedExisting.Timestamp) { $script:AppState.NearbyLastRoundedEventsByAsset[$assetKey] = $event }

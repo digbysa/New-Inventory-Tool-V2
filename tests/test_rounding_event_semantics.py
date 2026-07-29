@@ -83,7 +83,7 @@ def test_save_event_scopes_nearby_from_the_system_location_value():
     assert "Add-NearbyScope -Device $nearbyScopeDevice" in body
 
 
-def test_rounded_today_is_driven_by_rounded_and_refreshes_after_editor_save():
+def test_nearby_added_event_updates_last_rounded_today_and_refreshes_after_editor_save():
     script = script_text()
     loader = re.search(
         r"function Load-NearbyRoundingEvents \{(?P<body>.*?)\n    \}",
@@ -98,7 +98,30 @@ def test_rounded_today_is_driven_by_rounded_and_refreshes_after_editor_save():
 
     assert loader and editor
     loader_body = loader.group("body")
-    assert "if (Test-RoundingEventMarkedRounded -Row $row)" in loader_body
+    assert "$countsAsNearbyRound = (Test-RoundingEventMarkedRounded -Row $row) -or (Test-RoundingEventAddedNearby -Row $row)" in loader_body
+    assert "if ($countsAsNearbyRound)" in loader_body
     assert "NearbyLastRoundedEventsByAsset[$assetKey] = $event" in loader_body
     assert "NearbyRoundedTodayAssetTags.Add($assetKey)" in loader_body
     assert "Update-NearbyRows -Ui $Ui -Inventory $script:AppState.Inventory" in editor.group("body")
+
+
+def test_nearby_last_rounded_map_keeps_latest_event_and_drives_row_colors():
+    script = script_text()
+    loader = re.search(
+        r"function Load-NearbyRoundingEvents \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+    builder = re.search(
+        r"function Build-NearbyDevices \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+
+    assert loader and builder
+    loader_body = loader.group("body")
+    builder_body = builder.group("body")
+    assert "$dt -gt $roundedExisting.Timestamp" in loader_body
+    assert "$csvRoundedEvent.Timestamp.ToString('dd MMMM yyyy')" in builder_body
+    assert "LastRoundedBackground=$lastRoundedBackground" in builder_body
+    assert "RowForeground=$(if ($isToday) { '#808080' } else { '#000000' })" in builder_body

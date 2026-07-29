@@ -19,3 +19,18 @@ def test_only_explicit_ping_click_starts_continuous_cmd_ping():
     )[1].split("else", 1)
     assert "-StartContinuous" not in automated_branch
     assert "-StartContinuous" in explicit_branch
+
+
+def test_nearby_ping_treats_resolved_host_as_success_when_icmp_is_blocked():
+    assert "Success=(-not [string]::IsNullOrWhiteSpace($ipAddress))" in SCRIPT
+    assert "$resolved = $Result -and $Result.Success" in SCRIPT
+    assert "$Row.IPAddress = if ($resolved)" in SCRIPT
+    assert "$Row.Subnet = if ($resolved -and $Result.Subnet)" in SCRIPT
+
+
+def test_nearby_ping_progress_owns_status_badge_until_completion():
+    assert "NearbyPingInProgress=$false" in SCRIPT
+    assert "$script:AppState.NearbyPingInProgress = $true" in SCRIPT
+    assert "$script:AppState.NearbyPingInProgress = $false" in SCRIPT
+    assert "$Mode -notin @('Pinging','PingComplete','Warning')" in SCRIPT
+    assert "devices…" not in SCRIPT

@@ -258,7 +258,7 @@ try {
         $state = [pscustomobject]@{ IsDirty=$false; IsSaving=$false }
         $nearbyStatusOptions = @('-','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
         $yesNoOptions = @('Yes','No')
-        $yesNoColumns = @('CableMgmnOk','CableMgmtOK','CablingNeeded','LabelOK','CartOK','PeripheralsOK','Rounded')
+        $yesNoColumns = @('CableMgmnOk','CableMgmtOK','CablingNeeded','LabelOK','CartOK','PeripheralsOK','Rounded','NearbyAdded')
         $maintenanceTypeOptions = @('Mobile Cart','General Rounding','Critical Clinical','Excluded')
         $table = New-Object System.Data.DataTable
         foreach ($column in $columns) { [void]$table.Columns.Add([string]$column, [string]) }
@@ -403,6 +403,12 @@ try {
         return $rounded -match '^(?i)(Yes|True|1|Rounded)$'
     }
 
+    function Test-RoundingEventAddedNearby {
+        param([object]$Row)
+        if (-not $Row -or -not ($Row.PSObject.Properties.Name -contains 'NearbyAdded')) { return $false }
+        return ([string]$Row.NearbyAdded).Trim() -match '^(?i)Yes$'
+    }
+
     function Get-RoundingPlanDateKeys {
         $keys = @{}
         if ($script:RoundingPlan -and $script:RoundingPlan.Dates) {
@@ -434,7 +440,7 @@ try {
             $assetKey = $assetKey.Trim().ToUpperInvariant()
             $dt = [DateTime]::MinValue
             if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) { continue }
-            if (-not (Test-RoundingEventMarkedRounded -Row $row)) { continue }
+            if (-not (Test-RoundingEventAddedNearby -Row $row)) { continue }
             $event = [pscustomobject]@{ Timestamp=$dt; Row=$row }
             $existing = $null
             if ($script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) { $existing = $script:AppState.NearbyRoundedEventsByAsset[$assetKey] }
@@ -455,13 +461,13 @@ try {
         if ($IsCriticalClinical) {
             if ($script:AppState.NearbyRoundedEventsByAsset -and $script:AppState.NearbyRoundedEventsByAsset.ContainsKey($key)) {
                 $event = $script:AppState.NearbyRoundedEventsByAsset[$key]
-                if ($event -and $event.Timestamp.Date -eq (Get-Date).Date -and (Test-RoundingEventMarkedRounded -Row $event.Row)) { return $event }
+                if ($event -and $event.Timestamp.Date -eq (Get-Date).Date -and (Test-RoundingEventAddedNearby -Row $event.Row)) { return $event }
             }
             return $null
         }
         if ($script:AppState.NearbyRoundedWeekEventsByAsset -and $script:AppState.NearbyRoundedWeekEventsByAsset.ContainsKey($key)) {
             $event = $script:AppState.NearbyRoundedWeekEventsByAsset[$key]
-            if ($event -and (Test-RoundingEventMarkedRounded -Row $event.Row)) { return $event }
+            if ($event -and (Test-RoundingEventAddedNearby -Row $event.Row)) { return $event }
         }
         return $null
     }
@@ -653,7 +659,7 @@ try {
     $script:RoundingEventColumns = @(
         'Timestamp','AssetTag','Name','Serial','City','Location','Building','Floor','Room',
         'CheckStatus','RoundingMinutes','CableMgmtOK','CablingNeeded','LabelOK','CartOK',
-        'PeripheralsOK','MaintenanceType','Department','RoundingUrl','Comments','Rounded'
+        'PeripheralsOK','MaintenanceType','Department','RoundingUrl','Comments','Rounded','NearbyAdded'
     )
 
     function Convert-ToRoundingEventRecord {
@@ -662,6 +668,9 @@ try {
         foreach ($column in $script:RoundingEventColumns) {
             $value = ''
             if ($Row -and ($Row.PSObject.Properties.Name -contains $column)) { $value = $Row.$column }
+            if ($column -eq 'NearbyAdded') {
+                $value = if (([string]$value).Trim() -match '^(?i)Yes$') { 'Yes' } else { 'No' }
+            }
             $record[$column] = $value
         }
         return [pscustomobject]$record
@@ -2109,18 +2118,18 @@ try {
             if ($lastRoundedDate -and $daysAgo -is [int]) { $isRecent = ($daysAgo -ge 1 -and $daysAgo -le 35) }
             $qualifyingRoundedEvent = Get-NearbyQualifyingRoundedEvent -AssetKey $assetKey -IsCriticalClinical:$isCriticalClinical
             $csvRoundedRow = if ($qualifyingRoundedEvent) { $qualifyingRoundedEvent.Row } else { $null }
-            $isRoundedInCsv = Test-RoundingEventMarkedRounded -Row $csvRoundedRow
+            $isNearbyAdded = Test-RoundingEventAddedNearby -Row $csvRoundedRow
             $csvStatus = if ($csvRoundedRow -and $csvRoundedRow.PSObject.Properties.Name -contains 'CheckStatus' -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.CheckStatus)) { [string]$csvRoundedRow.CheckStatus } else { 'Complete' }
             # RoundingEvents is authoritative after a location edit because the
             # inventory export remains unchanged until its next refresh.
-            $nearbyLocation = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Location)) { [string]$csvRoundedRow.Location } else { $computer.Location }
-            $nearbyBuilding = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Building)) { [string]$csvRoundedRow.Building } else { $computer.Building }
-            $nearbyFloor = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Floor)) { [string]$csvRoundedRow.Floor } else { $computer.Floor }
-            $nearbyRoom = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Room)) { [string]$csvRoundedRow.Room } else { $computer.Room }
-            $nearbyDepartment = if ($isRoundedInCsv -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Department)) { [string]$csvRoundedRow.Department } else { $computer.Department }
+            $nearbyLocation = if ($isNearbyAdded -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Location)) { [string]$csvRoundedRow.Location } else { $computer.Location }
+            $nearbyBuilding = if ($isNearbyAdded -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Building)) { [string]$csvRoundedRow.Building } else { $computer.Building }
+            $nearbyFloor = if ($isNearbyAdded -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Floor)) { [string]$csvRoundedRow.Floor } else { $computer.Floor }
+            $nearbyRoom = if ($isNearbyAdded -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Room)) { [string]$csvRoundedRow.Room } else { $computer.Room }
+            $nearbyDepartment = if ($isNearbyAdded -and -not [string]::IsNullOrWhiteSpace([string]$csvRoundedRow.Department)) { [string]$csvRoundedRow.Department } else { $computer.Department }
             $status = '-'
             $isStatusEditable = $true
-            if ($isRoundedInCsv) {
+            if ($isNearbyAdded) {
                 $status = $csvStatus
                 $isStatusEditable = $false
             }
@@ -3431,6 +3440,7 @@ function Find-SampleDevice {
             # New events remain pending for the external rounding processor.  The
             # only exception is a manual round whose URL was successfully opened.
             Rounded=$(if ($script:ManualRoundUsed) { 'Yes' } else { 'No' })
+            NearbyAdded='Yes'
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($eventLocation) {
@@ -3504,7 +3514,7 @@ function Find-SampleDevice {
                 RoundingMinutes=3; CableMgmtOK='No'; CablingNeeded='No'; LabelOK='No'; CartOK='No'; PeripheralsOK='No'
                 MaintenanceType=$item.MaintenanceType; Department=$item.Department
                 RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $device -RoundingByAssetTag $RoundingByAssetTag)
-                Comments=''; Rounded='No'
+                Comments=''; Rounded='No'; NearbyAdded='Yes'
             })
             Add-RoundingCsvRow -Path $csvPath -Row $row
             $saved++

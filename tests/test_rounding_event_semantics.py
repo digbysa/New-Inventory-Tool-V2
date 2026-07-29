@@ -21,6 +21,35 @@ def test_save_event_defaults_rounded_to_no_unless_manual_page_opened():
     assert "Rounded='Yes'" not in body
 
 
+def test_saved_events_are_marked_as_nearby_added_without_changing_rounding_default():
+    script = script_text()
+    save_event = re.search(
+        r"function Save-RoundingEvent \{(?P<body>.*?)\n    \}", script, re.DOTALL
+    )
+    nearby_save = re.search(
+        r"function Save-NearbyEvents \{(?P<body>.*?)\n    \}", script, re.DOTALL
+    )
+
+    assert save_event and nearby_save
+    assert "NearbyAdded='Yes'" in save_event.group("body")
+    assert "Rounded=$(if ($script:ManualRoundUsed) { 'Yes' } else { 'No' })" in save_event.group("body")
+    assert "Comments=''; Rounded='No'; NearbyAdded='Yes'" in nearby_save.group("body")
+
+
+def test_nearby_added_column_is_normalized_to_yes_or_no():
+    script = script_text()
+    converter = re.search(
+        r"function Convert-ToRoundingEventRecord \{(?P<body>.*?)\n    \}",
+        script,
+        re.DOTALL,
+    )
+
+    assert converter
+    body = converter.group("body")
+    assert "if ($column -eq 'NearbyAdded')" in body
+    assert "{ 'Yes' } else { 'No' }" in body
+
+
 def test_manual_round_is_recorded_only_after_start_process_succeeds():
     script = script_text()
     handler = re.search(

@@ -247,7 +247,6 @@ try {
         if (Test-Path -LiteralPath $csvPath) {
             try {
                 $imported = @(Import-Csv -LiteralPath $csvPath)
-                if ($imported.Count -gt 0) { $columns = @($imported[0].PSObject.Properties.Name) }
                 $rows = $imported
             } catch {
                 [System.Windows.MessageBox]::Show("Unable to open RoundingEvents.csv:`n$($_.Exception.Message)", 'File Editor') | Out-Null
@@ -380,6 +379,9 @@ try {
                 $table.AcceptChanges(); $state.IsDirty = $false; Set-StatusMessage -Ui $Ui -Mode 'Saved' -CustomText 'File Saved'
                 if ($script:RoundingPlan) { Update-RoundingPlanBadges -Ui $Ui -ResolvedXamlPath $ResolvedXamlPath -Plan $script:RoundingPlan }
                 Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath
+                if ($script:AppState -and $script:AppState.Inventory -and $Ui.NearbyDataGrid) {
+                    Update-NearbyRows -Ui $Ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $ResolvedXamlPath
+                }
             } finally { $state.IsSaving = $false }
             return $true
         }.GetNewClosure()
@@ -424,6 +426,10 @@ try {
         Ensure-NearbyState
         $script:AppState.NearbyRoundedTodayAssetTags.Clear()
         $script:AppState.NearbyRoundedEventsByAsset.Clear()
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyLastRoundedEventsByAsset') -or -not $script:AppState.NearbyLastRoundedEventsByAsset) {
+            $script:AppState | Add-Member -NotePropertyName NearbyLastRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
+        }
+        $script:AppState.NearbyLastRoundedEventsByAsset.Clear()
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedWeekEventsByAsset') -or -not $script:AppState.NearbyRoundedWeekEventsByAsset) {
             $script:AppState | Add-Member -NotePropertyName NearbyRoundedWeekEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
         }
@@ -440,12 +446,17 @@ try {
             $assetKey = $assetKey.Trim().ToUpperInvariant()
             $dt = [DateTime]::MinValue
             if (-not [DateTime]::TryParse([string]$row.Timestamp, [ref]$dt)) { continue }
-            if (-not (Test-RoundingEventAddedNearby -Row $row)) { continue }
             $event = [pscustomobject]@{ Timestamp=$dt; Row=$row }
+            if (Test-RoundingEventMarkedRounded -Row $row) {
+                $roundedExisting = $null
+                if ($script:AppState.NearbyLastRoundedEventsByAsset.ContainsKey($assetKey)) { $roundedExisting = $script:AppState.NearbyLastRoundedEventsByAsset[$assetKey] }
+                if (-not $roundedExisting -or $dt -gt $roundedExisting.Timestamp) { $script:AppState.NearbyLastRoundedEventsByAsset[$assetKey] = $event }
+                if ($dt.Date -eq $today) { [void]$script:AppState.NearbyRoundedTodayAssetTags.Add($assetKey) }
+            }
+            if (-not (Test-RoundingEventAddedNearby -Row $row)) { continue }
             $existing = $null
             if ($script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) { $existing = $script:AppState.NearbyRoundedEventsByAsset[$assetKey] }
             if (-not $existing -or $dt -gt $existing.Timestamp) { $script:AppState.NearbyRoundedEventsByAsset[$assetKey] = $event }
-            if ($dt.Date -eq $today) { [void]$script:AppState.NearbyRoundedTodayAssetTags.Add($assetKey) }
             if ($weekDateKeys.ContainsKey($dt.Date.ToString('yyyy-MM-dd'))) {
                 $weekExisting = $null
                 if ($script:AppState.NearbyRoundedWeekEventsByAsset.ContainsKey($assetKey)) { $weekExisting = $script:AppState.NearbyRoundedWeekEventsByAsset[$assetKey] }
@@ -2025,6 +2036,9 @@ try {
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedEventsByAsset') -or -not $script:AppState.NearbyRoundedEventsByAsset) {
             $script:AppState | Add-Member -NotePropertyName NearbyRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
         }
+        if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyLastRoundedEventsByAsset') -or -not $script:AppState.NearbyLastRoundedEventsByAsset) {
+            $script:AppState | Add-Member -NotePropertyName NearbyLastRoundedEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
+        }
         if (-not ($script:AppState.PSObject.Properties.Name -contains 'NearbyRoundedWeekEventsByAsset') -or -not $script:AppState.NearbyRoundedWeekEventsByAsset) {
             $script:AppState | Add-Member -NotePropertyName NearbyRoundedWeekEventsByAsset -NotePropertyValue (New-Object 'System.Collections.Generic.Dictionary[string,object]') -Force
         }
@@ -2099,8 +2113,8 @@ try {
                 $seenAssetTags[$assetKey] = $true
             }
             $csvRoundedEvent = $null
-            if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyRoundedEventsByAsset -and $script:AppState.NearbyRoundedEventsByAsset.ContainsKey($assetKey)) {
-                $csvRoundedEvent = $script:AppState.NearbyRoundedEventsByAsset[$assetKey]
+            if (-not [string]::IsNullOrWhiteSpace($assetKey) -and $script:AppState.NearbyLastRoundedEventsByAsset -and $script:AppState.NearbyLastRoundedEventsByAsset.ContainsKey($assetKey)) {
+                $csvRoundedEvent = $script:AppState.NearbyLastRoundedEventsByAsset[$assetKey]
             }
             $lastRoundedDate = if ($csvRoundedEvent) { $csvRoundedEvent.Timestamp } else { Parse-DateLoose -Value $computer.LastRounded }
             $lastRoundedText = if ($csvRoundedEvent) { $csvRoundedEvent.Timestamp.ToString('dd MMMM yyyy') } else { Format-DateLong $computer.LastRounded }

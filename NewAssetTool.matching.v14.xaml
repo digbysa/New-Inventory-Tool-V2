@@ -1055,14 +1055,39 @@
                                 <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="205" IsReadOnly="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <ComboBox ItemsSource="{Binding StatusOptions}"
-                                                      SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                      Padding="2,0"
-                                                      BorderThickness="0"
-                                                      Background="Transparent"
-                                                      VerticalContentAlignment="Center"
-                                                      HorizontalContentAlignment="Stretch"
-                                                      IsEnabled="{Binding IsStatusEditable}"/>
+                                            <Grid>
+                                                <ComboBox ItemsSource="{Binding StatusOptions}"
+                                                          SelectedItem="{Binding Status, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          Padding="2,0"
+                                                          BorderThickness="0"
+                                                          Background="Transparent"
+                                                          VerticalContentAlignment="Center"
+                                                          HorizontalContentAlignment="Stretch">
+                                                    <ComboBox.Style>
+                                                        <Style TargetType="ComboBox">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsStatusEditable}" Value="False">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ComboBox.Style>
+                                                </ComboBox>
+                                                <TextBlock Text="{Binding Status}"
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsStatusEditable}" Value="False">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>

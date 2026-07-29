@@ -1,7 +1,10 @@
 from datetime import datetime, date
+from pathlib import Path
+import xml.etree.ElementTree as ET
 
 TODAY = date(2026, 7, 24)
 CURRENT_ROUNDING_WEEK = {date(2026, 7, 20), date(2026, 7, 21), date(2026, 7, 22), date(2026, 7, 23), TODAY}
+XAML_PATH = Path(__file__).resolve().parents[1] / "NewAssetTool.matching.v14.xaml"
 
 
 def completed(row):
@@ -73,3 +76,27 @@ def test_regular_device_uses_latest_completed_event_when_newer_unrounded_event_e
         {"Timestamp": "2026-07-24 09:00:00", "AssetTag": "HSS-6", "CheckStatus": "Inaccessible - In storage", "Rounded": "No"},
     ], "HSS-6", "General Rounding")
     assert (status, editable) == ("Inaccessible - Other", False)
+
+
+def test_read_only_nearby_status_displays_the_csv_value_as_text():
+    root = ET.parse(XAML_PATH).getroot()
+    status_column = next(
+        element for element in root.iter()
+        if element.tag.endswith("DataGridTemplateColumn") and element.get("Header") == "Status"
+    )
+    status_text = next(
+        element for element in status_column.iter()
+        if element.tag.endswith("TextBlock") and element.get("Text") == "{Binding Status}"
+    )
+    trigger = next(
+        element for element in status_text.iter()
+        if element.tag.endswith("DataTrigger")
+        and element.get("Binding") == "{Binding IsStatusEditable}"
+        and element.get("Value") == "False"
+    )
+    assert any(
+        element.tag.endswith("Setter")
+        and element.get("Property") == "Visibility"
+        and element.get("Value") == "Visible"
+        for element in trigger
+    )

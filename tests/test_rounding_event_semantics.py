@@ -9,7 +9,7 @@ def script_text():
     return SCRIPT_PATH.read_text(encoding="utf-8-sig")
 
 
-def test_save_event_defaults_rounded_to_no_unless_manual_page_opened():
+def test_saved_system_event_is_marked_rounded_for_nearby_refresh():
     script = script_text()
     save_event = re.search(
         r"function Save-RoundingEvent \{(?P<body>.*?)\n    \}", script, re.DOTALL
@@ -17,8 +17,8 @@ def test_save_event_defaults_rounded_to_no_unless_manual_page_opened():
 
     assert save_event
     body = save_event.group("body")
-    assert "Rounded=$(if ($script:ManualRoundUsed) { 'Yes' } else { 'No' })" in body
-    assert "Rounded='Yes'" not in body
+    assert "Rounded='Yes'" in body
+    assert "Rounded=$(if ($script:ManualRoundUsed) { 'Yes' } else { 'No' })" not in body
 
 
 def test_manual_round_is_recorded_only_after_start_process_succeeds():

@@ -257,6 +257,9 @@ try {
 
         $state = [pscustomobject]@{ IsDirty=$false; IsSaving=$false }
         $nearbyStatusOptions = @('-','Complete','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')
+        $yesNoOptions = @('Yes','No')
+        $yesNoColumns = @('CableMgmnOk','CableMgmtOK','CablingNeeded','LabelOK','CartOK','PeripheralsOK','Rounded')
+        $maintenanceTypeOptions = @('Mobile Cart','General Rounding','Critical Clinical','Excluded')
         $table = New-Object System.Data.DataTable
         foreach ($column in $columns) { [void]$table.Columns.Add([string]$column, [string]) }
         foreach ($row in $rows) {
@@ -299,6 +302,24 @@ try {
                 $comboColumn.Header = $column
                 $comboColumn.SortMemberPath = [string]$column
                 $comboColumn.ItemsSource = $nearbyStatusOptions
+                $comboColumn.SelectedItemBinding = $binding
+                [void]$grid.Columns.Add($comboColumn)
+                continue
+            }
+            if ($yesNoColumns -contains [string]$column) {
+                $comboColumn = New-Object System.Windows.Controls.DataGridComboBoxColumn
+                $comboColumn.Header = $column
+                $comboColumn.SortMemberPath = [string]$column
+                $comboColumn.ItemsSource = $yesNoOptions
+                $comboColumn.SelectedItemBinding = $binding
+                [void]$grid.Columns.Add($comboColumn)
+                continue
+            }
+            if ([string]$column -eq 'MaintenanceType') {
+                $comboColumn = New-Object System.Windows.Controls.DataGridComboBoxColumn
+                $comboColumn.Header = $column
+                $comboColumn.SortMemberPath = [string]$column
+                $comboColumn.ItemsSource = $maintenanceTypeOptions
                 $comboColumn.SelectedItemBinding = $binding
                 [void]$grid.Columns.Add($comboColumn)
                 continue

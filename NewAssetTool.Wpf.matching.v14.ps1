@@ -2416,22 +2416,15 @@ try {
                     try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
                     $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=$true }
                 } else {
-                    $ipAddress = Resolve-HostIPv4Address -HostName $hostName
-                    try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                    # ICMP is commonly blocked even though DNS resolution proves the
-                    # hostname is valid.  Treat a resolved IPv4 address as success.
-                    $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=(-not [string]::IsNullOrWhiteSpace($ipAddress)) }
+                    # DNS can retain an address for an offline or reassigned host. Only
+                    # publish network details when this ping received an ICMP response.
+                    $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
                 }
             } catch {
                 $pingErrorMessage = $_.Exception.Message
-                $ipAddress = Resolve-HostIPv4Address -HostName $hostName
-                $subnet = ''
-                try { $subnet = Get-NearbySubnetValue -IpAddress $ipAddress -DataRoot $DataRoot } catch {}
-                if ([string]::IsNullOrWhiteSpace($ipAddress)) {
-                    $s.HadError = $true
-                    $s.ErrorMessage = $pingErrorMessage
-                }
-                $result = [pscustomobject]@{ IpAddress=$ipAddress; Subnet=$subnet; Success=(-not [string]::IsNullOrWhiteSpace($ipAddress)) }
+                $s.HadError = $true
+                $s.ErrorMessage = $pingErrorMessage
+                $result = [pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }
             } finally {
                 try { if ($ping) { $ping.Dispose() } } catch {}
             }

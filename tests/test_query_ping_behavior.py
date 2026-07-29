@@ -21,8 +21,14 @@ def test_only_explicit_ping_click_starts_continuous_cmd_ping():
     assert "-StartContinuous" in explicit_branch
 
 
-def test_nearby_ping_treats_resolved_host_as_success_when_icmp_is_blocked():
-    assert "Success=(-not [string]::IsNullOrWhiteSpace($ipAddress))" in SCRIPT
+def test_nearby_ping_only_reports_network_details_after_icmp_success():
+    nearby_ping = SCRIPT.split("function Start-NearbyRowsPingAsync", 1)[1].split(
+        "function Invoke-SelectedNearbyPing", 1
+    )[0]
+
+    assert "DNS can retain an address for an offline or reassigned host" in nearby_ping
+    assert nearby_ping.count("[pscustomobject]@{ IpAddress=''; Subnet=''; Success=$false }") == 3
+    assert "Success=(-not [string]::IsNullOrWhiteSpace($ipAddress))" not in nearby_ping
     assert "$resolved = $Result -and $Result.Success" in SCRIPT
     assert "$Row.IPAddress = if ($resolved)" in SCRIPT
     assert "$Row.Subnet = if ($resolved -and $Result.Subnet)" in SCRIPT

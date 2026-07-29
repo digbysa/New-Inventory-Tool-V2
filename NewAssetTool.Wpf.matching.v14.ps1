@@ -3428,7 +3428,9 @@ function Find-SampleDevice {
             PeripheralsOK=$(if($Ui.ValidatePeripheralsCheckBox.IsChecked){'Yes'}else{'No'})
             MaintenanceType=$Ui.MaintenanceTypeComboBox.Text; Department=$department
             RoundingUrl=(Get-RoundingUrlForDevice -CurrentDevice $parentDevice -RoundingByAssetTag $RoundingByAssetTag); Comments=$Ui.CommentsTextBox.Text
-            Rounded='Yes'
+            # New events remain pending for the external rounding processor.  The
+            # only exception is a manual round whose URL was successfully opened.
+            Rounded=$(if ($script:ManualRoundUsed) { 'Yes' } else { 'No' })
         })
         Add-RoundingCsvRow -Path $csvPath -Row $row
         if ($eventLocation) {
@@ -3968,8 +3970,10 @@ function Find-SampleDevice {
         }
         $saved = Save-RoundingEvent -Ui $ui -CurrentDevice $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath
         if (-not $saved) { return }
-        $nearbyScopeDevice = Resolve-ParentDevice -Device $script:AppState.CurrentDevice -Inventory $script:AppState.Inventory
-        if (-not $nearbyScopeDevice) { $nearbyScopeDevice = $script:AppState.CurrentDevice }
+        # Scope Nearby from the Location value that was visible on the System tab
+        # at the instant this event was saved, rather than inferring it from CSV
+        # rounding state or from another device record.
+        $nearbyScopeDevice = [pscustomobject]@{ Location=[string]$ui.LocationTextBox.Text }
         [void](Add-NearbyScope -Device $nearbyScopeDevice)
         Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
         $returnState = $script:AppState.NearbyReturnState
@@ -3983,8 +3987,13 @@ function Find-SampleDevice {
             [System.Windows.MessageBox]::Show("No rounding URL found for this device.","Manual Round") | Out-Null
             return
         }
-        $script:ManualRoundUsed = $true
-        Start-Process -FilePath $ui.ManualRoundButton.Tag
+        $script:ManualRoundUsed = $false
+        try {
+            Start-Process -FilePath $ui.ManualRoundButton.Tag -ErrorAction Stop
+            $script:ManualRoundUsed = $true
+        } catch {
+            [System.Windows.MessageBox]::Show("Unable to open the rounding webpage:`n$($_.Exception.Message)","Manual Round") | Out-Null
+        }
     })
     $ui.FileEditorButton.Add_Click({ Show-RoundingEventsFileEditor -Ui $ui -ResolvedXamlPath $resolvedXamlPath })
     $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath })

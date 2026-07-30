@@ -1,9 +1,23 @@
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (ROOT / "NewAssetTool.Wpf.matching.v14.ps1").read_text(encoding="utf-8")
 XAML = (ROOT / "NewAssetTool.matching.v14.xaml").read_text(encoding="utf-8")
+
+
+def test_dialog_xaml_declares_the_x_namespace_and_is_valid_xml():
+    function = SCRIPT.split("function Show-CriticalEventsDialog", 1)[1].split(
+        "function Invoke-CurrentDevicePing", 1
+    )[0]
+    dialog_xaml = re.search(r"\[xml\]\$dialogXaml = @'\s*(.*?)\s*'@", function, re.DOTALL)
+
+    assert dialog_xaml, "Critical Events dialog XAML must be present"
+    root = ET.fromstring(dialog_xaml.group(1))
+    assert root.tag == "{http://schemas.microsoft.com/winfx/2006/xaml/presentation}Window"
+    assert 'x:Name="TitleText"' in dialog_xaml.group(1)
 
 
 def test_button_is_immediately_right_of_lookup_subnet():

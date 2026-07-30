@@ -3384,7 +3384,7 @@ try {
     function Show-CriticalEventsDialog {
         param([hashtable]$Ui,[string]$ComputerName,[int]$TimeoutSeconds=15)
         [xml]$dialogXaml = @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Critical Events" Width="1040" Height="650" MinWidth="760" MinHeight="440" WindowStartupLocation="CenterOwner" Background="#F3F5F7" FontFamily="Segoe UI" FontSize="13">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Critical Events" Width="1040" Height="650" MinWidth="760" MinHeight="440" WindowStartupLocation="CenterOwner" Background="#F3F5F7" FontFamily="Segoe UI" FontSize="13">
   <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel><TextBlock x:Name="TitleText" FontSize="20" FontWeight="SemiBold" Foreground="#1F2A44"/><TextBlock x:Name="StatusText" Margin="0,6,0,14" TextWrapping="Wrap" Foreground="#475569"/></StackPanel>
     <DataGrid x:Name="EventsGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#FAFCFF" RowHeaderWidth="0" Visibility="Collapsed">

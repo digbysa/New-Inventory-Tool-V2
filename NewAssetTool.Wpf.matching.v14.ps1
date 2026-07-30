@@ -4056,7 +4056,7 @@ function Find-SampleDevice {
     Set-WindowIconFromFile -Window $window -ResolvedXamlPath $resolvedXamlPath
 
     $ui = Get-NamedControls -Window $window -Names @(
-        'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton',
+        'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton','CriticalEventsButton',
         'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
         'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedContainer','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',

@@ -57,3 +57,45 @@ def test_live_details_uses_floating_point_math_for_large_wmi_values():
     # second argument fail conversion before the dialog is displayed.
     assert "[Math]::Max([double]0, [double]$Details.DiskTotal-[double]$Details.DiskFree)" in body
     assert "[Math]::Max([double]0, [double]$Details.RamTotal-[double]$Details.RamFree)" in body
+
+
+def test_live_details_uses_plain_separators_and_shows_subnet():
+    body = _function_body("Show-LiveDetailsDialog")
+
+    assert '"{0}  Build {1}"' in body
+    assert "GB used, {1:N0} GB free, {2:N0} GB total" in body
+    assert "GB used, {1:N1} GB free, {2:N1} GB total" in body
+    assert 'Text="Subnet"' in body
+    assert "& $setText 'SubnetValue' $Details.Subnet" in body
+
+
+def test_live_details_collects_power_battery_and_dock_information():
+    lookup = _function_body("Get-LiveComputerDetails")
+    dialog = _function_body("Show-LiveDetailsDialog")
+
+    assert "-ClassName Win32_Battery" in lookup
+    assert "EstimatedChargeRemaining" in lookup
+    assert "'Plugged in'" in lookup
+    assert "-ClassName Win32_PnPEntity" in lookup
+    assert "No docking station detected" in lookup
+    assert 'Text="Power status"' in dialog
+    assert 'Text="Docking station"' in dialog
+
+
+def test_live_details_preserves_complete_ipv4_address_and_matching_subnet():
+    lookup = _function_body("Get-LiveComputerDetails")
+
+    assert "$addresses = @($network[0].IPAddress)" in lookup
+    assert "$subnets = @($network[0].IPSubnet)" in lookup
+    assert "$ipv4 = [string]$addresses[$i]" in lookup
+    assert "$subnet = [string]$subnets[$i]" in lookup
+    assert "[string]$ipv4[0]" not in lookup
+
+
+def test_live_details_button_tracks_automatic_ping_result():
+    script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
+
+    assert "$Ui.LiveDetailsButton.IsEnabled = $IsOnline" in script
+    assert "$ui.LiveDetailsButton.IsEnabled = $false" in script
+    assert "LiveDetailsAvailable=$false" in script
+    assert "$ui.LiveDetailsButton.IsEnabled = [bool]$script:AppState.LiveDetailsAvailable" in script

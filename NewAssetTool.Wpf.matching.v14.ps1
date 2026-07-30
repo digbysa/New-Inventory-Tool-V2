@@ -3280,6 +3280,8 @@ try {
         elseif (-not [string]::IsNullOrWhiteSpace($CheckedHost)) { $Ui.DeviceResponseTimeText.Text = "($CheckedHost)" }
         else { $Ui.DeviceResponseTimeText.Text = '(No response)' }
         Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$IsOnline
+        if ($script:AppState) { $script:AppState.LiveDetailsAvailable = $IsOnline }
+        if ($Ui.LiveDetailsButton) { $Ui.LiveDetailsButton.IsEnabled = $IsOnline }
         if ($IsOnline) {
             if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
             if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
@@ -3431,6 +3433,8 @@ try {
         Set-ControlText -Control $Ui.DeviceIpText -Value 'IP: Unknown'
         Set-ControlText -Control $Ui.DeviceSubnetText -Value 'Subnet: Unknown'
         Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$false
+        if ($script:AppState) { $script:AppState.LiveDetailsAvailable = $false }
+        if ($Ui.LiveDetailsButton) { $Ui.LiveDetailsButton.IsEnabled = $false }
         Update-FixNameButtonState -Ui $Ui -Device $null -ParentDevice $null
     }
 function Find-SampleDevice {
@@ -3649,6 +3653,11 @@ function Find-SampleDevice {
             $network = @(Get-CimInstance -CimSession $session -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True" -ErrorAction SilentlyContinue |
                 Where-Object { $_.DefaultIPGateway -and @($_.IPAddress | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' }).Length -gt 0 } |
                 Select-Object -First 1)
+            $enclosure = @(Get-CimInstance -CimSession $session -ClassName Win32_SystemEnclosure -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $battery = @(Get-CimInstance -CimSession $session -ClassName Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $dockDevices = @(Get-CimInstance -CimSession $session -ClassName Win32_PnPEntity -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '(?i)\bdock(?:ing)?\b' -and $_.ConfigManagerErrorCode -eq 0 } |
+                Select-Object -Property Name,Manufacturer -Unique)
 
             $boot = if ($os.LastBootUpTime -is [datetime]) { [datetime]$os.LastBootUpTime } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$os.LastBootUpTime) }
             $install = if ($os.InstallDate -is [datetime]) { [datetime]$os.InstallDate } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$os.InstallDate) }
@@ -3677,11 +3686,20 @@ function Find-SampleDevice {
                 }
             } catch {}
 
-            $powerMode = 'Unavailable'
-            try {
-                $powerPlan = @(Get-CimInstance -CimSession $session -Namespace root/cimv2/power -ClassName Win32_PowerPlan -Filter 'IsActive=True' -ErrorAction Stop | Select-Object -First 1)
-                if ($powerPlan.Length -gt 0 -and $powerPlan[0].ElementName) { $powerMode = [string]$powerPlan[0].ElementName }
-            } catch {}
+            $isLaptop = $false
+            if ($enclosure.Length -gt 0) {
+                $isLaptop = @($enclosure[0].ChassisTypes | Where-Object { [int]$_ -in @(8,9,10,11,12,14,18,21,30,31,32) }).Length -gt 0
+            }
+            if ($battery.Length -gt 0) { $isLaptop = $true }
+            $powerStatus = if ($battery.Length -gt 0) {
+                $batteryStatus = [int]$battery[0].BatteryStatus
+                $pluggedIn = $batteryStatus -in @(2,3,6,7,8,9,11)
+                $charge = if ($null -ne $battery[0].EstimatedChargeRemaining) { " - $([int]$battery[0].EstimatedChargeRemaining)% battery" } else { '' }
+                "$(if ($pluggedIn) { 'Plugged in' } else { 'On battery' })$charge"
+            } elseif ($isLaptop) { 'Battery information unavailable' } else { 'Plugged in (desktop)' }
+            $dockInfo = if (-not $isLaptop) { 'Not applicable (desktop)' } elseif ($dockDevices.Length -gt 0) {
+                @($dockDevices | ForEach-Object { if ($_.Manufacturer) { "{0} ({1})" -f $_.Name,$_.Manufacturer } else { [string]$_.Name } }) -join '; '
+            } else { 'No docking station detected' }
 
             $ou = 'Unavailable'
             try {
@@ -3693,18 +3711,31 @@ function Find-SampleDevice {
 
             $diskTotal = [double](@($disk | Measure-Object -Property Size -Sum).Sum)
             $diskFree = [double](@($disk | Measure-Object -Property FreeSpace -Sum).Sum)
-            $ipv4 = if ($network.Length -gt 0) { @($network[0].IPAddress | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' } | Select-Object -First 1) } else { @() }
+            $ipv4 = ''
+            $subnet = ''
+            if ($network.Length -gt 0) {
+                $addresses = @($network[0].IPAddress)
+                $subnets = @($network[0].IPSubnet)
+                for ($i = 0; $i -lt $addresses.Length; $i++) {
+                    if ([string]$addresses[$i] -match '^\d{1,3}(\.\d{1,3}){3}$') {
+                        $ipv4 = [string]$addresses[$i]
+                        if ($i -lt $subnets.Length) { $subnet = [string]$subnets[$i] }
+                        break
+                    }
+                }
+            }
             $adapterName = if ($network.Length -gt 0) { [string]$network[0].Description } else { '' }
             $connectionType = if ($adapterName -match '(?i)wi-?fi|wireless|wlan|802\.11') { 'Wi-Fi' } elseif ($adapterName) { 'LAN' } else { 'Not connected' }
 
             return [pscustomobject]@{
                 ComputerName=[string]$computer.Name; OU=$ou; OS=("{0} ({1})" -f $os.Caption,$os.OSArchitecture); Build=[string]$os.BuildNumber
                 Uptime=$uptime; InstallDate=$install; DiskTotal=$diskTotal; DiskFree=$diskFree; RamTotal=$totalRam; RamFree=$freeRam
-                BitLocker=$bitLocker; PendingReboot=$pendingReboot; LastUser=$(if ($computer.UserName) { [string]$computer.UserName } else { 'None' }); PowerMode=$powerMode
+                BitLocker=$bitLocker; PendingReboot=$pendingReboot; LastUser=$(if ($computer.UserName) { [string]$computer.UserName } else { 'None' }); PowerStatus=$powerStatus
                 Manufacturer=[string]$computer.Manufacturer; Model=[string]$computer.Model; Serial=$(if ($bios) { [string]$bios.SerialNumber } else { 'Unavailable' })
                 Bios=$(if ($bios) { [string]$bios.SMBIOSBIOSVersion } else { 'Unavailable' }); Processor=$(if ($processor.Length -gt 0) { [string]$processor[0].Name } else { 'Unavailable' })
                 GPU=$(if ($video.Length -gt 0) { $video -join '; ' } else { 'Unavailable' }); ConnectionType=$connectionType
-                IP=$(if ($ipv4.Length -gt 0) { [string]$ipv4[0] } else { 'Unavailable' }); Adapter=$(if ($adapterName) { $adapterName } else { 'Unavailable' })
+                IP=$(if ($ipv4) { $ipv4 } else { 'Unavailable' }); Subnet=$(if ($subnet) { $subnet } else { 'Unavailable' }); Adapter=$(if ($adapterName) { $adapterName } else { 'Unavailable' })
+                IsLaptop=$isLaptop; Dock=$dockInfo
             }
         } finally {
             if ($session) { Remove-CimSession -CimSession $session -ErrorAction SilentlyContinue }
@@ -3728,11 +3759,11 @@ function Find-SampleDevice {
    <StackPanel Grid.Column="0">
     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="SYSTEM" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions><TextBlock Style="{StaticResource Label}" Text="OU"/><TextBlock x:Name="OUValue" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="Operating system"/><TextBlock x:Name="OSValue" Grid.Row="1" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="Install date"/><TextBlock x:Name="InstallValue" Grid.Row="2" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="3" Style="{StaticResource Label}" Text="BitLocker"/><TextBlock x:Name="BitLockerValue" Grid.Row="3" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="Pending reboot"/><Border x:Name="RebootBadge" Grid.Row="4" Grid.Column="1" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left"><TextBlock x:Name="RebootValue" FontWeight="SemiBold"/></Border></Grid></StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="STORAGE &amp; MEMORY" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,10"/><TextBlock x:Name="DiskText"/><ProgressBar x:Name="DiskBar" Height="8" Margin="0,7,0,14" Background="#E2E8F0" Foreground="#22C55E"/><TextBlock x:Name="RamText"/><ProgressBar x:Name="RamBar" Height="8" Margin="0,7,0,0" Background="#E2E8F0" Foreground="#D59B20"/></StackPanel></Border>
-    <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="USER &amp; POWER" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Last logged-on user" Style="{StaticResource Label}"/><TextBlock x:Name="UserValue" Style="{StaticResource Value}"/><TextBlock Text="Power mode" Style="{StaticResource Label}"/><TextBlock x:Name="PowerValue" Style="{StaticResource Value}"/></StackPanel></Border>
+    <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="USER &amp; POWER" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Last logged-on user" Style="{StaticResource Label}"/><TextBlock x:Name="UserValue" Style="{StaticResource Value}"/><TextBlock Text="Power status" Style="{StaticResource Label}"/><TextBlock x:Name="PowerValue" Style="{StaticResource Value}"/><TextBlock Text="Docking station" Style="{StaticResource Label}"/><TextBlock x:Name="DockValue" Style="{StaticResource Value}"/></StackPanel></Border>
    </StackPanel>
    <StackPanel Grid.Column="1">
     <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel><TextBlock Text="HARDWARE" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Manufacturer / model" Style="{StaticResource Label}"/><TextBlock x:Name="ModelValue" Style="{StaticResource Value}"/><TextBlock Text="Serial number" Style="{StaticResource Label}"/><TextBlock x:Name="SerialValue" Style="{StaticResource Value}"/><TextBlock Text="BIOS" Style="{StaticResource Label}"/><TextBlock x:Name="BiosValue" Style="{StaticResource Value}"/><TextBlock Text="Processor" Style="{StaticResource Label}"/><TextBlock x:Name="ProcessorValue" Style="{StaticResource Value}"/><TextBlock Text="Graphics" Style="{StaticResource Label}"/><TextBlock x:Name="GpuValue" Style="{StaticResource Value}"/></StackPanel></Border>
-    <Border Style="{StaticResource Card}" Margin="0"><StackPanel><TextBlock Text="ACTIVE NETWORK" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><Border Background="#DCEEFF" CornerRadius="4" Padding="9,5" HorizontalAlignment="Left" Margin="0,0,0,8"><TextBlock x:Name="ConnectionValue" Foreground="#0F5EA8" FontWeight="SemiBold"/></Border><TextBlock Text="IP address" Style="{StaticResource Label}"/><TextBlock x:Name="IpValue" Style="{StaticResource Value}"/><TextBlock Text="Adapter" Style="{StaticResource Label}"/><TextBlock x:Name="AdapterValue" Style="{StaticResource Value}"/></StackPanel></Border>
+    <Border Style="{StaticResource Card}" Margin="0"><StackPanel><TextBlock Text="ACTIVE NETWORK" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><Border Background="#DCEEFF" CornerRadius="4" Padding="9,5" HorizontalAlignment="Left" Margin="0,0,0,8"><TextBlock x:Name="ConnectionValue" Foreground="#0F5EA8" FontWeight="SemiBold"/></Border><TextBlock Text="IP address" Style="{StaticResource Label}"/><TextBlock x:Name="IpValue" Style="{StaticResource Value}"/><TextBlock Text="Subnet" Style="{StaticResource Label}"/><TextBlock x:Name="SubnetValue" Style="{StaticResource Value}"/><TextBlock Text="Adapter" Style="{StaticResource Label}"/><TextBlock x:Name="AdapterValue" Style="{StaticResource Value}"/></StackPanel></Border>
    </StackPanel>
   </Grid></ScrollViewer>
  </DockPanel>
@@ -3744,14 +3775,14 @@ function Find-SampleDevice {
         $setText = { param($name,$value) $dialog.FindName($name).Text = [string]$value }
         & $setText 'TitleText' $Details.ComputerName
         & $setText 'OUValue' $Details.OU
-        & $setText 'OSValue' ("{0}  •  Build {1}" -f $Details.OS,$Details.Build)
+        & $setText 'OSValue' ("{0}  Build {1}" -f $Details.OS,$Details.Build)
         & $setText 'InstallValue' $Details.InstallDate.ToString('dd-MMM-yyyy h:mm tt')
         & $setText 'BitLockerValue' $Details.BitLocker
         & $setText 'RebootValue' $(if ($Details.PendingReboot) { 'Yes' } else { 'No' })
-        & $setText 'UserValue' $Details.LastUser; & $setText 'PowerValue' $Details.PowerMode
+        & $setText 'UserValue' $Details.LastUser; & $setText 'PowerValue' $Details.PowerStatus; & $setText 'DockValue' $Details.Dock
         & $setText 'ModelValue' ("{0} {1}" -f $Details.Manufacturer,$Details.Model)
         & $setText 'SerialValue' $Details.Serial; & $setText 'BiosValue' $Details.Bios; & $setText 'ProcessorValue' $Details.Processor; & $setText 'GpuValue' $Details.GPU
-        & $setText 'ConnectionValue' $Details.ConnectionType; & $setText 'IpValue' $Details.IP; & $setText 'AdapterValue' $Details.Adapter
+        & $setText 'ConnectionValue' $Details.ConnectionType; & $setText 'IpValue' $Details.IP; & $setText 'SubnetValue' $Details.Subnet; & $setText 'AdapterValue' $Details.Adapter
 
         $days = [int][Math]::Floor($Details.Uptime.TotalDays); $hours = $Details.Uptime.Hours
         & $setText 'UptimeText' ("Uptime  {0} days, {1} hours" -f $days,$hours)
@@ -3763,8 +3794,8 @@ function Find-SampleDevice {
         if ($Details.PendingReboot) { $rebootBadge.Background=New-Brush '#FCE3E5'; $rebootText.Foreground=New-Brush '#BE123C' } else { $rebootBadge.Background=New-Brush '#DDF7E5'; $rebootText.Foreground=New-Brush '#15803D' }
 
         $gb=1GB; $diskUsed=[Math]::Max([double]0, [double]$Details.DiskTotal-[double]$Details.DiskFree); $ramUsed=[Math]::Max([double]0, [double]$Details.RamTotal-[double]$Details.RamFree)
-        & $setText 'DiskText' ("Fixed disks   {0:N0} GB used  •  {1:N0} GB free  •  {2:N0} GB total" -f ($diskUsed/$gb),($Details.DiskFree/$gb),($Details.DiskTotal/$gb))
-        & $setText 'RamText' ("RAM   {0:N1} GB used  •  {1:N1} GB free  •  {2:N1} GB total" -f ($ramUsed/$gb),($Details.RamFree/$gb),($Details.RamTotal/$gb))
+        & $setText 'DiskText' ("Fixed disks   {0:N0} GB used, {1:N0} GB free, {2:N0} GB total" -f ($diskUsed/$gb),($Details.DiskFree/$gb),($Details.DiskTotal/$gb))
+        & $setText 'RamText' ("RAM   {0:N1} GB used, {1:N1} GB free, {2:N1} GB total" -f ($ramUsed/$gb),($Details.RamFree/$gb),($Details.RamTotal/$gb))
         $dialog.FindName('DiskBar').Value=if($Details.DiskTotal -gt 0){100*$diskUsed/$Details.DiskTotal}else{0}
         $dialog.FindName('RamBar').Value=if($Details.RamTotal -gt 0){100*$ramUsed/$Details.RamTotal}else{0}
         $dialog.ShowDialog() | Out-Null
@@ -3915,7 +3946,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -4050,6 +4081,8 @@ function Find-SampleDevice {
         Set-ControlText -Control $ui.DeviceIpText -Value 'IP: Checking...'
         Set-ControlText -Control $ui.DeviceSubnetText -Value 'Subnet: Checking...'
         Set-DeviceNetworkVisibility -Ui $ui -IsVisible:$false
+        $script:AppState.LiveDetailsAvailable = $false
+        $ui.LiveDetailsButton.IsEnabled = $false
         Set-ControlText -Control $ui.LastQueryBadgeText -Value "Queried $(Get-Date -Format 'HH:mm:ss')"
         Set-StatusMessage -Ui $ui -Mode 'Found'
         Start-DelayedQueryPing -Ui $ui -QueryToken $script:AppState.CurrentQueryToken
@@ -4147,7 +4180,7 @@ function Find-SampleDevice {
             Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText "Live details unavailable for $($computerName.Trim())"
             [System.Windows.MessageBox]::Show(("Could not retrieve live details from {0}.`n`nConfirm the computer is online and that you have remote WMI/CIM access.`n`n{1}" -f $computerName,$_.Exception.Message), 'Live Details') | Out-Null
         } finally {
-            $ui.LiveDetailsButton.IsEnabled = $true; $ui.LiveDetailsButton.Content = $originalContent; $ui.Window.Cursor = $null
+            $ui.LiveDetailsButton.IsEnabled = [bool]$script:AppState.LiveDetailsAvailable; $ui.LiveDetailsButton.Content = $originalContent; $ui.Window.Cursor = $null
         }
     })
     $ui.MonitorLabelButton.Add_Click({

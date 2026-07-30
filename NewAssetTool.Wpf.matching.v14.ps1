@@ -137,7 +137,7 @@ try {
     }
 
     function Set-StatusMessage {
-        param([hashtable]$Ui,[ValidateSet('Ready','Found','NotFound','Saved','Pinging','PingComplete','Warning')][string]$Mode,[string]$CustomText)
+        param([hashtable]$Ui,[ValidateSet('Ready','Found','NotFound','Saved','Pinging','PingComplete','Working','Warning')][string]$Mode,[string]$CustomText)
         # A Nearby batch ping owns the shared status badge until it completes.
         # Other UI events (including bubbled SelectionChanged events) must not
         # replace its progress with the normal Ready/Found message mid-run.
@@ -169,6 +169,10 @@ try {
             'PingComplete' {
                 Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Ping Complete' })
                 Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DDF7E5' -ForegroundHex '#15803D'
+            }
+            'Working' {
+                Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Working...' })
+                Set-BadgeStyle -Border $Ui.StatusMessageBadge -BackgroundHex '#DCEEFF' -ForegroundHex '#0F5EA8'
             }
             'Warning' {
                 Set-BadgeText -Border $Ui.StatusMessageBadge -Text $(if ($CustomText) { $CustomText } else { 'Warning' })
@@ -1249,9 +1253,17 @@ try {
         if ([string]::IsNullOrWhiteSpace($Key)) { return }
         $normalized = $Key.Trim().ToUpper()
         if ([string]::IsNullOrWhiteSpace($normalized)) { return }
-        $Index[$normalized] = $Value
+        # Computer host names are also commonly copied into the name field of
+        # their monitors. Keep the computer record authoritative for collisions
+        # so a host-name query retains its location and rounding fields.
+        if (-not $Index.ContainsKey($normalized) -or $Value.DetectedType -eq 'Computer' -or $Index[$normalized].DetectedType -ne 'Computer') {
+            $Index[$normalized] = $Value
+        }
         $compact = ($normalized -replace '[-\s]','')
-        if (-not [string]::IsNullOrWhiteSpace($compact)) { $Index[$compact] = $Value }
+        if (-not [string]::IsNullOrWhiteSpace($compact) -and
+            (-not $Index.ContainsKey($compact) -or $Value.DetectedType -eq 'Computer' -or $Index[$compact].DetectedType -ne 'Computer')) {
+            $Index[$compact] = $Value
+        }
     }
 
     function Build-InventoryIndices {
@@ -3635,7 +3647,7 @@ function Find-SampleDevice {
             $video = @(Get-CimInstance -CimSession $session -ClassName Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.Name } | Select-Object -ExpandProperty Name -Unique)
             $disk = @(Get-CimInstance -CimSession $session -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
             $network = @(Get-CimInstance -CimSession $session -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True" -ErrorAction SilentlyContinue |
-                Where-Object { $_.DefaultIPGateway -and @($_.IPAddress | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' }).Count -gt 0 } |
+                Where-Object { $_.DefaultIPGateway -and @($_.IPAddress | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' }).Length -gt 0 } |
                 Select-Object -First 1)
 
             $boot = if ($os.LastBootUpTime -is [datetime]) { [datetime]$os.LastBootUpTime } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$os.LastBootUpTime) }
@@ -3659,7 +3671,7 @@ function Find-SampleDevice {
             try {
                 $encryptedVolumes = @(Get-CimInstance -CimSession $session -Namespace root/cimv2/Security/MicrosoftVolumeEncryption -ClassName Win32_EncryptableVolume -ErrorAction Stop)
                 $systemVolume = @($encryptedVolumes | Where-Object { $_.DriveLetter -eq $os.SystemDrive } | Select-Object -First 1)
-                if ($systemVolume.Count -gt 0) {
+                if ($systemVolume.Length -gt 0) {
                     $status = Invoke-CimMethod -InputObject $systemVolume[0] -MethodName GetProtectionStatus -ErrorAction Stop
                     $bitLocker = if ($status.ProtectionStatus -eq 1) { 'On' } else { 'Off' }
                 }
@@ -3668,7 +3680,7 @@ function Find-SampleDevice {
             $powerMode = 'Unavailable'
             try {
                 $powerPlan = @(Get-CimInstance -CimSession $session -Namespace root/cimv2/power -ClassName Win32_PowerPlan -Filter 'IsActive=True' -ErrorAction Stop | Select-Object -First 1)
-                if ($powerPlan.Count -gt 0 -and $powerPlan[0].ElementName) { $powerMode = [string]$powerPlan[0].ElementName }
+                if ($powerPlan.Length -gt 0 -and $powerPlan[0].ElementName) { $powerMode = [string]$powerPlan[0].ElementName }
             } catch {}
 
             $ou = 'Unavailable'
@@ -3681,8 +3693,8 @@ function Find-SampleDevice {
 
             $diskTotal = [double](@($disk | Measure-Object -Property Size -Sum).Sum)
             $diskFree = [double](@($disk | Measure-Object -Property FreeSpace -Sum).Sum)
-            $ipv4 = if ($network.Count -gt 0) { @($network[0].IPAddress | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' } | Select-Object -First 1) } else { @() }
-            $adapterName = if ($network.Count -gt 0) { [string]$network[0].Description } else { '' }
+            $ipv4 = if ($network.Length -gt 0) { @($network[0].IPAddress | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' } | Select-Object -First 1) } else { @() }
+            $adapterName = if ($network.Length -gt 0) { [string]$network[0].Description } else { '' }
             $connectionType = if ($adapterName -match '(?i)wi-?fi|wireless|wlan|802\.11') { 'Wi-Fi' } elseif ($adapterName) { 'LAN' } else { 'Not connected' }
 
             return [pscustomobject]@{
@@ -3690,9 +3702,9 @@ function Find-SampleDevice {
                 Uptime=$uptime; InstallDate=$install; DiskTotal=$diskTotal; DiskFree=$diskFree; RamTotal=$totalRam; RamFree=$freeRam
                 BitLocker=$bitLocker; PendingReboot=$pendingReboot; LastUser=$(if ($computer.UserName) { [string]$computer.UserName } else { 'None' }); PowerMode=$powerMode
                 Manufacturer=[string]$computer.Manufacturer; Model=[string]$computer.Model; Serial=$(if ($bios) { [string]$bios.SerialNumber } else { 'Unavailable' })
-                Bios=$(if ($bios) { [string]$bios.SMBIOSBIOSVersion } else { 'Unavailable' }); Processor=$(if ($processor.Count -gt 0) { [string]$processor[0].Name } else { 'Unavailable' })
-                GPU=$(if ($video.Count -gt 0) { $video -join '; ' } else { 'Unavailable' }); ConnectionType=$connectionType
-                IP=$(if ($ipv4.Count -gt 0) { [string]$ipv4[0] } else { 'Unavailable' }); Adapter=$(if ($adapterName) { $adapterName } else { 'Unavailable' })
+                Bios=$(if ($bios) { [string]$bios.SMBIOSBIOSVersion } else { 'Unavailable' }); Processor=$(if ($processor.Length -gt 0) { [string]$processor[0].Name } else { 'Unavailable' })
+                GPU=$(if ($video.Length -gt 0) { $video -join '; ' } else { 'Unavailable' }); ConnectionType=$connectionType
+                IP=$(if ($ipv4.Length -gt 0) { [string]$ipv4[0] } else { 'Unavailable' }); Adapter=$(if ($adapterName) { $adapterName } else { 'Unavailable' })
             }
         } finally {
             if ($session) { Remove-CimSession -CimSession $session -ErrorAction SilentlyContinue }
@@ -4124,9 +4136,15 @@ function Find-SampleDevice {
         $originalContent = $ui.LiveDetailsButton.Content
         try {
             $ui.LiveDetailsButton.IsEnabled = $false; $ui.LiveDetailsButton.Content = 'Loading...'; $ui.Window.Cursor = [System.Windows.Input.Cursors]::Wait
+            Set-StatusMessage -Ui $ui -Mode 'Working' -CustomText "Retrieving live details from $($computerName.Trim())..."
+            # The lookup is synchronous, so explicitly let WPF paint the status
+            # change before remote CIM calls begin.
+            $ui.Window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
             $details = Get-LiveComputerDetails -ComputerName $computerName.Trim()
+            Set-StatusMessage -Ui $ui -Mode 'Found' -CustomText "Live details retrieved from $($computerName.Trim())"
             Show-LiveDetailsDialog -Details $details -Owner $ui.Window
         } catch {
+            Set-StatusMessage -Ui $ui -Mode 'Warning' -CustomText "Live details unavailable for $($computerName.Trim())"
             [System.Windows.MessageBox]::Show(("Could not retrieve live details from {0}.`n`nConfirm the computer is online and that you have remote WMI/CIM access.`n`n{1}" -f $computerName,$_.Exception.Message), 'Live Details') | Out-Null
         } finally {
             $ui.LiveDetailsButton.IsEnabled = $true; $ui.LiveDetailsButton.Content = $originalContent; $ui.Window.Cursor = $null

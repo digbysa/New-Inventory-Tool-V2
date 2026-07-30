@@ -3664,6 +3664,58 @@ function Find-SampleDevice {
                 Select-Object -Property Name,Manufacturer -Unique)
             $profiles = @(Get-CimInstance -CimSession $session -ClassName Win32_UserProfile -Filter "Special=False" -ErrorAction SilentlyContinue)
 
+            # Win32_ComputerSystem.UserName identifies the interactive user, but
+            # WMI does not expose that session's idle time.  Query User uses the
+            # Terminal Services RPC endpoint and reports both pieces of data
+            # without requiring WinRM/PowerShell remoting on the target.
+            $activeUser = if ($computer.UserName) { [string]$computer.UserName } else { 'None' }
+            $lastActive = if ($computer.UserName) { 'Unavailable (session idle time could not be read)' } else { 'No signed-in user' }
+            try {
+                $sessionLines = @(& "$env:SystemRoot\System32\quser.exe" "/server:$ComputerName" 2>$null)
+                $header = @($sessionLines | Select-Object -First 1)
+                if ($header.Length -gt 0) {
+                    $idColumn = ([string]$header[0]).IndexOf(' ID ')
+                    $stateColumn = ([string]$header[0]).IndexOf(' STATE ')
+                    $idleColumn = ([string]$header[0]).IndexOf(' IDLE TIME ')
+                    $logonColumn = ([string]$header[0]).IndexOf(' LOGON TIME ')
+                    $userLeaf = if ($computer.UserName) { ([string]$computer.UserName -split '\\')[-1] } else { '' }
+                    $sessionRows = @($sessionLines | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+                    $selectedSession = @()
+                    if ($userLeaf) {
+                        $selectedSession = @($sessionRows | Where-Object {
+                            ([string]$_).TrimStart('>',' ') -match ('^(?i)' + [regex]::Escape($userLeaf) + '\s')
+                        } | Select-Object -First 1)
+                    }
+                    if ($selectedSession.Length -eq 0 -and $stateColumn -ge 0) {
+                        $selectedSession = @($sessionRows | Where-Object {
+                            ([string]$_).Length -gt $stateColumn -and ([string]$_).Substring($stateColumn) -match '^\s*Active\b'
+                        } | Select-Object -First 1)
+                    }
+                    if ($selectedSession.Length -eq 0) { $selectedSession = @($sessionRows | Select-Object -First 1) }
+                    if ($selectedSession.Length -gt 0 -and $idColumn -gt 0 -and $idleColumn -gt $idColumn -and $logonColumn -gt $idleColumn) {
+                        $sessionLine = ([string]$selectedSession[0]).PadRight($logonColumn)
+                        $sessionUser = @($sessionLine.Substring(0,$idColumn).Trim('>',' ') -split '\s+' | Select-Object -First 1)
+                        $sessionUser = if ($sessionUser.Length -gt 0) { [string]$sessionUser[0] } else { '' }
+                        if ($sessionUser) {
+                            $activeUser = if ($computer.UserName -and ([string]$computer.UserName -match '\\')) {
+                                '{0}\{1}' -f (([string]$computer.UserName -split '\\')[0]),$sessionUser
+                            } else { $sessionUser }
+                        }
+                        $idleText = $sessionLine.Substring($idleColumn,$logonColumn-$idleColumn).Trim()
+                        $idleSpan = $null
+                        if ($idleText -in @('none','.')) { $idleSpan = [TimeSpan]::Zero }
+                        elseif ($idleText -match '^(\d+)\+(\d+):(\d+)$') { $idleSpan = New-TimeSpan -Days ([int]$Matches[1]) -Hours ([int]$Matches[2]) -Minutes ([int]$Matches[3]) }
+                        elseif ($idleText -match '^(\d+):(\d+)$') { $idleSpan = New-TimeSpan -Hours ([int]$Matches[1]) -Minutes ([int]$Matches[2]) }
+                        elseif ($idleText -match '^\d+$') { $idleSpan = New-TimeSpan -Minutes ([int]$idleText) }
+                        if ($null -ne $idleSpan) {
+                            $lastInputTime = (Get-Date).Subtract($idleSpan)
+                            $idleDescription = if ($idleSpan.TotalMinutes -lt 1) { 'active now' } elseif ($idleSpan.TotalDays -ge 1) { '{0}d {1}h idle' -f [int][Math]::Floor($idleSpan.TotalDays),$idleSpan.Hours } elseif ($idleSpan.TotalHours -ge 1) { '{0}h {1}m idle' -f [int][Math]::Floor($idleSpan.TotalHours),$idleSpan.Minutes } else { '{0}m idle' -f [int][Math]::Floor($idleSpan.TotalMinutes) }
+                            $lastActive = if ($idleSpan.TotalMinutes -lt 1) { 'Active now' } else { '{0} ({1})' -f $lastInputTime.ToString('dd-MMM-yyyy h:mm tt'),$idleDescription }
+                        } else { $lastActive = "Idle time unavailable (Query User reported '$idleText')" }
+                    }
+                }
+            } catch {}
+
             $monitorIds = @(Get-CimInstance -CimSession $session -Namespace root/wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue | Where-Object { $_.Active })
             $monitorConnections = @(Get-CimInstance -CimSession $session -Namespace root/wmi -ClassName WmiMonitorConnectionParams -ErrorAction SilentlyContinue)
             $monitorModes = @(Get-CimInstance -CimSession $session -Namespace root/wmi -ClassName WmiMonitorListedSupportedSourceModes -ErrorAction SilentlyContinue)
@@ -3773,7 +3825,7 @@ function Find-SampleDevice {
             return [pscustomobject]@{
                 ComputerName=[string]$computer.Name; OU=$ou; OS=("{0} ({1})" -f $os.Caption,$os.OSArchitecture); Build=[string]$os.BuildNumber
                 Uptime=$uptime; InstallDate=$install; DiskTotal=$diskTotal; DiskFree=$diskFree; RamTotal=$totalRam; RamFree=$freeRam
-                BitLocker=$bitLocker; PendingReboot=$pendingReboot; LastUser=$(if ($computer.UserName) { [string]$computer.UserName } else { 'None' }); PowerStatus=$powerStatus
+                BitLocker=$bitLocker; PendingReboot=$pendingReboot; ActiveUser=$activeUser; LastActive=$lastActive; PowerStatus=$powerStatus
                 Manufacturer=[string]$computer.Manufacturer; Model=[string]$computer.Model; Serial=$(if ($bios) { [string]$bios.SerialNumber } else { 'Unavailable' })
                 Bios=$(if ($bios) { [string]$bios.SMBIOSBIOSVersion } else { 'Unavailable' }); Processor=$(if ($processor.Length -gt 0) { [string]$processor[0].Name } else { 'Unavailable' })
                 GPU=$(if ($video.Length -gt 0) { $video -join '; ' } else { 'Unavailable' }); ConnectionType=$connectionType
@@ -3803,7 +3855,7 @@ function Find-SampleDevice {
    <StackPanel Grid.Column="0">
     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="SYSTEM" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions><TextBlock Style="{StaticResource Label}" Text="OU"/><TextBlock x:Name="OUValue" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="Operating system"/><TextBlock x:Name="OSValue" Grid.Row="1" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="Install date"/><TextBlock x:Name="InstallValue" Grid.Row="2" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="3" Style="{StaticResource Label}" Text="BitLocker"/><TextBlock x:Name="BitLockerValue" Grid.Row="3" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="Pending reboot"/><Border x:Name="RebootBadge" Grid.Row="4" Grid.Column="1" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left"><TextBlock x:Name="RebootValue" FontWeight="SemiBold"/></Border><TextBlock Grid.Row="5" Style="{StaticResource Label}" Text="User profiles"/><TextBlock x:Name="ProfilesValue" Grid.Row="5" Grid.Column="1" Style="{StaticResource Value}"/></Grid></StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="STORAGE &amp; MEMORY" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,10"/><TextBlock x:Name="DiskText"/><ProgressBar x:Name="DiskBar" Height="8" Margin="0,7,0,14" Background="#E2E8F0" Foreground="#22C55E"/><TextBlock x:Name="RamText"/><ProgressBar x:Name="RamBar" Height="8" Margin="0,7,0,0" Background="#E2E8F0" Foreground="#D59B20"/></StackPanel></Border>
-    <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="USER &amp; POWER" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Last logged-on user" Style="{StaticResource Label}"/><TextBlock x:Name="UserValue" Style="{StaticResource Value}"/><TextBlock Text="Power status" Style="{StaticResource Label}"/><TextBlock x:Name="PowerValue" Style="{StaticResource Value}"/><StackPanel x:Name="DockPanel"><TextBlock Text="Docking station" Style="{StaticResource Label}"/><TextBlock x:Name="DockValue" Style="{StaticResource Value}"/></StackPanel></StackPanel></Border>
+    <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="USER &amp; POWER" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Signed-in user" Style="{StaticResource Label}"/><TextBlock x:Name="UserValue" Style="{StaticResource Value}"/><TextBlock Text="Last active" Style="{StaticResource Label}"/><TextBlock x:Name="LastActiveValue" Style="{StaticResource Value}"/><TextBlock Text="Power status" Style="{StaticResource Label}"/><TextBlock x:Name="PowerValue" Style="{StaticResource Value}"/><StackPanel x:Name="DockPanel"><TextBlock Text="Docking station" Style="{StaticResource Label}"/><TextBlock x:Name="DockValue" Style="{StaticResource Value}"/></StackPanel></StackPanel></Border>
    </StackPanel>
    <StackPanel Grid.Column="1">
     <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel><TextBlock Text="HARDWARE" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Manufacturer / model" Style="{StaticResource Label}"/><TextBlock x:Name="ModelValue" Style="{StaticResource Value}"/><TextBlock Text="Serial number" Style="{StaticResource Label}"/><TextBlock x:Name="SerialValue" Style="{StaticResource Value}"/><TextBlock Text="BIOS" Style="{StaticResource Label}"/><TextBlock x:Name="BiosValue" Style="{StaticResource Value}"/><TextBlock Text="Processor" Style="{StaticResource Label}"/><TextBlock x:Name="ProcessorValue" Style="{StaticResource Value}"/><TextBlock Text="Graphics" Style="{StaticResource Label}"/><TextBlock x:Name="GpuValue" Style="{StaticResource Value}"/><TextBlock Text="Monitors" Style="{StaticResource Label}"/><TextBlock x:Name="MonitorsValue" Style="{StaticResource Value}"/></StackPanel></Border>
@@ -3824,7 +3876,7 @@ function Find-SampleDevice {
         & $setText 'BitLockerValue' $Details.BitLocker
         & $setText 'RebootValue' $(if ($Details.PendingReboot) { 'Yes' } else { 'No' })
         & $setText 'ProfilesValue' $Details.UserProfileCount
-        & $setText 'UserValue' $Details.LastUser; & $setText 'PowerValue' $Details.PowerStatus; & $setText 'DockValue' $Details.Dock
+        & $setText 'UserValue' $Details.ActiveUser; & $setText 'LastActiveValue' $Details.LastActive; & $setText 'PowerValue' $Details.PowerStatus; & $setText 'DockValue' $Details.Dock
         $dialog.FindName('DockPanel').Visibility = if ($Details.ShowDock) { 'Visible' } else { 'Collapsed' }
         & $setText 'ModelValue' ("{0} {1}" -f $Details.Manufacturer,$Details.Model)
         & $setText 'SerialValue' $Details.Serial; & $setText 'BiosValue' $Details.Bios; & $setText 'ProcessorValue' $Details.Processor; & $setText 'GpuValue' $Details.GPU; & $setText 'MonitorsValue' $Details.Monitors

@@ -120,6 +120,19 @@ def test_live_details_collects_monitor_and_profile_information():
     assert "& $setText 'ProfilesValue' $Details.UserProfileCount" in dialog
 
 
+def test_live_details_shows_signed_in_user_and_last_input_time():
+    lookup = _function_body("Get-LiveComputerDetails")
+    dialog = _function_body("Show-LiveDetailsDialog")
+
+    assert 'quser.exe" "/server:$ComputerName"' in lookup
+    assert "ActiveUser=$activeUser; LastActive=$lastActive" in lookup
+    assert "New-TimeSpan -Minutes ([int]$idleText)" in lookup
+    assert "'Active now'" in lookup
+    assert 'Text="Signed-in user"' in dialog
+    assert 'Text="Last active"' in dialog
+    assert "& $setText 'LastActiveValue' $Details.LastActive" in dialog
+
+
 def test_live_details_button_tracks_automatic_ping_result():
     script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
 

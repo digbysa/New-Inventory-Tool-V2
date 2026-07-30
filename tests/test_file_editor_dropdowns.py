@@ -42,6 +42,13 @@ def test_file_editor_always_uses_current_schema_with_nearby_added_last():
     assert "$columns = @($imported[0].PSObject.Properties.Name)" not in body
 
 
+def test_file_editor_hides_nearby_added_without_removing_it_from_the_schema():
+    body = _file_editor_body()
+
+    assert "if ([string]$column -eq 'NearbyAdded') { continue }" in body
+    assert "foreach($c in $columns){ $obj[$c] = [string]$_[$c] }" in body
+
+
 def test_file_editor_uses_requested_maintenance_type_dropdown_options():
     body = _file_editor_body()
 

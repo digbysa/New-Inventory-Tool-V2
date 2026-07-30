@@ -76,20 +76,35 @@ def test_live_details_collects_power_battery_and_dock_information():
     assert "-ClassName Win32_Battery" in lookup
     assert "EstimatedChargeRemaining" in lookup
     assert "'Plugged in'" in lookup
+    assert "Batteries: $($charges -join ', ')" in lookup
     assert "-ClassName Win32_PnPEntity" in lookup
-    assert "No docking station detected" in lookup
+    assert "ShowDock=($isLaptop -and $dockDevices.Length -gt 0)" in lookup
     assert 'Text="Power status"' in dialog
     assert 'Text="Docking station"' in dialog
+    assert "if ($Details.ShowDock) { 'Visible' } else { 'Collapsed' }" in dialog
 
 
-def test_live_details_preserves_complete_ipv4_address_and_matching_subnet():
+def test_live_details_preserves_ipv4_address_and_uses_named_subnet_lookup():
     lookup = _function_body("Get-LiveComputerDetails")
 
     assert "$addresses = @($network[0].IPAddress)" in lookup
-    assert "$subnets = @($network[0].IPSubnet)" in lookup
     assert "$ipv4 = [string]$addresses[$i]" in lookup
-    assert "$subnet = [string]$subnets[$i]" in lookup
+    assert "Resolve-SubnetName -IpAddress $ipv4 -DataRoot $DataRoot" in lookup
+    assert "IPSubnet" not in lookup
     assert "[string]$ipv4[0]" not in lookup
+
+
+def test_live_details_collects_monitor_and_profile_information():
+    lookup = _function_body("Get-LiveComputerDetails")
+    dialog = _function_body("Show-LiveDetailsDialog")
+
+    assert "-ClassName WmiMonitorID" in lookup
+    assert "-ClassName WmiMonitorConnectionParams" in lookup
+    assert "-ClassName WmiMonitorListedSupportedSourceModes" in lookup
+    assert '"System DPI: $dpiPercent% ($systemDpi DPI)"' in lookup
+    assert "-ClassName Win32_UserProfile" in lookup
+    assert 'Text="Monitors"' in dialog
+    assert "& $setText 'ProfilesValue' $Details.UserProfileCount" in dialog
 
 
 def test_live_details_button_tracks_automatic_ping_result():

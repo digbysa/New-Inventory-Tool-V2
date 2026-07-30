@@ -459,7 +459,6 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
@@ -485,8 +484,7 @@
                 <Button x:Name="PingButton" Grid.Column="2" Content="Ping" Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,12,0"/>
                 <Button x:Name="LiveDetailsButton" Grid.Column="3" Content="Live Details" Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,12,0"/>
                 <Button x:Name="MonitorLabelButton" Grid.Column="4" Content="Monitor Label" Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,12,0"/>
-                <Button x:Name="LookupSubnetButton" Grid.Column="5" Content="Lookup Subnet" Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,12,0"/>
-                <Button x:Name="CriticalEventsButton" Grid.Column="6" Content="Critical Events" Style="{StaticResource ToolbarButtonStyle}"/>
+                <Button x:Name="LookupSubnetButton" Grid.Column="5" Content="Lookup Subnet" Style="{StaticResource ToolbarButtonStyle}"/>
             </Grid>
         </Border>
 

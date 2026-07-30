@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 SCRIPT_PATH = Path(__file__).parents[1] / "NewAssetTool.Wpf.matching.v14.ps1"
+XAML_PATH = Path(__file__).parents[1] / "NewAssetTool.matching.v14.xaml"
 
 
 def test_first_location_hierarchy_row_is_not_rejected_as_an_empty_collection():
@@ -89,6 +90,24 @@ def test_check_complete_requires_all_location_values_and_dropdowns():
     assert "$Ui.CheckCompleteButton.IsEnabled" in body
     assert "$Ui.SaveEventButton.IsEnabled = $hasCompleteLocation" in body
     assert "[string]::IsNullOrWhiteSpace" in body
+
+
+def test_disabled_save_event_button_is_grey_and_explains_the_blank_location():
+    xaml = XAML_PATH.read_text(encoding="utf-8-sig")
+
+    style = re.search(
+        r'<Style x:Key="SaveEventButtonStyle"(?P<body>.*?)</Style>',
+        xaml,
+        re.DOTALL,
+    )
+    assert style
+    body = style.group("body")
+    assert 'Property="ToolTipService.ShowOnDisabled" Value="True"' in body
+    assert 'Property="IsEnabled" Value="False"' in body
+    assert 'Property="Background" Value="#94A3B8"' in body
+    assert 'location field is blank' in body
+    assert 'x:Name="SaveEventButton"' in xaml
+    assert 'Style="{StaticResource SaveEventButtonStyle}"' in xaml
 
 
 def test_editable_location_text_changes_refresh_button_states():

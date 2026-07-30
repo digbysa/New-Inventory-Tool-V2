@@ -1622,6 +1622,50 @@ try {
         return 'Unknown'
     }
 
+    function Show-SubnetLookupDialog {
+        param([hashtable]$Ui,[string]$DataRoot)
+
+        $window = New-Object System.Windows.Window
+        $window.Title = 'Lookup Subnet'
+        $window.Width = 420
+        $window.SizeToContent = 'Height'
+        $window.WindowStartupLocation = 'CenterOwner'
+        $window.ResizeMode = 'NoResize'
+        $window.ShowInTaskbar = $false
+        $window.Owner = [System.Windows.Window]::GetWindow($Ui.MainTabControl)
+
+        $panel = New-Object System.Windows.Controls.StackPanel -Property @{ Margin='18' }
+        $window.Content = $panel
+        $prompt = New-Object System.Windows.Controls.TextBlock -Property @{ Text='Enter an IPv4 address:'; Margin='0,0,0,6' }
+        $ipTextBox = New-Object System.Windows.Controls.TextBox -Property @{ MinWidth=360; Padding='6,4'; Margin='0,0,0,12' }
+        $resultText = New-Object System.Windows.Controls.TextBlock -Property @{ Text=''; FontWeight='SemiBold'; TextWrapping='Wrap'; MinHeight=24; Margin='0,0,0,14' }
+        $panel.Children.Add($prompt) | Out-Null
+        $panel.Children.Add($ipTextBox) | Out-Null
+        $panel.Children.Add($resultText) | Out-Null
+
+        $buttonPanel = New-Object System.Windows.Controls.StackPanel -Property @{ Orientation='Horizontal'; HorizontalAlignment='Right' }
+        $lookupButton = New-Object System.Windows.Controls.Button -Property @{ Content='Lookup'; MinWidth=86; Padding='14,6'; Margin='0,0,8,0'; IsDefault=$true }
+        $closeButton = New-Object System.Windows.Controls.Button -Property @{ Content='Close'; MinWidth=86; Padding='14,6'; IsCancel=$true }
+        $lookupButton.Add_Click({
+            $ipAddress = $ipTextBox.Text.Trim()
+            if (-not (ConvertTo-IPv4Bytes -IpAddress $ipAddress)) {
+                $resultText.Text = 'Enter a valid IPv4 address.'
+                $resultText.Foreground = [System.Windows.Media.Brushes]::Firebrick
+                return
+            }
+            $subnetName = Resolve-SubnetName -IpAddress $ipAddress -DataRoot $DataRoot
+            $resultText.Text = if ($subnetName -eq 'Unknown') { "No subnet was found for $ipAddress." } else { "Subnet: $subnetName" }
+            $resultText.Foreground = if ($subnetName -eq 'Unknown') { [System.Windows.Media.Brushes]::Firebrick } else { [System.Windows.Media.Brushes]::DarkGreen }
+        })
+        $closeButton.Add_Click({ $window.Close() })
+        $buttonPanel.Children.Add($lookupButton) | Out-Null
+        $buttonPanel.Children.Add($closeButton) | Out-Null
+        $panel.Children.Add($buttonPanel) | Out-Null
+
+        $window.Add_ContentRendered({ $ipTextBox.Focus() | Out-Null })
+        $window.ShowDialog() | Out-Null
+    }
+
     function Resolve-HostIPv4Address {
         param([string]$HostName)
         if ([string]::IsNullOrWhiteSpace($HostName)) { return '' }
@@ -3675,7 +3719,7 @@ function Find-SampleDevice {
     Set-WindowIconFromFile -Window $window -ResolvedXamlPath $resolvedXamlPath
 
     $ui = Get-NamedControls -Window $window -Names @(
-        'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton',
+        'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton',
         'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
         'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedContainer','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',
@@ -3945,6 +3989,9 @@ function Find-SampleDevice {
             return
         }
         Show-MonitorLabelDialog -Ui $ui -ParentDevice $parent
+    })
+    $ui.LookupSubnetButton.Add_Click({
+        Show-SubnetLookupDialog -Ui $ui -DataRoot $script:AppState.DataRoot
     })
     $ui.FixNameButton.Add_Click({
         $device = $script:AppState.SelectedSummaryDevice

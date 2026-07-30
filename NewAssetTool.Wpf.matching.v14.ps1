@@ -3350,6 +3350,114 @@ try {
         return $null
     }
 
+    function Get-CriticalEventInterpretation {
+        param([int]$EventId,[bool]$HasNearbyBugcheck=$false)
+        switch ($EventId) {
+            41   { if ($HasNearbyBugcheck) { return 'Windows detected an improper restart; a nearby bugcheck report suggests a possible blue-screen crash.' }; return 'Windows detected an improper restart or shutdown; this event does not identify the cause.' }
+            86   { return 'Windows recorded a critical thermal shutdown.' }
+            88   { return 'Windows recorded a critical thermal hibernation.' }
+            1001 { return 'Windows recorded bugcheck or crash-report information; review the message for a stop code.' }
+            6008 { if ($HasNearbyBugcheck) { return 'Windows detected an unexpected shutdown; a nearby bugcheck report suggests a possible blue-screen crash.' }; return 'Windows detected an unexpected shutdown; this event does not identify the cause.' }
+            default { return 'Windows recorded a possible crash or shutdown event.' }
+        }
+    }
+
+    function ConvertTo-CriticalEventRows {
+        param([object[]]$Events)
+        $ordered = @($Events | Where-Object { $_ -and $_.TimeCreated } | Sort-Object TimeCreated -Descending)
+        foreach ($event in $ordered) {
+            $nearbyBugcheck = $false
+            if ([int]$event.Id -in @(41,6008)) {
+                $nearbyBugcheck = @($ordered | Where-Object { [int]$_.Id -eq 1001 -and [Math]::Abs(($_.TimeCreated - $event.TimeCreated).TotalMinutes) -le 15 }).Count -gt 0
+            }
+            [pscustomobject]@{
+                TimeCreated = [datetime]$event.TimeCreated
+                Id = [int]$event.Id
+                ProviderName = [string]$event.ProviderName
+                LevelDisplayName = if ([string]::IsNullOrWhiteSpace([string]$event.LevelDisplayName)) { 'Unknown' } else { [string]$event.LevelDisplayName }
+                Interpretation = Get-CriticalEventInterpretation -EventId ([int]$event.Id) -HasNearbyBugcheck:$nearbyBugcheck
+                Message = if ([string]::IsNullOrWhiteSpace([string]$event.Message)) { '(No event message was returned.)' } else { ([string]$event.Message).Trim() }
+            }
+        }
+    }
+
+    function Show-CriticalEventsDialog {
+        param([hashtable]$Ui,[string]$ComputerName,[int]$TimeoutSeconds=15)
+        [xml]$dialogXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Critical Events" Width="1040" Height="650" MinWidth="760" MinHeight="440" WindowStartupLocation="CenterOwner" Background="#F3F5F7" FontFamily="Segoe UI" FontSize="13">
+  <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel><TextBlock x:Name="TitleText" FontSize="20" FontWeight="SemiBold" Foreground="#1F2A44"/><TextBlock x:Name="StatusText" Margin="0,6,0,14" TextWrapping="Wrap" Foreground="#475569"/></StackPanel>
+    <DataGrid x:Name="EventsGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#FAFCFF" RowHeaderWidth="0" Visibility="Collapsed">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Date and time" Binding="{Binding TimeCreated, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="145"/>
+        <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="55"/>
+        <DataGridTextColumn Header="Source / provider" Binding="{Binding ProviderName}" Width="150"/>
+        <DataGridTextColumn Header="Severity" Binding="{Binding LevelDisplayName}" Width="85"/>
+        <DataGridTextColumn Header="What it indicates" Binding="{Binding Interpretation}" Width="260"/>
+        <DataGridTemplateColumn Header="Event message" Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="4"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+    <Button x:Name="CloseButton" Grid.Row="2" Content="Close" HorizontalAlignment="Right" Margin="0,14,0,0" Padding="18,6" IsCancel="True"/>
+  </Grid>
+</Window>
+'@
+        $reader = New-Object System.Xml.XmlNodeReader $dialogXaml
+        $dialog = [Windows.Markup.XamlReader]::Load($reader)
+        $dialog.Owner = $Ui.Window
+        $titleText = $dialog.FindName('TitleText'); $statusText = $dialog.FindName('StatusText'); $grid = $dialog.FindName('EventsGrid'); $close = $dialog.FindName('CloseButton')
+        $titleText.Text = "Critical events — $ComputerName"
+        $statusText.Text = 'Checking the Windows System event log for the last 7 days...'
+        $close.Add_Click({ $dialog.Close() })
+
+        $query = [PowerShell]::Create()
+        $queryScript = @'
+param($TargetComputer)
+$StartTime = (Get-Date).AddDays(-7)
+try {
+    @(Get-WinEvent -ComputerName $TargetComputer -FilterHashtable @{ LogName='System'; StartTime=$StartTime; Id=41,86,88,1001,6008 } -ErrorAction Stop |
+        Sort-Object TimeCreated -Descending |
+        Select-Object TimeCreated,Id,ProviderName,LevelDisplayName,Message)
+} catch {
+    if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { return }
+    throw
+}
+'@
+        [void]$query.AddScript($queryScript).AddArgument($ComputerName)
+        $asyncResult = $query.BeginInvoke()
+        $started = [datetime]::UtcNow
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds(150)
+        $timer.Add_Tick({
+            if (([datetime]::UtcNow - $started).TotalSeconds -ge $TimeoutSeconds -and -not $asyncResult.IsCompleted) {
+                $timer.Stop(); try { $query.Stop() } catch {}; $query.Dispose()
+                $statusText.Text = "The computer could not be queried. The PowerShell command timed out after $TimeoutSeconds seconds."
+                $statusText.Foreground = New-Brush '#BE123C'; return
+            }
+            if (-not $asyncResult.IsCompleted) { return }
+            $timer.Stop()
+            try {
+                $rawEvents = @($query.EndInvoke($asyncResult))
+                if ($query.HadErrors) { throw [string]($query.Streams.Error | Select-Object -First 1) }
+                $rows = @(ConvertTo-CriticalEventRows -Events $rawEvents)
+                if ($rawEvents.Count -gt 0 -and $rows.Count -ne $rawEvents.Count) { throw 'The remote computer returned malformed or incomplete event data.' }
+                if ($rows.Count -eq 0) {
+                    $statusText.Text = 'No crashes or unexpected shutdowns were recorded in the last 7 days.'
+                    $statusText.Foreground = New-Brush '#15803D'
+                } else {
+                    $statusText.Text = "One or more possible crash or unexpected-shutdown events were found. Total matching events: $($rows.Count)."
+                    $statusText.Foreground = New-Brush '#B45309'; $grid.ItemsSource = $rows; $grid.Visibility = 'Visible'
+                }
+            } catch {
+                $detail = if ($_.Exception.Message -match '(?i)access.*denied') { 'Access was denied.' } else { 'Confirm the computer is online, Remote PowerShell/event-log access is available, and the System log can be read.' }
+                $statusText.Text = "The computer could not be queried. $detail"
+                $statusText.Foreground = New-Brush '#BE123C'
+            } finally { $query.Dispose() }
+        })
+        $dialog.Add_Closed({ $timer.Stop(); if (-not $asyncResult.IsCompleted) { try { $query.Stop() } catch {} }; $query.Dispose() })
+        $timer.Start()
+        $dialog.ShowDialog() | Out-Null
+    }
+
     function Invoke-CurrentDevicePing {
         param([hashtable]$Ui,[object]$Inventory,[string]$DataRoot,[switch]$StartContinuous)
         $target = Resolve-CurrentPingTarget -Ui $Ui -Inventory $Inventory
@@ -4244,6 +4352,14 @@ function Find-SampleDevice {
     })
     $ui.LookupSubnetButton.Add_Click({
         Show-SubnetLookupDialog -Ui $ui -DataRoot $script:AppState.DataRoot
+    })
+    $ui.CriticalEventsButton.Add_Click({
+        $computerName = Resolve-CurrentPingTarget -Ui $ui -Inventory $script:AppState.Inventory
+        if ([string]::IsNullOrWhiteSpace($computerName)) {
+            [System.Windows.MessageBox]::Show('Query or enter a computer name first.', 'Critical Events') | Out-Null
+            return
+        }
+        Show-CriticalEventsDialog -Ui $ui -ComputerName $computerName.Trim()
     })
     $ui.FixNameButton.Add_Click({
         $device = $script:AppState.SelectedSummaryDevice

@@ -1,0 +1,42 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = (ROOT / "NewAssetTool.Wpf.matching.v14.ps1").read_text(encoding="utf-8")
+XAML = (ROOT / "NewAssetTool.matching.v14.xaml").read_text(encoding="utf-8")
+
+
+def test_button_is_immediately_right_of_lookup_subnet():
+    lookup = XAML.index('x:Name="LookupSubnetButton"')
+    critical = XAML.index('x:Name="CriticalEventsButton"')
+    assert lookup < critical
+    assert 'Grid.Column="6"' in XAML[critical : critical + 180]
+
+
+def test_remote_query_filters_system_log_at_source():
+    query = SCRIPT.split("function Show-CriticalEventsDialog", 1)[1].split("function Invoke-CurrentDevicePing", 1)[0]
+    assert "Get-WinEvent -ComputerName $TargetComputer -FilterHashtable" in query
+    assert "LogName='System'" in query
+    assert "StartTime=$StartTime" in query
+    assert "Id=41,86,88,1001,6008" in query
+    assert "Sort-Object TimeCreated -Descending" in query
+
+
+def test_outcomes_and_async_timeout_are_present():
+    assert "BeginInvoke()" in SCRIPT
+    assert "The PowerShell command timed out" in SCRIPT
+    assert "No crashes or unexpected shutdowns were recorded in the last 7 days." in SCRIPT
+    assert "Total matching events:" in SCRIPT
+    assert "The computer could not be queried." in SCRIPT
+    assert "malformed or incomplete event data" in SCRIPT
+
+
+def test_event_rows_sort_and_explain_shutdown_evidence_and_bugchecks():
+    converter = SCRIPT.split("function ConvertTo-CriticalEventRows", 1)[1].split("function Show-CriticalEventsDialog", 1)[0]
+    interpretation = SCRIPT.split("function Get-CriticalEventInterpretation", 1)[1].split("function ConvertTo-CriticalEventRows", 1)[0]
+    assert "Sort-Object TimeCreated -Descending" in converter
+    assert "TotalMinutes) -le 15" in converter
+    assert "does not identify the cause" in interpretation
+    assert "possible blue-screen crash" in interpretation
+    for event_id in (41, 86, 88, 1001, 6008):
+        assert str(event_id) in interpretation

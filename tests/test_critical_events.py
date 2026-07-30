@@ -44,6 +44,15 @@ def test_remote_query_filters_system_log_at_source():
     assert "Sort-Object TimeCreated -Descending" in query
 
 
+def test_remote_query_falls_back_to_wmi_over_dcom():
+    query = SCRIPT.split("function Show-CriticalEventsDialog", 1)[1].split("function Invoke-CurrentDevicePing", 1)[0]
+    assert "New-CimSessionOption -Protocol Dcom" in query
+    assert "Get-CimInstance -CimSession $cimSession -ClassName Win32_NTLogEvent" in query
+    assert "LogFile='System' AND TimeGenerated >= '$dmtfStart'" in query
+    assert "QueryMethod='WMI (DCOM) fallback'" in query
+    assert "Remove-CimSession" in query
+
+
 def test_outcomes_and_async_timeout_are_present():
     assert "BeginInvoke()" in SCRIPT
     assert "The PowerShell command timed out" in SCRIPT
@@ -51,6 +60,7 @@ def test_outcomes_and_async_timeout_are_present():
     assert "Total matching events:" in SCRIPT
     assert "The computer could not be queried." in SCRIPT
     assert "malformed or incomplete event data" in SCRIPT
+    assert "Both Event Log RPC and the WMI fallback failed." in SCRIPT
 
 
 def test_event_rows_sort_and_explain_shutdown_evidence_and_bugchecks():

@@ -3406,20 +3406,53 @@ try {
         $dialog.Owner = $Ui.Window
         $titleText = $dialog.FindName('TitleText'); $statusText = $dialog.FindName('StatusText'); $grid = $dialog.FindName('EventsGrid'); $close = $dialog.FindName('CloseButton')
         $titleText.Text = "Critical events - $ComputerName"
-        $statusText.Text = 'Checking the Windows System event log for the last 7 days...'
+        $statusText.Text = 'Checking the Windows System event log for the last 7 days (Event Log RPC, then WMI if needed)...'
         $close.Add_Click({ $dialog.Close() })
 
         $query = [PowerShell]::Create()
         $queryScript = @'
 param($TargetComputer)
 $StartTime = (Get-Date).AddDays(-7)
+$EventIds = @(41,86,88,1001,6008)
 try {
-    @(Get-WinEvent -ComputerName $TargetComputer -FilterHashtable @{ LogName='System'; StartTime=$StartTime; Id=41,86,88,1001,6008 } -ErrorAction Stop |
+    $events = @(Get-WinEvent -ComputerName $TargetComputer -FilterHashtable @{ LogName='System'; StartTime=$StartTime; Id=41,86,88,1001,6008 } -ErrorAction Stop |
         Sort-Object TimeCreated -Descending |
         Select-Object TimeCreated,Id,ProviderName,LevelDisplayName,Message)
+    Write-Output -NoEnumerate ([pscustomobject]@{ QueryMethod='Windows Event Log RPC'; Events=$events })
+    return
 } catch {
-    if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { return }
-    throw
+    if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
+        Write-Output -NoEnumerate ([pscustomobject]@{ QueryMethod='Windows Event Log RPC'; Events=@() })
+        return
+    }
+    $eventLogError = $_.Exception.Message
+}
+
+# The Event Log service uses RPC and is commonly blocked even when ping works.  WMI
+# is a separate management path, so use its Win32_NTLogEvent provider as a fallback.
+$cimSession = $null
+try {
+    $sessionOption = New-CimSessionOption -Protocol Dcom
+    $cimSession = New-CimSession -ComputerName $TargetComputer -SessionOption $sessionOption -ErrorAction Stop
+    $dmtfStart = [System.Management.ManagementDateTimeConverter]::ToDmtfDateTime($StartTime)
+    $idFilter = ($EventIds | ForEach-Object { "EventCode=$_" }) -join ' OR '
+    $wmiEvents = @(Get-CimInstance -CimSession $cimSession -ClassName Win32_NTLogEvent -Filter "LogFile='System' AND TimeGenerated >= '$dmtfStart' AND ($idFilter)" -ErrorAction Stop |
+        ForEach-Object {
+            $created = $_.TimeGenerated
+            if ($created -is [string]) { $created = [System.Management.ManagementDateTimeConverter]::ToDateTime($created) }
+            [pscustomobject]@{
+                TimeCreated = [datetime]$created
+                Id = [int]$_.EventCode
+                ProviderName = [string]$_.SourceName
+                LevelDisplayName = switch ([int]$_.EventType) { 1 {'Error'} 2 {'Warning'} 3 {'Information'} 4 {'Security audit success'} 5 {'Security audit failure'} default {'Unknown'} }
+                Message = [string]$_.Message
+            }
+        } | Sort-Object TimeCreated -Descending)
+    Write-Output -NoEnumerate ([pscustomobject]@{ QueryMethod='WMI (DCOM) fallback'; Events=$wmiEvents })
+} catch {
+    throw "Event Log RPC failed: $eventLogError WMI fallback failed: $($_.Exception.Message)"
+} finally {
+    if ($cimSession) { Remove-CimSession -CimSession $cimSession -ErrorAction SilentlyContinue }
 }
 '@
         [void]$query.AddScript($queryScript).AddArgument($ComputerName)
@@ -3436,19 +3469,21 @@ try {
             if (-not $asyncResult.IsCompleted) { return }
             $timer.Stop()
             try {
-                $rawEvents = @($query.EndInvoke($asyncResult))
+                $queryResult = @($query.EndInvoke($asyncResult)) | Select-Object -First 1
                 if ($query.HadErrors) { throw [string]($query.Streams.Error | Select-Object -First 1) }
+                if (-not $queryResult -or -not ($queryResult.PSObject.Properties.Name -contains 'Events')) { throw 'The remote computer returned malformed or incomplete event data.' }
+                $rawEvents = @($queryResult.Events)
                 $rows = @(ConvertTo-CriticalEventRows -Events $rawEvents)
                 if ($rawEvents.Count -gt 0 -and $rows.Count -ne $rawEvents.Count) { throw 'The remote computer returned malformed or incomplete event data.' }
                 if ($rows.Count -eq 0) {
-                    $statusText.Text = 'No crashes or unexpected shutdowns were recorded in the last 7 days.'
+                    $statusText.Text = "No crashes or unexpected shutdowns were recorded in the last 7 days. Queried via $($queryResult.QueryMethod)."
                     $statusText.Foreground = New-Brush '#15803D'
                 } else {
-                    $statusText.Text = "One or more possible crash or unexpected-shutdown events were found. Total matching events: $($rows.Count)."
+                    $statusText.Text = "One or more possible crash or unexpected-shutdown events were found. Total matching events: $($rows.Count). Queried via $($queryResult.QueryMethod)."
                     $statusText.Foreground = New-Brush '#B45309'; $grid.ItemsSource = $rows; $grid.Visibility = 'Visible'
                 }
             } catch {
-                $detail = if ($_.Exception.Message -match '(?i)access.*denied') { 'Access was denied.' } else { 'Confirm the computer is online, Remote PowerShell/event-log access is available, and the System log can be read.' }
+                $detail = if ($_.Exception.Message -match '(?i)access.*denied') { 'Access was denied to both Event Log RPC and WMI. Ask an administrator to grant remote event-log or WMI access.' } else { 'Both Event Log RPC and the WMI fallback failed. Confirm the Windows Event Log and Windows Management Instrumentation services are running and allowed through the remote firewall.' }
                 $statusText.Text = "The computer could not be queried. $detail"
                 $statusText.Foreground = New-Brush '#BE123C'
             } finally { $query.Dispose() }

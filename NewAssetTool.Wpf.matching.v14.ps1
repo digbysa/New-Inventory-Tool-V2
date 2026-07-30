@@ -3405,7 +3405,7 @@ try {
         $dialog = [Windows.Markup.XamlReader]::Load($reader)
         $dialog.Owner = $Ui.Window
         $titleText = $dialog.FindName('TitleText'); $statusText = $dialog.FindName('StatusText'); $grid = $dialog.FindName('EventsGrid'); $close = $dialog.FindName('CloseButton')
-        $titleText.Text = "Critical events — $ComputerName"
+        $titleText.Text = "Critical events - $ComputerName"
         $statusText.Text = 'Checking the Windows System event log for the last 7 days...'
         $close.Add_Click({ $dialog.Close() })
 

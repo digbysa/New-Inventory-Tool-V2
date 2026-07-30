@@ -3643,8 +3643,10 @@ function Find-SampleDevice {
             # features and does not require PowerShell remoting/WinRM to be enabled.
             # Keep each individual remote query short so Live Details remains a
             # quick diagnostic rather than blocking the UI for tens of seconds.
-            $sessionOption = New-CimSessionOption -Protocol Dcom -OperationTimeoutSec 3
-            $session = New-CimSession -ComputerName $ComputerName -SessionOption $sessionOption -ErrorAction Stop
+            $sessionOption = New-CimSessionOption -Protocol Dcom
+            # OperationTimeoutSec belongs to New-CimSession (not
+            # New-CimSessionOption) in Windows PowerShell 5.1.
+            $session = New-CimSession -ComputerName $ComputerName -SessionOption $sessionOption -OperationTimeoutSec 3 -ErrorAction Stop
 
             $os = Get-CimInstance -CimSession $session -ClassName Win32_OperatingSystem -ErrorAction Stop
             $computer = Get-CimInstance -CimSession $session -ClassName Win32_ComputerSystem -ErrorAction Stop

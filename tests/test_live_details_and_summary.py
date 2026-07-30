@@ -49,6 +49,19 @@ def test_live_details_reports_progress_and_avoids_strict_mode_count_access():
     assert "Set-StatusMessage -Ui $ui -Mode 'Warning'" in click_handler
 
 
+def test_live_details_applies_timeout_to_cim_session_not_session_options():
+    lookup = _function_body("Get-LiveComputerDetails")
+
+    # Windows PowerShell 5.1 does not expose OperationTimeoutSec on
+    # New-CimSessionOption. It is a New-CimSession parameter.
+    assert "New-CimSessionOption -Protocol Dcom\n" in lookup
+    assert (
+        "New-CimSession -ComputerName $ComputerName -SessionOption $sessionOption "
+        "-OperationTimeoutSec 3 -ErrorAction Stop"
+    ) in lookup
+    assert "New-CimSessionOption -Protocol Dcom -OperationTimeoutSec" not in lookup
+
+
 def test_live_details_uses_floating_point_math_for_large_wmi_values():
     body = _function_body("Show-LiveDetailsDialog")
 

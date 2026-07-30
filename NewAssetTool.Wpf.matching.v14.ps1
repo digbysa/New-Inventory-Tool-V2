@@ -3762,7 +3762,7 @@ function Find-SampleDevice {
         $rebootBadge=$dialog.FindName('RebootBadge'); $rebootText=$dialog.FindName('RebootValue')
         if ($Details.PendingReboot) { $rebootBadge.Background=New-Brush '#FCE3E5'; $rebootText.Foreground=New-Brush '#BE123C' } else { $rebootBadge.Background=New-Brush '#DDF7E5'; $rebootText.Foreground=New-Brush '#15803D' }
 
-        $gb=1GB; $diskUsed=[Math]::Max(0,$Details.DiskTotal-$Details.DiskFree); $ramUsed=[Math]::Max(0,$Details.RamTotal-$Details.RamFree)
+        $gb=1GB; $diskUsed=[Math]::Max([double]0, [double]$Details.DiskTotal-[double]$Details.DiskFree); $ramUsed=[Math]::Max([double]0, [double]$Details.RamTotal-[double]$Details.RamFree)
         & $setText 'DiskText' ("Fixed disks   {0:N0} GB used  •  {1:N0} GB free  •  {2:N0} GB total" -f ($diskUsed/$gb),($Details.DiskFree/$gb),($Details.DiskTotal/$gb))
         & $setText 'RamText' ("RAM   {0:N1} GB used  •  {1:N1} GB free  •  {2:N1} GB total" -f ($ramUsed/$gb),($Details.RamFree/$gb),($Details.RamTotal/$gb))
         $dialog.FindName('DiskBar').Value=if($Details.DiskTotal -gt 0){100*$diskUsed/$Details.DiskTotal}else{0}

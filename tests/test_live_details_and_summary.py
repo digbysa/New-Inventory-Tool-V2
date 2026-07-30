@@ -47,3 +47,13 @@ def test_live_details_reports_progress_and_avoids_strict_mode_count_access():
     assert "Set-StatusMessage -Ui $ui -Mode 'Working'" in click_handler
     assert "DispatcherPriority]::Background" in click_handler
     assert "Set-StatusMessage -Ui $ui -Mode 'Warning'" in click_handler
+
+
+def test_live_details_uses_floating_point_math_for_large_wmi_values():
+    body = _function_body("Show-LiveDetailsDialog")
+
+    # Disk and memory sizes commonly exceed Int32.MaxValue. An integer zero as
+    # Math.Max's first argument can select the Int32 overload and make the
+    # second argument fail conversion before the dialog is displayed.
+    assert "[Math]::Max([double]0, [double]$Details.DiskTotal-[double]$Details.DiskFree)" in body
+    assert "[Math]::Max([double]0, [double]$Details.RamTotal-[double]$Details.RamFree)" in body

@@ -13,6 +13,14 @@ def test_button_is_immediately_right_of_lookup_subnet():
     assert 'Grid.Column="6"' in XAML[critical : critical + 180]
 
 
+def test_button_is_registered_before_click_handler_is_attached():
+    controls = SCRIPT.split("$ui = Get-NamedControls", 1)[1].split("$ui.Window = $window", 1)[0]
+    assert "'CriticalEventsButton'" in controls
+    assert SCRIPT.index("'CriticalEventsButton'", SCRIPT.index("$ui = Get-NamedControls")) < SCRIPT.index(
+        "$ui.CriticalEventsButton.Add_Click"
+    )
+
+
 def test_remote_query_filters_system_log_at_source():
     query = SCRIPT.split("function Show-CriticalEventsDialog", 1)[1].split("function Invoke-CurrentDevicePing", 1)[0]
     assert "Get-WinEvent -ComputerName $TargetComputer -FilterHashtable" in query

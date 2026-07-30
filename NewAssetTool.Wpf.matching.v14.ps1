@@ -302,6 +302,9 @@ try {
         $grid.Background = [System.Windows.Media.Brushes]::White; $grid.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D1D8E0')
         $blankBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#FCE3E5')
         foreach ($column in $columns) {
+            # NearbyAdded remains part of the backing table and export schema, but
+            # it is an internal event flag and should not be editable in this view.
+            if ([string]$column -eq 'NearbyAdded') { continue }
             $binding = New-Object System.Windows.Data.Binding("[$column]"); $binding.Mode = 'TwoWay'; $binding.UpdateSourceTrigger = 'PropertyChanged'
             if ([string]$column -eq 'CheckStatus') {
                 $comboColumn = New-Object System.Windows.Controls.DataGridComboBoxColumn
@@ -2884,16 +2887,20 @@ try {
     function Update-CheckCompleteButtonState {
         param([hashtable]$Ui)
         if (-not $Ui -or -not $Ui.CheckCompleteButton) { return }
-        $requiredControls = @($Ui.MaintenanceTypeComboBox,$Ui.CheckStatusComboBox)
         $isEditingLocation = $Ui.CityComboBox -and $Ui.CityComboBox.Visibility -eq [System.Windows.Visibility]::Visible
         if ($isEditingLocation) {
-            $requiredControls += @($Ui.CityComboBox,$Ui.LocationComboBox,$Ui.BuildingComboBox,$Ui.FloorComboBox,$Ui.RoomComboBox,$Ui.DepartmentComboBox)
+            $locationControls = @($Ui.CityComboBox,$Ui.LocationComboBox,$Ui.BuildingComboBox,$Ui.FloorComboBox,$Ui.RoomComboBox,$Ui.DepartmentComboBox)
         } else {
-            $requiredControls += @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)
+            $locationControls = @($Ui.CityTextBox,$Ui.LocationTextBox,$Ui.BuildingTextBox,$Ui.FloorTextBox,$Ui.RoomTextBox,$Ui.DepartmentTextBox)
         }
-        $Ui.CheckCompleteButton.IsEnabled = (@($requiredControls | Where-Object {
+        $hasCompleteLocation = (@($locationControls | Where-Object {
             -not $_ -or [string]::IsNullOrWhiteSpace([string]$_.Text)
         }).Count -eq 0)
+        $requiredControls = @($Ui.MaintenanceTypeComboBox,$Ui.CheckStatusComboBox) + $locationControls
+        $Ui.CheckCompleteButton.IsEnabled = $hasCompleteLocation -and (@($requiredControls | Where-Object {
+            -not $_ -or [string]::IsNullOrWhiteSpace([string]$_.Text)
+        }).Count -eq 0)
+        if ($Ui.SaveEventButton) { $Ui.SaveEventButton.IsEnabled = $hasCompleteLocation }
     }
 
     function Set-ComboItems {
@@ -3746,6 +3753,9 @@ function Find-SampleDevice {
     }
     foreach ($control in @($ui.MaintenanceTypeComboBox,$ui.CheckStatusComboBox,$ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
         if ($control) { $control.Add_SelectionChanged({ Update-CheckCompleteButtonState -Ui $ui }) }
+    }
+    foreach ($combo in @($ui.CityComboBox,$ui.LocationComboBox,$ui.BuildingComboBox,$ui.FloorComboBox,$ui.RoomComboBox,$ui.DepartmentComboBox)) {
+        if ($combo) { $combo.AddHandler([System.Windows.Controls.TextBox]::TextChangedEvent, [System.Windows.Controls.TextChangedEventHandler]{ Update-CheckCompleteButtonState -Ui $ui }) }
     }
     foreach ($box in @($ui.CityTextBox,$ui.LocationTextBox,$ui.BuildingTextBox,$ui.FloorTextBox,$ui.RoomTextBox,$ui.DepartmentTextBox)) {
         if ($box) { $box.Add_TextChanged({ Update-CheckCompleteButtonState -Ui $ui }) }

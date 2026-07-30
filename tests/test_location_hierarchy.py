@@ -87,7 +87,15 @@ def test_check_complete_requires_all_location_values_and_dropdowns():
     ):
         assert f"$Ui.{control}" in body
     assert "$Ui.CheckCompleteButton.IsEnabled" in body
+    assert "$Ui.SaveEventButton.IsEnabled = $hasCompleteLocation" in body
     assert "[string]::IsNullOrWhiteSpace" in body
+
+
+def test_editable_location_text_changes_refresh_button_states():
+    script = SCRIPT_PATH.read_text(encoding="utf-8-sig")
+
+    assert "$combo.AddHandler([System.Windows.Controls.TextBox]::TextChangedEvent" in script
+    assert "Update-CheckCompleteButtonState -Ui $ui" in script
 
 
 def test_nearby_uses_completed_event_location_instead_of_stale_inventory_location():

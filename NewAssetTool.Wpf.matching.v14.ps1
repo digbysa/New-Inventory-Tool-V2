@@ -1806,19 +1806,36 @@ try {
             } catch {}
         }
         try {
+            # WmiMonitorID includes built-in laptop panels as well as peripherals.
+            # WmiMonitorConnectionParams identifies those panels with the INTERNAL
+            # video-output technology, so do not ask technicians to inventory them.
+            $internalMonitorInstances = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+            try {
+                $connections = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorConnectionParams -ComputerName $ComputerName -ErrorAction Stop
+                foreach ($connection in @($connections)) {
+                    $technology = [int64]$connection.VideoOutputTechnology
+                    if (($technology -eq 2147483648 -or $technology -eq -2147483648) -and -not [string]::IsNullOrWhiteSpace($connection.InstanceName)) {
+                        [void]$internalMonitorInstances.Add($connection.InstanceName.Trim())
+                    }
+                }
+            } catch {}
             $monitorData = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ComputerName $ComputerName -ErrorAction Stop
             foreach ($m in $monitorData) {
+                if (-not [string]::IsNullOrWhiteSpace($m.InstanceName) -and $internalMonitorInstances.Contains($m.InstanceName.Trim())) { continue }
                 $serial = Convert-WmiIdToString -Id $m.SerialNumberID
                 $name = Convert-WmiIdToString -Id $m.UserFriendlyName
                 $manufacturer = Convert-WmiIdToString -Id $m.ManufacturerName
                 $productCode = Convert-WmiIdToString -Id $m.ProductCodeID
                 $serialText = if ([string]::IsNullOrWhiteSpace($serial)) { '' } else { $serial.Trim() }
-                if (-not [string]::IsNullOrWhiteSpace($serialText)) { $result.MonitorSerials += $serialText }
+                # A zero/placeholder EDID serial cannot be matched reliably and is
+                # commonly exposed by internal panels when connection data is absent.
+                $hasTrackableSerial = -not [string]::IsNullOrWhiteSpace($serialText) -and $serialText -notmatch '^(?i:0+|unknown|none|n/?a)$'
+                if ($hasTrackableSerial) { $result.MonitorSerials += $serialText }
                 $detail = [pscustomobject]@{
                     Type='Monitor'; Name=$name; Manufacturer=$manufacturer; ProductCode=$productCode; Serial=$serialText
                     ManufactureWeek=$m.WeekOfManufacture; ManufactureYear=$m.YearOfManufacture; InstanceName=$m.InstanceName; Active=$m.Active
                 }
-                $result.MonitorDetails += $detail
+                if ($hasTrackableSerial) { $result.MonitorDetails += $detail }
             }
         } catch {}
         return $result

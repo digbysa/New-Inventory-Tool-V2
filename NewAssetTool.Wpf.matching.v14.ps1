@@ -3566,7 +3566,21 @@ function Find-SampleDevice {
         param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
         $url = Get-RoundingUrlForDevice -CurrentDevice $CurrentDevice -RoundingByAssetTag $RoundingByAssetTag
         $Ui.ManualRoundButton.Tag = $url
-        $Ui.ManualRoundButton.IsEnabled = -not [string]::IsNullOrWhiteSpace($url)
+        if (-not [string]::IsNullOrWhiteSpace($url)) {
+            $Ui.ManualRoundButton.IsEnabled = $true
+            $Ui.ManualRoundButton.ToolTip = $null
+            return
+        }
+
+        $reason = if (-not $CurrentDevice) {
+            'Manual Round is unavailable until a device is selected.'
+        } elseif ([string]::IsNullOrWhiteSpace([string]$CurrentDevice.AssetTag)) {
+            'Manual Round is unavailable because the selected device has no asset tag.'
+        } else {
+            "Manual Round is unavailable because no rounding URL was found for asset tag $($CurrentDevice.AssetTag)."
+        }
+        $Ui.ManualRoundButton.IsEnabled = $false
+        $Ui.ManualRoundButton.ToolTip = $reason
     }
 
     function Save-RoundingEvent {
@@ -4460,6 +4474,8 @@ function Find-SampleDevice {
             Start-Process -FilePath $ui.ManualRoundButton.Tag -ErrorAction Stop
             $script:ManualRoundUsed = $true
         } catch {
+            $ui.ManualRoundButton.IsEnabled = $false
+            $ui.ManualRoundButton.ToolTip = "Manual Round is unavailable because the rounding webpage could not be opened: $($_.Exception.Message)"
             [System.Windows.MessageBox]::Show("Unable to open the rounding webpage:`n$($_.Exception.Message)","Manual Round") | Out-Null
         }
     })
@@ -4503,7 +4519,7 @@ function Find-SampleDevice {
     $ui.CablingNeededCheckBox.IsChecked = $false
     $ui.PhysicalCartCheckBox.IsChecked = $false
     $ui.AddDeviceToTrackerCheckBox.IsChecked = $false
-    $ui.ManualRoundButton.IsEnabled = $false
+    Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
     $window.Add_Loaded({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$false })
 
     [void]$window.ShowDialog()

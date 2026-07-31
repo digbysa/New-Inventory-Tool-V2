@@ -3338,7 +3338,16 @@ try {
         if ($IsOnline) {
             if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
             if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
-            if ($Ui.DeviceUptimeText) { $Ui.DeviceUptimeText.Text = "Uptime: $Uptime" }
+            if ($Ui.DeviceUptimeText) {
+                $Ui.DeviceUptimeText.Text = "Uptime: $Uptime"
+                $uptimeDays = if ($Uptime -match '^(\d+)d(?:\s|$)') { [int]$Matches[1] } else { $null }
+                $Ui.DeviceUptimeText.Foreground = New-Brush $(
+                    if ($null -eq $uptimeDays) { '#64748B' }
+                    elseif ($uptimeDays -lt 3) { '#15803D' }
+                    elseif ($uptimeDays -lt 5) { '#B45309' }
+                    else { '#BE123C' }
+                )
+            }
             if ($Ui.DevicePendingRebootText) {
                 $Ui.DevicePendingRebootText.Text = "Pending reboot: $PendingReboot"
                 $Ui.DevicePendingRebootText.Foreground = New-Brush $(if ($PendingReboot -eq 'Yes') { '#BE123C' } elseif ($PendingReboot -eq 'No') { '#15803D' } else { '#64748B' })
@@ -3428,7 +3437,7 @@ try {
     }
 
     function Start-DelayedQueryPing {
-        param([hashtable]$Ui,[string]$QueryToken,[int]$DelayMilliseconds=3000)
+        param([hashtable]$Ui,[string]$QueryToken,[int]$DelayMilliseconds=2000)
         if (-not $Ui.PingButton -or [string]::IsNullOrWhiteSpace($QueryToken)) { return }
 
         $timer = New-Object System.Windows.Threading.DispatcherTimer

@@ -3270,6 +3270,40 @@ try {
         $visibility = if ($IsVisible) { 'Visible' } else { 'Collapsed' }
         if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Visibility = $visibility }
         if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Visibility = $visibility }
+        if ($Ui.DeviceUptimeText) { $Ui.DeviceUptimeText.Visibility = $visibility }
+        if ($Ui.DevicePendingRebootText) { $Ui.DevicePendingRebootText.Visibility = $visibility }
+    }
+
+    function Get-RemoteRestartStatus {
+        param([Parameter(Mandatory=$true)][string]$ComputerName)
+
+        $status = [pscustomobject]@{ Uptime='Unavailable'; PendingReboot='Unavailable' }
+        $session = $null
+        try {
+            $sessionOption = New-CimSessionOption -Protocol Dcom
+            $session = New-CimSession -ComputerName $ComputerName -SessionOption $sessionOption -OperationTimeoutSec 3 -ErrorAction Stop
+            $os = Get-CimInstance -CimSession $session -ClassName Win32_OperatingSystem -ErrorAction Stop
+            $boot = if ($os.LastBootUpTime -is [datetime]) { [datetime]$os.LastBootUpTime } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$os.LastBootUpTime) }
+            $uptime = (Get-Date) - $boot
+            $status.Uptime = '{0}d {1}h {2}m' -f [int][Math]::Floor($uptime.TotalDays),$uptime.Hours,$uptime.Minutes
+
+            $pendingReboot = $false
+            foreach ($key in @(
+                'SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+                'SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+            )) {
+                try {
+                    $regResult = Invoke-CimMethod -CimSession $session -Namespace root/default -ClassName StdRegProv -MethodName EnumKey -Arguments @{ hDefKey=[uint32]2147483650; sSubKeyName=$key } -ErrorAction SilentlyContinue
+                    if ($regResult.ReturnValue -eq 0) { $pendingReboot = $true }
+                } catch {}
+            }
+            $status.PendingReboot = if ($pendingReboot) { 'Yes' } else { 'No' }
+        }
+        catch {}
+        finally {
+            if ($session) { Remove-CimSession -CimSession $session -ErrorAction SilentlyContinue }
+        }
+        return $status
     }
 
     function Set-OnlineStatusUi {
@@ -3279,7 +3313,9 @@ try {
             [Nullable[int]]$LatencyMs,
             [string]$IpAddress='',
             [string]$Subnet='Unknown',
-            [string]$CheckedHost=''
+            [string]$CheckedHost='',
+            [string]$Uptime='Unavailable',
+            [string]$PendingReboot='Unavailable'
         )
         if ($IsOnline) {
             $Ui.DeviceOnlineText.Text = 'Online'
@@ -3302,6 +3338,11 @@ try {
         if ($IsOnline) {
             if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
             if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
+            if ($Ui.DeviceUptimeText) { $Ui.DeviceUptimeText.Text = "Uptime: $Uptime" }
+            if ($Ui.DevicePendingRebootText) {
+                $Ui.DevicePendingRebootText.Text = "Pending reboot: $PendingReboot"
+                $Ui.DevicePendingRebootText.Foreground = New-Brush $(if ($PendingReboot -eq 'Yes') { '#BE123C' } elseif ($PendingReboot -eq 'No') { '#15803D' } else { '#64748B' })
+            }
         }
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
@@ -3374,7 +3415,8 @@ try {
 
         $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $DataRoot
         $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $DataRoot
-        Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
+        $restartStatus = if ($connectivity.IsOnline) { Get-RemoteRestartStatus -ComputerName $target } else { [pscustomobject]@{ Uptime='Unavailable'; PendingReboot='Unavailable' } }
+        Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName -Uptime $restartStatus.Uptime -PendingReboot $restartStatus.PendingReboot
 
         if ($StartContinuous) {
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
@@ -3449,6 +3491,8 @@ try {
         Set-ControlText -Control $Ui.LastQueryBadgeText -Value 'Awaiting query'
         Set-ControlText -Control $Ui.DeviceIpText -Value 'IP: Unknown'
         Set-ControlText -Control $Ui.DeviceSubnetText -Value 'Subnet: Unknown'
+        Set-ControlText -Control $Ui.DeviceUptimeText -Value 'Uptime: Unknown'
+        Set-ControlText -Control $Ui.DevicePendingRebootText -Value 'Pending reboot: Unknown'
         Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$false
         if ($script:AppState) { $script:AppState.LiveDetailsAvailable = $false }
         if ($Ui.LiveDetailsButton) { $Ui.LiveDetailsButton.IsEnabled = $false }
@@ -4034,7 +4078,7 @@ function Find-SampleDevice {
         'NearbyScopeSummaryText','FileEditorButton','RebuildNearbyButton','PingAllButton','IsolateNearbyButton','ClearNearbyButton',
         'NearbyDataGrid','NearbySaveButton','ShowAllNearbyButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
-        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'
+        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText','DeviceUptimeText','DevicePendingRebootText'
     )
     $ui.Window = $window
 

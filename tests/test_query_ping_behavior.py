@@ -5,9 +5,9 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "NewAssetTool.Wpf.matching.v
 SCRIPT = SCRIPT_PATH.read_text(encoding="utf-8-sig")
 
 
-def test_query_schedules_ping_button_after_three_seconds():
+def test_query_schedules_ping_button_after_two_seconds():
     assert "function Start-DelayedQueryPing" in SCRIPT
-    assert "[int]$DelayMilliseconds=3000" in SCRIPT
+    assert "[int]$DelayMilliseconds=2000" in SCRIPT
     assert "Start-DelayedQueryPing -Ui $ui -QueryToken $script:AppState.CurrentQueryToken" in SCRIPT
     assert "$state.Ui.PingButton.RaiseEvent" in SCRIPT
 

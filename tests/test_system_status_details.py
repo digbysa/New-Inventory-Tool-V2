@@ -37,6 +37,15 @@ def test_system_details_only_become_visible_after_successful_ping():
     assert "-Uptime $restartStatus.Uptime -PendingReboot $restartStatus.PendingReboot" in ping
 
 
+def test_system_uptime_uses_green_orange_and_red_day_thresholds():
+    status_ui = _function_body("Set-OnlineStatusUi")
+
+    assert "$Uptime -match '^(\\d+)d(?:\\s|$)'" in status_ui
+    assert "elseif ($uptimeDays -lt 3) { '#15803D' }" in status_ui
+    assert "elseif ($uptimeDays -lt 5) { '#B45309' }" in status_ui
+    assert "else { '#BE123C' }" in status_ui
+
+
 def test_remote_restart_status_uses_short_dcom_cim_query():
     body = _function_body("Get-RemoteRestartStatus")
 

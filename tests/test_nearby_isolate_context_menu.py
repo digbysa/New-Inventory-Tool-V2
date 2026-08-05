@@ -21,6 +21,15 @@ def test_isolate_filters_nearby_rows_to_selected_host_names():
     assert "-not $script:AppState.NearbyIsolatedHostNames.Contains($hostKey)" in visible_body
 
 
+def test_isolate_uses_selection_captured_before_context_menu_takes_focus():
+    isolate_body = SCRIPT.split("function Invoke-IsolateSelectedNearbyRows", 1)[1].split("function Invoke-SelectedNearbyPing", 1)[0]
+    assert "$script:AppState.NearbyContextSelectedRows" in isolate_body
+    assert "$selected = @($script:AppState.NearbyContextSelectedRows | Where-Object { $_ })" in isolate_body
+
+    context_menu = SCRIPT.split("function Initialize-NearbyContextMenu", 1)[1].split("$Ui.NearbyDataGrid.Add_MouseDoubleClick", 1)[0]
+    assert "$script:AppState.NearbyContextSelectedRows = @(Get-NearbySelectedRows -Ui $Ui)" in context_menu
+
+
 def test_show_all_clears_nearby_isolation_filter():
     show_all_hook = SCRIPT.split("$ui.ShowAllNearbyButton.Add_Click", 1)[1].split("$ui.ShowAllNearbyCheckBox.Add_Click", 1)[0]
     assert "$script:AppState.NearbyIsolatedHostNames.Clear()" in show_all_hook

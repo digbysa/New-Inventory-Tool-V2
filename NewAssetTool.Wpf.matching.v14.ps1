@@ -2520,6 +2520,12 @@ try {
     function Invoke-IsolateSelectedNearbyRows {
         param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
         $selected = @(Get-NearbySelectedRows -Ui $Ui)
+        # Opening a WPF ContextMenu moves focus into a separate visual tree.  On
+        # some systems that clears the DataGrid selection before the menu item's
+        # Click handler runs, so prefer the selection captured on right-click.
+        if ($script:AppState -and $script:AppState.NearbyContextSelectedRows) {
+            $selected = @($script:AppState.NearbyContextSelectedRows | Where-Object { $_ })
+        }
         if ($selected.Count -eq 0) {
             [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Isolate') | Out-Null
             return
@@ -2533,6 +2539,7 @@ try {
                 $hostKey = ([string]$row.HostName).Trim().ToUpperInvariant()
                 if (-not [string]::IsNullOrWhiteSpace($hostKey)) { [void]$script:AppState.NearbyIsolatedHostNames.Add($hostKey) }
             }
+            $script:AppState.NearbyContextSelectedRows = @()
         }
         Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
     }
@@ -2737,6 +2744,9 @@ try {
                     $sender.SelectedItem = $row
                 }
                 $sender.CurrentItem = $row
+                if ($script:AppState) {
+                    $script:AppState.NearbyContextSelectedRows = @(Get-NearbySelectedRows -Ui $Ui)
+                }
             }
         })
         $Ui.NearbyDataGrid.Add_MouseDoubleClick({
@@ -4157,7 +4167,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyIsolatedHostNames=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyIsolatedHostNames=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyContextSelectedRows=@(); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3

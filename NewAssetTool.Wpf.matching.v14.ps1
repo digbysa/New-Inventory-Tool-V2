@@ -2291,6 +2291,10 @@ try {
     function Test-NearbyRowVisible {
         param([hashtable]$Ui,[object]$Row)
         if (-not $Row) { return $false }
+        if ($script:AppState -and $script:AppState.NearbyIsolatedHostNames -and $script:AppState.NearbyIsolatedHostNames.Count -gt 0) {
+            $hostKey = ([string]$Row.HostName).Trim().ToUpperInvariant()
+            if ([string]::IsNullOrWhiteSpace($hostKey) -or -not $script:AppState.NearbyIsolatedHostNames.Contains($hostKey)) { return $false }
+        }
         if ($Row.IsRoundedToday -and $Ui.TodaysRoundedCheckBox -and -not [bool]$Ui.TodaysRoundedCheckBox.IsChecked) { return $false }
         if ($Row.IsExcluded -and $Ui.ExcludedCheckBox -and -not [bool]$Ui.ExcludedCheckBox.IsChecked) { return $false }
         if ($Row.IsCriticalClinical -and $Ui.CriticalClinicalCheckBox -and -not [bool]$Ui.CriticalClinicalCheckBox.IsChecked) { return $false }
@@ -2513,6 +2517,26 @@ try {
         $timer.Start()
     }
 
+    function Invoke-IsolateSelectedNearbyRows {
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
+        $selected = @(Get-NearbySelectedRows -Ui $Ui)
+        if ($selected.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Isolate') | Out-Null
+            return
+        }
+        if ($script:AppState) {
+            if (-not $script:AppState.NearbyIsolatedHostNames) {
+                $script:AppState.NearbyIsolatedHostNames = New-Object 'System.Collections.Generic.HashSet[string]'
+            }
+            $script:AppState.NearbyIsolatedHostNames.Clear()
+            foreach ($row in $selected) {
+                $hostKey = ([string]$row.HostName).Trim().ToUpperInvariant()
+                if (-not [string]::IsNullOrWhiteSpace($hostKey)) { [void]$script:AppState.NearbyIsolatedHostNames.Add($hostKey) }
+            }
+        }
+        Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
+    }
+
     function Invoke-SelectedNearbyPing {
         param([hashtable]$Ui,[string]$DataRoot)
         $selected = @(Get-NearbySelectedRows -Ui $Ui)
@@ -2687,11 +2711,16 @@ try {
     }
 
     function Initialize-NearbyContextMenu {
-        param([hashtable]$Ui,[string]$DataRoot)
+        param([hashtable]$Ui,[string]$DataRoot,[string]$ResolvedXamlPath='')
         if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
+        $contextDataRoot = $DataRoot
+        $contextResolvedXamlPath = $ResolvedXamlPath
         $menu = New-Object System.Windows.Controls.ContextMenu
+        $isolateItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Isolate' }
+        $isolateItem.Add_Click({ param($sender,$e) Invoke-IsolateSelectedNearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $contextResolvedXamlPath }.GetNewClosure())
+        [void]$menu.Items.Add($isolateItem)
         $pingItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Ping selected host(s)' }
-        $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $dataRoot })
+        $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $contextDataRoot }.GetNewClosure())
         [void]$menu.Items.Add($pingItem)
         [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
         foreach ($status in @('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')) {
@@ -4128,7 +4157,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyIsolatedHostNames=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -4147,7 +4176,7 @@ function Find-SampleDevice {
         }
         $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::PreviewMouseWheelEvent, $nearbyWheelHandler, $true)
         $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::MouseWheelEvent, $nearbyWheelHandler, $true)
-        Initialize-NearbyContextMenu -Ui $ui -DataRoot $dataRoot
+        Initialize-NearbyContextMenu -Ui $ui -DataRoot $dataRoot -ResolvedXamlPath $resolvedXamlPath
     }
 
     $window.Title = "New Inventory Tool - $siteName"
@@ -4191,7 +4220,7 @@ function Find-SampleDevice {
     foreach ($checkBox in @($ui.TodaysRoundedCheckBox,$ui.ExcludedCheckBox,$ui.RecentlyRoundedCheckBox,$ui.CriticalClinicalCheckBox)) {
         $checkBox.Add_Click($refreshNearbyFromFilters)
     }
-    if ($ui.ShowAllNearbyButton) { $ui.ShowAllNearbyButton.Add_Click({ if ($ui.ShowAllNearbyCheckBox) { $ui.ShowAllNearbyCheckBox.IsChecked = $true; $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) } }) }
+    if ($ui.ShowAllNearbyButton) { $ui.ShowAllNearbyButton.Add_Click({ if ($script:AppState -and $script:AppState.NearbyIsolatedHostNames) { $script:AppState.NearbyIsolatedHostNames.Clear() }; if ($ui.ShowAllNearbyCheckBox) { $ui.ShowAllNearbyCheckBox.IsChecked = $true; $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) } }) }
 
     $ui.ShowAllNearbyCheckBox.Add_Click({
         try {

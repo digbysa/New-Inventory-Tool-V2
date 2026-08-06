@@ -167,6 +167,18 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="ManualRoundButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#F8FAFC"/>
+                    <Setter Property="Background" Value="#94A3B8"/>
+                    <Setter Property="BorderBrush" Value="#94A3B8"/>
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="ValueBoxStyle" TargetType="TextBox">
             <Setter Property="Background" Value="White"/>
             <Setter Property="BorderBrush" Value="#D1D9E2"/>
@@ -519,6 +531,8 @@
                                     <TextBlock x:Name="DeviceResponseTimeText" Text="(37 ms)" Foreground="#94A3B8" Margin="4,0,0,0" FontSize="14" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="DeviceIpText" Text="IP: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center" Visibility="Collapsed"/>
                                     <TextBlock x:Name="DeviceSubnetText" Text="Subnet: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                    <TextBlock x:Name="DeviceUptimeText" Text="Uptime: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                    <TextBlock x:Name="DevicePendingRebootText" Text="Pending reboot: Unknown" Foreground="#64748B" Margin="12,0,0,0" FontSize="14" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 </StackPanel>
 
                                 <TextBlock x:Name="LastQueryBadgeText"
@@ -916,7 +930,7 @@
                                     <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="12,0,12,10" HorizontalAlignment="Left">
                                         <Button x:Name="CheckCompleteButton" Content="Check Complete" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
                                         <Button x:Name="SaveEventButton" Content="Save Event" Style="{StaticResource SaveEventButtonStyle}" Margin="0,0,8,0"/>
-                                        <Button x:Name="ManualRoundButton" Content="Manual Round" Style="{StaticResource PrimaryButtonStyle}"/>
+                                        <Button x:Name="ManualRoundButton" Content="Manual Round" Style="{StaticResource ManualRoundButtonStyle}"/>
                                     </StackPanel>
 
                                     <Border Grid.Row="4" Margin="12,0,12,12" BorderBrush="#D9E1EA" BorderThickness="1" CornerRadius="3" Background="White">

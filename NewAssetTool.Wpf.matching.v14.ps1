@@ -1806,19 +1806,36 @@ try {
             } catch {}
         }
         try {
+            # WmiMonitorID includes built-in laptop panels as well as peripherals.
+            # WmiMonitorConnectionParams identifies those panels with the INTERNAL
+            # video-output technology, so do not ask technicians to inventory them.
+            $internalMonitorInstances = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+            try {
+                $connections = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorConnectionParams -ComputerName $ComputerName -ErrorAction Stop
+                foreach ($connection in @($connections)) {
+                    $technology = [int64]$connection.VideoOutputTechnology
+                    if (($technology -eq 2147483648 -or $technology -eq -2147483648) -and -not [string]::IsNullOrWhiteSpace($connection.InstanceName)) {
+                        [void]$internalMonitorInstances.Add($connection.InstanceName.Trim())
+                    }
+                }
+            } catch {}
             $monitorData = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ComputerName $ComputerName -ErrorAction Stop
             foreach ($m in $monitorData) {
+                if (-not [string]::IsNullOrWhiteSpace($m.InstanceName) -and $internalMonitorInstances.Contains($m.InstanceName.Trim())) { continue }
                 $serial = Convert-WmiIdToString -Id $m.SerialNumberID
                 $name = Convert-WmiIdToString -Id $m.UserFriendlyName
                 $manufacturer = Convert-WmiIdToString -Id $m.ManufacturerName
                 $productCode = Convert-WmiIdToString -Id $m.ProductCodeID
                 $serialText = if ([string]::IsNullOrWhiteSpace($serial)) { '' } else { $serial.Trim() }
-                if (-not [string]::IsNullOrWhiteSpace($serialText)) { $result.MonitorSerials += $serialText }
+                # A zero/placeholder EDID serial cannot be matched reliably and is
+                # commonly exposed by internal panels when connection data is absent.
+                $hasTrackableSerial = -not [string]::IsNullOrWhiteSpace($serialText) -and $serialText -notmatch '^(?i:0+|unknown|none|n/?a)$'
+                if ($hasTrackableSerial) { $result.MonitorSerials += $serialText }
                 $detail = [pscustomobject]@{
                     Type='Monitor'; Name=$name; Manufacturer=$manufacturer; ProductCode=$productCode; Serial=$serialText
                     ManufactureWeek=$m.WeekOfManufacture; ManufactureYear=$m.YearOfManufacture; InstanceName=$m.InstanceName; Active=$m.Active
                 }
-                $result.MonitorDetails += $detail
+                if ($hasTrackableSerial) { $result.MonitorDetails += $detail }
             }
         } catch {}
         return $result
@@ -2274,6 +2291,10 @@ try {
     function Test-NearbyRowVisible {
         param([hashtable]$Ui,[object]$Row)
         if (-not $Row) { return $false }
+        if ($script:AppState -and $script:AppState.NearbyIsolatedHostNames -and $script:AppState.NearbyIsolatedHostNames.Count -gt 0) {
+            $hostKey = ([string]$Row.HostName).Trim().ToUpperInvariant()
+            if ([string]::IsNullOrWhiteSpace($hostKey) -or -not $script:AppState.NearbyIsolatedHostNames.Contains($hostKey)) { return $false }
+        }
         if ($Row.IsRoundedToday -and $Ui.TodaysRoundedCheckBox -and -not [bool]$Ui.TodaysRoundedCheckBox.IsChecked) { return $false }
         if ($Row.IsExcluded -and $Ui.ExcludedCheckBox -and -not [bool]$Ui.ExcludedCheckBox.IsChecked) { return $false }
         if ($Row.IsCriticalClinical -and $Ui.CriticalClinicalCheckBox -and -not [bool]$Ui.CriticalClinicalCheckBox.IsChecked) { return $false }
@@ -2496,6 +2517,33 @@ try {
         $timer.Start()
     }
 
+    function Invoke-IsolateSelectedNearbyRows {
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
+        $selected = @(Get-NearbySelectedRows -Ui $Ui)
+        # Opening a WPF ContextMenu moves focus into a separate visual tree.  On
+        # some systems that clears the DataGrid selection before the menu item's
+        # Click handler runs, so prefer the selection captured on right-click.
+        if ($script:AppState -and $script:AppState.NearbyContextSelectedRows) {
+            $selected = @($script:AppState.NearbyContextSelectedRows | Where-Object { $_ })
+        }
+        if ($selected.Count -eq 0) {
+            [System.Windows.MessageBox]::Show('Select one or more Nearby devices first.', 'Isolate') | Out-Null
+            return
+        }
+        if ($script:AppState) {
+            if (-not $script:AppState.NearbyIsolatedHostNames) {
+                $script:AppState.NearbyIsolatedHostNames = New-Object 'System.Collections.Generic.HashSet[string]'
+            }
+            $script:AppState.NearbyIsolatedHostNames.Clear()
+            foreach ($row in $selected) {
+                $hostKey = ([string]$row.HostName).Trim().ToUpperInvariant()
+                if (-not [string]::IsNullOrWhiteSpace($hostKey)) { [void]$script:AppState.NearbyIsolatedHostNames.Add($hostKey) }
+            }
+            $script:AppState.NearbyContextSelectedRows = @()
+        }
+        Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
+    }
+
     function Invoke-SelectedNearbyPing {
         param([hashtable]$Ui,[string]$DataRoot)
         $selected = @(Get-NearbySelectedRows -Ui $Ui)
@@ -2670,11 +2718,16 @@ try {
     }
 
     function Initialize-NearbyContextMenu {
-        param([hashtable]$Ui,[string]$DataRoot)
+        param([hashtable]$Ui,[string]$DataRoot,[string]$ResolvedXamlPath='')
         if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
+        $contextDataRoot = $DataRoot
+        $contextResolvedXamlPath = $ResolvedXamlPath
         $menu = New-Object System.Windows.Controls.ContextMenu
+        $isolateItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Isolate' }
+        $isolateItem.Add_Click({ param($sender,$e) Invoke-IsolateSelectedNearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $contextResolvedXamlPath }.GetNewClosure())
+        [void]$menu.Items.Add($isolateItem)
         $pingItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Ping selected host(s)' }
-        $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $dataRoot })
+        $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $contextDataRoot }.GetNewClosure())
         [void]$menu.Items.Add($pingItem)
         [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
         foreach ($status in @('-','Inaccessible - Asset not found','Inaccessible - In storage','Inaccessible - In use by Customer','Inaccessible - Laptop is not onsite','Inaccessible - Other','Inaccessible - Restricted area','Inaccessible - Room locked - Card Swipe','Inaccessible - Room locked - Key Lock','Inaccessible - Under renovation','Inaccessible - User working at home')) {
@@ -2691,6 +2744,9 @@ try {
                     $sender.SelectedItem = $row
                 }
                 $sender.CurrentItem = $row
+                if ($script:AppState) {
+                    $script:AppState.NearbyContextSelectedRows = @(Get-NearbySelectedRows -Ui $Ui)
+                }
             }
         })
         $Ui.NearbyDataGrid.Add_MouseDoubleClick({
@@ -3253,6 +3309,40 @@ try {
         $visibility = if ($IsVisible) { 'Visible' } else { 'Collapsed' }
         if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Visibility = $visibility }
         if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Visibility = $visibility }
+        if ($Ui.DeviceUptimeText) { $Ui.DeviceUptimeText.Visibility = $visibility }
+        if ($Ui.DevicePendingRebootText) { $Ui.DevicePendingRebootText.Visibility = $visibility }
+    }
+
+    function Get-RemoteRestartStatus {
+        param([Parameter(Mandatory=$true)][string]$ComputerName)
+
+        $status = [pscustomobject]@{ Uptime='Unavailable'; PendingReboot='Unavailable' }
+        $session = $null
+        try {
+            $sessionOption = New-CimSessionOption -Protocol Dcom
+            $session = New-CimSession -ComputerName $ComputerName -SessionOption $sessionOption -OperationTimeoutSec 3 -ErrorAction Stop
+            $os = Get-CimInstance -CimSession $session -ClassName Win32_OperatingSystem -ErrorAction Stop
+            $boot = if ($os.LastBootUpTime -is [datetime]) { [datetime]$os.LastBootUpTime } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$os.LastBootUpTime) }
+            $uptime = (Get-Date) - $boot
+            $status.Uptime = '{0}d {1}h {2}m' -f [int][Math]::Floor($uptime.TotalDays),$uptime.Hours,$uptime.Minutes
+
+            $pendingReboot = $false
+            foreach ($key in @(
+                'SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+                'SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+            )) {
+                try {
+                    $regResult = Invoke-CimMethod -CimSession $session -Namespace root/default -ClassName StdRegProv -MethodName EnumKey -Arguments @{ hDefKey=[uint32]2147483650; sSubKeyName=$key } -ErrorAction SilentlyContinue
+                    if ($regResult.ReturnValue -eq 0) { $pendingReboot = $true }
+                } catch {}
+            }
+            $status.PendingReboot = if ($pendingReboot) { 'Yes' } else { 'No' }
+        }
+        catch {}
+        finally {
+            if ($session) { Remove-CimSession -CimSession $session -ErrorAction SilentlyContinue }
+        }
+        return $status
     }
 
     function Set-OnlineStatusUi {
@@ -3262,7 +3352,9 @@ try {
             [Nullable[int]]$LatencyMs,
             [string]$IpAddress='',
             [string]$Subnet='Unknown',
-            [string]$CheckedHost=''
+            [string]$CheckedHost='',
+            [string]$Uptime='Unavailable',
+            [string]$PendingReboot='Unavailable'
         )
         if ($IsOnline) {
             $Ui.DeviceOnlineText.Text = 'Online'
@@ -3285,6 +3377,20 @@ try {
         if ($IsOnline) {
             if ($Ui.DeviceIpText) { $Ui.DeviceIpText.Text = "IP: $(if ([string]::IsNullOrWhiteSpace($IpAddress)) { 'Unknown' } else { $IpAddress })" }
             if ($Ui.DeviceSubnetText) { $Ui.DeviceSubnetText.Text = "Subnet: $(if ([string]::IsNullOrWhiteSpace($Subnet)) { 'Unknown' } else { $Subnet })" }
+            if ($Ui.DeviceUptimeText) {
+                $Ui.DeviceUptimeText.Text = "Uptime: $Uptime"
+                $uptimeDays = if ($Uptime -match '^(\d+)d(?:\s|$)') { [int]$Matches[1] } else { $null }
+                $Ui.DeviceUptimeText.Foreground = New-Brush $(
+                    if ($null -eq $uptimeDays) { '#64748B' }
+                    elseif ($uptimeDays -lt 3) { '#15803D' }
+                    elseif ($uptimeDays -lt 5) { '#B45309' }
+                    else { '#BE123C' }
+                )
+            }
+            if ($Ui.DevicePendingRebootText) {
+                $Ui.DevicePendingRebootText.Text = "Pending reboot: $PendingReboot"
+                $Ui.DevicePendingRebootText.Foreground = New-Brush $(if ($PendingReboot -eq 'Yes') { '#BE123C' } elseif ($PendingReboot -eq 'No') { '#15803D' } else { '#64748B' })
+            }
         }
         $Ui.LastQueryBadgeText.Text = "Queried $(Get-Date -Format 'HH:mm:ss')"
     }
@@ -3357,7 +3463,8 @@ try {
 
         $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $DataRoot
         $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $DataRoot
-        Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName
+        $restartStatus = if ($connectivity.IsOnline) { Get-RemoteRestartStatus -ComputerName $target } else { [pscustomobject]@{ Uptime='Unavailable'; PendingReboot='Unavailable' } }
+        Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName -Uptime $restartStatus.Uptime -PendingReboot $restartStatus.PendingReboot
 
         if ($StartContinuous) {
             Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
@@ -3369,7 +3476,7 @@ try {
     }
 
     function Start-DelayedQueryPing {
-        param([hashtable]$Ui,[string]$QueryToken,[int]$DelayMilliseconds=3000)
+        param([hashtable]$Ui,[string]$QueryToken,[int]$DelayMilliseconds=2000)
         if (-not $Ui.PingButton -or [string]::IsNullOrWhiteSpace($QueryToken)) { return }
 
         $timer = New-Object System.Windows.Threading.DispatcherTimer
@@ -3432,6 +3539,8 @@ try {
         Set-ControlText -Control $Ui.LastQueryBadgeText -Value 'Awaiting query'
         Set-ControlText -Control $Ui.DeviceIpText -Value 'IP: Unknown'
         Set-ControlText -Control $Ui.DeviceSubnetText -Value 'Subnet: Unknown'
+        Set-ControlText -Control $Ui.DeviceUptimeText -Value 'Uptime: Unknown'
+        Set-ControlText -Control $Ui.DevicePendingRebootText -Value 'Pending reboot: Unknown'
         Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$false
         if ($script:AppState) { $script:AppState.LiveDetailsAvailable = $false }
         if ($Ui.LiveDetailsButton) { $Ui.LiveDetailsButton.IsEnabled = $false }
@@ -3496,7 +3605,21 @@ function Find-SampleDevice {
         param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
         $url = Get-RoundingUrlForDevice -CurrentDevice $CurrentDevice -RoundingByAssetTag $RoundingByAssetTag
         $Ui.ManualRoundButton.Tag = $url
-        $Ui.ManualRoundButton.IsEnabled = -not [string]::IsNullOrWhiteSpace($url)
+        if (-not [string]::IsNullOrWhiteSpace($url)) {
+            $Ui.ManualRoundButton.IsEnabled = $true
+            $Ui.ManualRoundButton.ToolTip = $null
+            return
+        }
+
+        $reason = if (-not $CurrentDevice) {
+            'Manual Round is unavailable until a device is selected.'
+        } elseif ([string]::IsNullOrWhiteSpace([string]$CurrentDevice.AssetTag)) {
+            'Manual Round is unavailable because the selected device has no asset tag.'
+        } else {
+            "Manual Round is unavailable because no rounding URL was found for asset tag $($CurrentDevice.AssetTag)."
+        }
+        $Ui.ManualRoundButton.IsEnabled = $false
+        $Ui.ManualRoundButton.ToolTip = $reason
     }
 
     function Save-RoundingEvent {
@@ -3664,6 +3787,58 @@ function Find-SampleDevice {
                 Select-Object -Property Name,Manufacturer -Unique)
             $profiles = @(Get-CimInstance -CimSession $session -ClassName Win32_UserProfile -Filter "Special=False" -ErrorAction SilentlyContinue)
 
+            # Win32_ComputerSystem.UserName identifies the interactive user, but
+            # WMI does not expose that session's idle time.  Query User uses the
+            # Terminal Services RPC endpoint and reports both pieces of data
+            # without requiring WinRM/PowerShell remoting on the target.
+            $activeUser = if ($computer.UserName) { [string]$computer.UserName } else { 'None' }
+            $lastActive = if ($computer.UserName) { 'Unavailable (session idle time could not be read)' } else { 'No signed-in user' }
+            try {
+                $sessionLines = @(& "$env:SystemRoot\System32\quser.exe" "/server:$ComputerName" 2>$null)
+                $header = @($sessionLines | Select-Object -First 1)
+                if ($header.Length -gt 0) {
+                    $idColumn = ([string]$header[0]).IndexOf(' ID ')
+                    $stateColumn = ([string]$header[0]).IndexOf(' STATE ')
+                    $idleColumn = ([string]$header[0]).IndexOf(' IDLE TIME ')
+                    $logonColumn = ([string]$header[0]).IndexOf(' LOGON TIME ')
+                    $userLeaf = if ($computer.UserName) { ([string]$computer.UserName -split '\\')[-1] } else { '' }
+                    $sessionRows = @($sessionLines | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+                    $selectedSession = @()
+                    if ($userLeaf) {
+                        $selectedSession = @($sessionRows | Where-Object {
+                            ([string]$_).TrimStart('>',' ') -match ('^(?i)' + [regex]::Escape($userLeaf) + '\s')
+                        } | Select-Object -First 1)
+                    }
+                    if ($selectedSession.Length -eq 0 -and $stateColumn -ge 0) {
+                        $selectedSession = @($sessionRows | Where-Object {
+                            ([string]$_).Length -gt $stateColumn -and ([string]$_).Substring($stateColumn) -match '^\s*Active\b'
+                        } | Select-Object -First 1)
+                    }
+                    if ($selectedSession.Length -eq 0) { $selectedSession = @($sessionRows | Select-Object -First 1) }
+                    if ($selectedSession.Length -gt 0 -and $idColumn -gt 0 -and $idleColumn -gt $idColumn -and $logonColumn -gt $idleColumn) {
+                        $sessionLine = ([string]$selectedSession[0]).PadRight($logonColumn)
+                        $sessionUser = @($sessionLine.Substring(0,$idColumn).Trim('>',' ') -split '\s+' | Select-Object -First 1)
+                        $sessionUser = if ($sessionUser.Length -gt 0) { [string]$sessionUser[0] } else { '' }
+                        if ($sessionUser) {
+                            $activeUser = if ($computer.UserName -and ([string]$computer.UserName -match '\\')) {
+                                '{0}\{1}' -f (([string]$computer.UserName -split '\\')[0]),$sessionUser
+                            } else { $sessionUser }
+                        }
+                        $idleText = $sessionLine.Substring($idleColumn,$logonColumn-$idleColumn).Trim()
+                        $idleSpan = $null
+                        if ($idleText -in @('none','.')) { $idleSpan = [TimeSpan]::Zero }
+                        elseif ($idleText -match '^(\d+)\+(\d+):(\d+)$') { $idleSpan = New-TimeSpan -Days ([int]$Matches[1]) -Hours ([int]$Matches[2]) -Minutes ([int]$Matches[3]) }
+                        elseif ($idleText -match '^(\d+):(\d+)$') { $idleSpan = New-TimeSpan -Hours ([int]$Matches[1]) -Minutes ([int]$Matches[2]) }
+                        elseif ($idleText -match '^\d+$') { $idleSpan = New-TimeSpan -Minutes ([int]$idleText) }
+                        if ($null -ne $idleSpan) {
+                            $lastInputTime = (Get-Date).Subtract($idleSpan)
+                            $idleDescription = if ($idleSpan.TotalMinutes -lt 1) { 'active now' } elseif ($idleSpan.TotalDays -ge 1) { '{0}d {1}h idle' -f [int][Math]::Floor($idleSpan.TotalDays),$idleSpan.Hours } elseif ($idleSpan.TotalHours -ge 1) { '{0}h {1}m idle' -f [int][Math]::Floor($idleSpan.TotalHours),$idleSpan.Minutes } else { '{0}m idle' -f [int][Math]::Floor($idleSpan.TotalMinutes) }
+                            $lastActive = if ($idleSpan.TotalMinutes -lt 1) { 'Active now' } else { '{0} ({1})' -f $lastInputTime.ToString('dd-MMM-yyyy h:mm tt'),$idleDescription }
+                        } else { $lastActive = "Idle time unavailable (Query User reported '$idleText')" }
+                    }
+                }
+            } catch {}
+
             $monitorIds = @(Get-CimInstance -CimSession $session -Namespace root/wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue | Where-Object { $_.Active })
             $monitorConnections = @(Get-CimInstance -CimSession $session -Namespace root/wmi -ClassName WmiMonitorConnectionParams -ErrorAction SilentlyContinue)
             $monitorModes = @(Get-CimInstance -CimSession $session -Namespace root/wmi -ClassName WmiMonitorListedSupportedSourceModes -ErrorAction SilentlyContinue)
@@ -3773,7 +3948,7 @@ function Find-SampleDevice {
             return [pscustomobject]@{
                 ComputerName=[string]$computer.Name; OU=$ou; OS=("{0} ({1})" -f $os.Caption,$os.OSArchitecture); Build=[string]$os.BuildNumber
                 Uptime=$uptime; InstallDate=$install; DiskTotal=$diskTotal; DiskFree=$diskFree; RamTotal=$totalRam; RamFree=$freeRam
-                BitLocker=$bitLocker; PendingReboot=$pendingReboot; LastUser=$(if ($computer.UserName) { [string]$computer.UserName } else { 'None' }); PowerStatus=$powerStatus
+                BitLocker=$bitLocker; PendingReboot=$pendingReboot; ActiveUser=$activeUser; LastActive=$lastActive; PowerStatus=$powerStatus
                 Manufacturer=[string]$computer.Manufacturer; Model=[string]$computer.Model; Serial=$(if ($bios) { [string]$bios.SerialNumber } else { 'Unavailable' })
                 Bios=$(if ($bios) { [string]$bios.SMBIOSBIOSVersion } else { 'Unavailable' }); Processor=$(if ($processor.Length -gt 0) { [string]$processor[0].Name } else { 'Unavailable' })
                 GPU=$(if ($video.Length -gt 0) { $video -join '; ' } else { 'Unavailable' }); ConnectionType=$connectionType
@@ -3803,7 +3978,7 @@ function Find-SampleDevice {
    <StackPanel Grid.Column="0">
     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="SYSTEM" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions><TextBlock Style="{StaticResource Label}" Text="OU"/><TextBlock x:Name="OUValue" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="Operating system"/><TextBlock x:Name="OSValue" Grid.Row="1" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="Install date"/><TextBlock x:Name="InstallValue" Grid.Row="2" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="3" Style="{StaticResource Label}" Text="BitLocker"/><TextBlock x:Name="BitLockerValue" Grid.Row="3" Grid.Column="1" Style="{StaticResource Value}"/><TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="Pending reboot"/><Border x:Name="RebootBadge" Grid.Row="4" Grid.Column="1" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left"><TextBlock x:Name="RebootValue" FontWeight="SemiBold"/></Border><TextBlock Grid.Row="5" Style="{StaticResource Label}" Text="User profiles"/><TextBlock x:Name="ProfilesValue" Grid.Row="5" Grid.Column="1" Style="{StaticResource Value}"/></Grid></StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="STORAGE &amp; MEMORY" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,10"/><TextBlock x:Name="DiskText"/><ProgressBar x:Name="DiskBar" Height="8" Margin="0,7,0,14" Background="#E2E8F0" Foreground="#22C55E"/><TextBlock x:Name="RamText"/><ProgressBar x:Name="RamBar" Height="8" Margin="0,7,0,0" Background="#E2E8F0" Foreground="#D59B20"/></StackPanel></Border>
-    <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="USER &amp; POWER" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Last logged-on user" Style="{StaticResource Label}"/><TextBlock x:Name="UserValue" Style="{StaticResource Value}"/><TextBlock Text="Power status" Style="{StaticResource Label}"/><TextBlock x:Name="PowerValue" Style="{StaticResource Value}"/><StackPanel x:Name="DockPanel"><TextBlock Text="Docking station" Style="{StaticResource Label}"/><TextBlock x:Name="DockValue" Style="{StaticResource Value}"/></StackPanel></StackPanel></Border>
+    <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="USER &amp; POWER" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Signed-in user" Style="{StaticResource Label}"/><TextBlock x:Name="UserValue" Style="{StaticResource Value}"/><TextBlock Text="Last active" Style="{StaticResource Label}"/><TextBlock x:Name="LastActiveValue" Style="{StaticResource Value}"/><TextBlock Text="Power status" Style="{StaticResource Label}"/><TextBlock x:Name="PowerValue" Style="{StaticResource Value}"/><StackPanel x:Name="DockPanel"><TextBlock Text="Docking station" Style="{StaticResource Label}"/><TextBlock x:Name="DockValue" Style="{StaticResource Value}"/></StackPanel></StackPanel></Border>
    </StackPanel>
    <StackPanel Grid.Column="1">
     <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel><TextBlock Text="HARDWARE" Foreground="#0F5EA8" FontWeight="Bold" Margin="0,0,0,8"/><TextBlock Text="Manufacturer / model" Style="{StaticResource Label}"/><TextBlock x:Name="ModelValue" Style="{StaticResource Value}"/><TextBlock Text="Serial number" Style="{StaticResource Label}"/><TextBlock x:Name="SerialValue" Style="{StaticResource Value}"/><TextBlock Text="BIOS" Style="{StaticResource Label}"/><TextBlock x:Name="BiosValue" Style="{StaticResource Value}"/><TextBlock Text="Processor" Style="{StaticResource Label}"/><TextBlock x:Name="ProcessorValue" Style="{StaticResource Value}"/><TextBlock Text="Graphics" Style="{StaticResource Label}"/><TextBlock x:Name="GpuValue" Style="{StaticResource Value}"/><TextBlock Text="Monitors" Style="{StaticResource Label}"/><TextBlock x:Name="MonitorsValue" Style="{StaticResource Value}"/></StackPanel></Border>
@@ -3824,7 +3999,7 @@ function Find-SampleDevice {
         & $setText 'BitLockerValue' $Details.BitLocker
         & $setText 'RebootValue' $(if ($Details.PendingReboot) { 'Yes' } else { 'No' })
         & $setText 'ProfilesValue' $Details.UserProfileCount
-        & $setText 'UserValue' $Details.LastUser; & $setText 'PowerValue' $Details.PowerStatus; & $setText 'DockValue' $Details.Dock
+        & $setText 'UserValue' $Details.ActiveUser; & $setText 'LastActiveValue' $Details.LastActive; & $setText 'PowerValue' $Details.PowerStatus; & $setText 'DockValue' $Details.Dock
         $dialog.FindName('DockPanel').Visibility = if ($Details.ShowDock) { 'Visible' } else { 'Collapsed' }
         & $setText 'ModelValue' ("{0} {1}" -f $Details.Manufacturer,$Details.Model)
         & $setText 'SerialValue' $Details.Serial; & $setText 'BiosValue' $Details.Bios; & $setText 'ProcessorValue' $Details.Processor; & $setText 'GpuValue' $Details.GPU; & $setText 'MonitorsValue' $Details.Monitors
@@ -3965,7 +4140,7 @@ function Find-SampleDevice {
         'NearbyScopeSummaryText','FileEditorButton','RebuildNearbyButton','PingAllButton','IsolateNearbyButton','ClearNearbyButton',
         'NearbyDataGrid','NearbySaveButton','ShowAllNearbyButton',
         'ShowAllNearbyCheckBox','TodaysRoundedCheckBox','ExcludedCheckBox','RecentlyRoundedCheckBox','CriticalClinicalCheckBox',
-        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText'
+        'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText','DeviceUptimeText','DevicePendingRebootText'
     )
     $ui.Window = $window
 
@@ -3992,7 +4167,7 @@ function Find-SampleDevice {
         if ((Get-RoundingMinutes -Ui $ui) -lt $target) { Set-RoundingMinutes -Ui $ui -Minutes $target }
     })
     $dataFiles = Get-DataFileInfo -ResolvedXamlPath $resolvedXamlPath -SiteFolderPath $siteFolderPath
-    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
+    $script:AppState = [pscustomobject]@{ LastStatusMode='Ready'; SampleData=$null; CurrentDevice=$null; CurrentQueryToken=''; Inventory=$inventory; SelectedSiteName=$siteName; SelectedSummaryDevice=$null; SelectedSummaryParent=$null; PendingLocation=$null; DataRoot=$dataRoot; DataFiles=$dataFiles; ActiveNearbyScopes=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyIsolatedHostNames=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyContextSelectedRows=@(); NearbyRoundedTodayAssetTags=(New-Object 'System.Collections.Generic.HashSet[string]'); NearbyRoundedWeekEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyRoundedEventsByAsset=(New-Object 'System.Collections.Generic.Dictionary[string,object]'); NearbyReturnState=$null; QueryStartedFromNearby=$false; AutomatedPingClick=$false; NearbyPingInProgress=$false; LiveDetailsAvailable=$false }
 
     Clear-WindowData -Ui $ui
     Set-RoundingMinutes -Ui $ui -Minutes 3
@@ -4011,7 +4186,7 @@ function Find-SampleDevice {
         }
         $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::PreviewMouseWheelEvent, $nearbyWheelHandler, $true)
         $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::MouseWheelEvent, $nearbyWheelHandler, $true)
-        Initialize-NearbyContextMenu -Ui $ui -DataRoot $dataRoot
+        Initialize-NearbyContextMenu -Ui $ui -DataRoot $dataRoot -ResolvedXamlPath $resolvedXamlPath
     }
 
     $window.Title = "New Inventory Tool - $siteName"
@@ -4055,7 +4230,7 @@ function Find-SampleDevice {
     foreach ($checkBox in @($ui.TodaysRoundedCheckBox,$ui.ExcludedCheckBox,$ui.RecentlyRoundedCheckBox,$ui.CriticalClinicalCheckBox)) {
         $checkBox.Add_Click($refreshNearbyFromFilters)
     }
-    if ($ui.ShowAllNearbyButton) { $ui.ShowAllNearbyButton.Add_Click({ if ($ui.ShowAllNearbyCheckBox) { $ui.ShowAllNearbyCheckBox.IsChecked = $true; $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) } }) }
+    if ($ui.ShowAllNearbyButton) { $ui.ShowAllNearbyButton.Add_Click({ if ($script:AppState -and $script:AppState.NearbyIsolatedHostNames) { $script:AppState.NearbyIsolatedHostNames.Clear() }; if ($ui.ShowAllNearbyCheckBox) { $ui.ShowAllNearbyCheckBox.IsChecked = $true; $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) } }) }
 
     $ui.ShowAllNearbyCheckBox.Add_Click({
         try {
@@ -4338,6 +4513,8 @@ function Find-SampleDevice {
             Start-Process -FilePath $ui.ManualRoundButton.Tag -ErrorAction Stop
             $script:ManualRoundUsed = $true
         } catch {
+            $ui.ManualRoundButton.IsEnabled = $false
+            $ui.ManualRoundButton.ToolTip = "Manual Round is unavailable because the rounding webpage could not be opened: $($_.Exception.Message)"
             [System.Windows.MessageBox]::Show("Unable to open the rounding webpage:`n$($_.Exception.Message)","Manual Round") | Out-Null
         }
     })
@@ -4381,7 +4558,7 @@ function Find-SampleDevice {
     $ui.CablingNeededCheckBox.IsChecked = $false
     $ui.PhysicalCartCheckBox.IsChecked = $false
     $ui.AddDeviceToTrackerCheckBox.IsChecked = $false
-    $ui.ManualRoundButton.IsEnabled = $false
+    Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
     $window.Add_Loaded({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$false })
 
     [void]$window.ShowDialog()

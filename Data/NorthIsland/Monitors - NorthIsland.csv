@@ -1,6 +1,6 @@
 ﻿"u_parent_asset","name","asset_tag","serial_number","location","u_building","u_room","u_floor","po_number","u_scheduled_retirement","location.u_deskside_assignment_group","model_id"
-"","HSS-1955085-M2","HSS-1955085-M2","","VIHA-SJC-St. Joseph's Campus","38 Wing","","2","","","NTT-Deskside Services-NorthIsland-Local","Lenovo ZLNMF24"
 "","HSS-1954604-M1","HSS-1954604-M1","","VIHA-CVH-Comox Valley Hospital-Main Building","","CV4121","4","","","NTT-Deskside Services-NorthIsland-Staffed","Lenovo ZLNMF24"
+"","HSS-1955085-M2","HSS-1955085-M2","","VIHA-SJC-St. Joseph's Campus","38 Wing","","2","","","NTT-Deskside Services-NorthIsland-Local","Lenovo ZLNMF24"
 "LD027172","LD027172","HSS-1046503","1095VZ3","VIHA-CFA-Courtenay Fitzgerald Avenue-Main Building-1st Floor","Main Building","8","1","REQ1292321-RITM1362753-SCTASK2185064","06/30/2032","NTT-Deskside Services-NorthIsland-Local","Dell MONITOR P2423D"
 "PC026225","PC026225","HSS-1038297","10PGRH3","VIHA-CVH-Comox Valley Hospital-Main Building-4th Floor","Main Building","CV4034.2","4","REQ0719819-RITM0756356-SCTASK1190951","06/30/2030","NTT-Deskside Services-NorthIsland-Staffed","Dell MONITOR P2421D"
 "PC026125","PC026125","HSS-8079545","10Q6PW3","VIHA-CVH-Comox Valley Hospital-Main Building-1st Floor","Main Building","CV1834","1","VIHATRP20230916-086","12/31/2031","NTT-Deskside Services-NorthIsland-Staffed","Dell MONITOR P2423D"

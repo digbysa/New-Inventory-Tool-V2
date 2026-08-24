@@ -1238,6 +1238,7 @@ try {
             Parent=$parent; RITM=Extract-Ritm (Get-FieldValue -Row $Row -Names @('po_number','RITM'))
             RetireDate=Format-DateLong (Get-FieldValue -Row $Row -Names @('u_scheduled_retirement','u_retired_date','RetireDate'))
             LastRounded=Get-FieldValue -Row $Row -Names @('u_last_rounded_date','LastRounded')
+            MaintenanceType=Get-FieldValue -Row $Row -Names @('u_device_rounding','MaintenanceType')
             City=Get-FieldValue -Row $Row -Names @('location.city','City')
             Location=Get-FieldValue -Row $Row -Names @('location','Location')
             Building=Get-FieldValue -Row $Row -Names @('u_building','Building')
@@ -3184,6 +3185,10 @@ try {
         $Ui.FloorTextBox.Text = $locationDevice.Floor
         $Ui.RoomTextBox.Text = $locationDevice.Room
         $Ui.DepartmentTextBox.Text = $locationDevice.Department
+        # Refresh this only when the selected device changes. The source record
+        # remains unchanged, so subsequent UI activity cannot overwrite a
+        # maintenance type that the technician manually selects in the card.
+        Update-MaintenanceTypeSelection -Ui $Ui -Device $Device -Inventory $Inventory
         Set-LocationValidationStyle -Ui $Ui -Inventory $Inventory
         Update-CheckCompleteButtonState -Ui $Ui
         $script:AppState.SelectedSummaryDevice = $Device
@@ -3582,6 +3587,15 @@ function Find-SampleDevice {
         if (-not [string]::IsNullOrWhiteSpace($MaintenanceType)) { return $MaintenanceType.Trim() }
         if (-not [string]::IsNullOrWhiteSpace($DeviceName) -and $DeviceName.Trim() -match '(?i)^AO') { return 'Mobile Cart' }
         return 'General Rounding'
+    }
+
+    function Update-MaintenanceTypeSelection {
+        param([hashtable]$Ui,[pscustomobject]$Device,[pscustomobject]$Inventory)
+        if (-not $Ui -or -not $Ui.MaintenanceTypeComboBox -or -not $Device) { return }
+        $parentDevice = Resolve-ParentDevice -Device $Device -Inventory $Inventory
+        $sourceDevice = if ($parentDevice) { $parentDevice } else { $Device }
+        $maintenanceType = Get-MaintenanceTypeOrDefault -MaintenanceType ([string]$sourceDevice.MaintenanceType) -DeviceName ([string]$sourceDevice.Name)
+        Set-ControlText -Control $Ui.MaintenanceTypeComboBox -Value $maintenanceType
     }
 
     function Get-RoundingUrlForDevice {
@@ -4321,9 +4335,6 @@ function Find-SampleDevice {
         if (-not $queryStartedFromNearby -and $script:AppState) { $script:AppState.NearbyReturnState = $null }
         $script:AppState.CurrentDevice = $match
         $script:ManualRoundUsed = $false
-        $maintenanceType = ''
-        try { $maintenanceType = [string]$match.u_device_rounding } catch {}
-        Set-ControlText -Control $ui.MaintenanceTypeComboBox -Value (Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $match.Name)
         Update-ManualRoundButtonState -Ui $ui -CurrentDevice $match -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag
         $script:RoundingBaseMinutes = 3
         Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes

@@ -1062,7 +1062,7 @@
                                 <DataGridTextColumn Header="IP Address" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Subnet" IsReadOnly="True" Width="Auto" MinWidth="65" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Asset Tag" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="Auto" MinWidth="110" Binding="{Binding Location}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="110" MinWidth="110" Binding="{Binding Location}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Building" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Building}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Floor" IsReadOnly="True" Width="Auto" MinWidth="55" Binding="{Binding Floor}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Room" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>

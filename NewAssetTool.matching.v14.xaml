@@ -1008,9 +1008,17 @@
                         <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow" IsReadOnly="False" EnableColumnVirtualization="False">
                             <DataGrid.Resources>
                                 <Style TargetType="{x:Type ScrollBar}">
-                                    <Setter Property="Width" Value="13"/>
-                                    <Setter Property="MinWidth" Value="13"/>
                                     <Setter Property="Background" Value="#F3F4F6"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="Orientation" Value="Vertical">
+                                            <Setter Property="Width" Value="13"/>
+                                            <Setter Property="MinWidth" Value="13"/>
+                                        </Trigger>
+                                        <Trigger Property="Orientation" Value="Horizontal">
+                                            <Setter Property="Height" Value="13"/>
+                                            <Setter Property="MinHeight" Value="13"/>
+                                        </Trigger>
+                                    </Style.Triggers>
                                 </Style>
                                 <Style TargetType="{x:Type Thumb}">
                                     <Setter Property="Background" Value="#8B8F96"/>

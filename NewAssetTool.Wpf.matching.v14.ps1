@@ -2309,12 +2309,16 @@ try {
 
         # Measure each Nearby column against its cells, then lock in a pixel width with
         # a small comfort buffer so values are not pressed directly against dividers.
+        # Location deliberately retains its current pixel width, including any width
+        # chosen by dragging its header divider.
         $extraColumnSpace = 18
         foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
+            if ([string]$column.Header -eq 'Location') { continue }
             $column.Width = New-Object System.Windows.Controls.DataGridLength -ArgumentList 1, ([System.Windows.Controls.DataGridLengthUnitType]::SizeToCells)
         }
         try { $Ui.NearbyDataGrid.UpdateLayout() } catch {}
         foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
+            if ([string]$column.Header -eq 'Location') { continue }
             if ($column.ActualWidth -gt 0) {
                 $targetWidth = [Math]::Max($column.ActualWidth + $extraColumnSpace, $column.MinWidth)
                 $column.Width = New-Object System.Windows.Controls.DataGridLength $targetWidth

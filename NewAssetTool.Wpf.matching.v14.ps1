@@ -3581,7 +3581,13 @@ function Find-SampleDevice {
 
     function Get-RoundingUrlForDevice {
         param([pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
-        if (-not $CurrentDevice -or -not $CurrentDevice.AssetTag) { return $null }
+        # Rounding is supported only for the four parent-computer families.  Do
+        # not allow a peripheral asset tag (or a WT computer) to produce a URL
+        # even if it happens to exist in Rounding.csv.
+        if (-not $CurrentDevice -or $CurrentDevice.DetectedType -ne 'Computer' -or
+            [string]::IsNullOrWhiteSpace([string]$CurrentDevice.Name) -or
+            $CurrentDevice.Name.Trim() -notmatch '^(?i)(AO|PC|LD|TD)' -or
+            [string]::IsNullOrWhiteSpace([string]$CurrentDevice.AssetTag)) { return $null }
         $key = $CurrentDevice.AssetTag.Trim().ToUpper()
         if ($RoundingByAssetTag.ContainsKey($key)) {
             return "https://devicerounding.nttdatanucleus.com/DeviceMaintenance/Index?DeviceId=$($RoundingByAssetTag[$key])"
@@ -3606,8 +3612,9 @@ function Find-SampleDevice {
     }
 
     function Update-ManualRoundButtonState {
-        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[hashtable]$RoundingByAssetTag)
-        $url = Get-RoundingUrlForDevice -CurrentDevice $CurrentDevice -RoundingByAssetTag $RoundingByAssetTag
+        param([hashtable]$Ui,[pscustomobject]$CurrentDevice,[pscustomobject]$Inventory,[hashtable]$RoundingByAssetTag)
+        $roundingDevice = Resolve-ParentDevice -Device $CurrentDevice -Inventory $Inventory
+        $url = Get-RoundingUrlForDevice -CurrentDevice $roundingDevice -RoundingByAssetTag $RoundingByAssetTag
         $Ui.ManualRoundButton.Tag = $url
         if (-not [string]::IsNullOrWhiteSpace($url)) {
             $Ui.ManualRoundButton.IsEnabled = $true
@@ -3617,10 +3624,12 @@ function Find-SampleDevice {
 
         $reason = if (-not $CurrentDevice) {
             'Manual Round is unavailable until a device is selected.'
-        } elseif ([string]::IsNullOrWhiteSpace([string]$CurrentDevice.AssetTag)) {
+        } elseif (-not $roundingDevice) {
+            'Manual Round is unavailable because no roundable AO, PC, LD, or TD parent device was found.'
+        } elseif ([string]::IsNullOrWhiteSpace([string]$roundingDevice.AssetTag)) {
             'Manual Round is unavailable because the selected device has no asset tag.'
         } else {
-            "Manual Round is unavailable because no rounding URL was found for asset tag $($CurrentDevice.AssetTag)."
+            "Manual Round is unavailable because no rounding URL was found for asset tag $($roundingDevice.AssetTag) on the parent device."
         }
         $Ui.ManualRoundButton.IsEnabled = $false
         $Ui.ManualRoundButton.ToolTip = $reason
@@ -4181,11 +4190,35 @@ function Find-SampleDevice {
     Toggle-LocationEditMode -Ui $ui -IsEditing:$false
     Register-SummaryClipboardCopy -Ui $ui
     if ($ui.NearbyDataGrid) {
+        # WPF exposes vertical wheel input as a routed event, but precision
+        # touchpads send native WM_MOUSEHWHEEL messages for a two-finger
+        # horizontal gesture.  Bridge those messages to the Nearby grid's
+        # ScrollViewer so the gesture works without dragging the scrollbar.
+        $window.Add_SourceInitialized({
+            $source = [System.Windows.Interop.HwndSource]::FromVisual($window)
+            if (-not $source) { return }
+            $script:NearbyHorizontalWheelHook = [System.Windows.Interop.HwndSourceHook]{
+                param($hwnd, $msg, $wParam, $lParam, [ref]$handled)
+                if ($msg -ne 0x020E -or -not $ui.NearbyDataGrid.IsMouseOver) { return [IntPtr]::Zero }
+                $scrollViewer = Find-VisualChildByType -Root $ui.NearbyDataGrid -Type ([System.Windows.Controls.ScrollViewer])
+                if (-not $scrollViewer) { return [IntPtr]::Zero }
+                $delta = ([int64]$wParam -shr 16) -band 0xFFFF
+                if ($delta -ge 0x8000) { $delta -= 0x10000 }
+                if ($delta -gt 0) { $scrollViewer.LineRight() } else { $scrollViewer.LineLeft() }
+                $handled.Value = $true
+                return [IntPtr]::Zero
+            }
+            $source.AddHook($script:NearbyHorizontalWheelHook)
+        })
         $nearbyWheelHandler = [System.Windows.Input.MouseWheelEventHandler]{
             param($sender, $e)
             $scrollViewer = Find-VisualChildByType -Root $ui.NearbyDataGrid -Type ([System.Windows.Controls.ScrollViewer])
             if ($null -eq $scrollViewer) { return }
-            if ($e.Delta -lt 0) { $scrollViewer.LineDown() } else { $scrollViewer.LineUp() }
+            if (([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Shift) -ne 0) {
+                if ($e.Delta -lt 0) { $scrollViewer.LineRight() } else { $scrollViewer.LineLeft() }
+            } else {
+                if ($e.Delta -lt 0) { $scrollViewer.LineDown() } else { $scrollViewer.LineUp() }
+            }
             $e.Handled = $true
         }
         $ui.NearbyDataGrid.AddHandler([System.Windows.UIElement]::PreviewMouseWheelEvent, $nearbyWheelHandler, $true)
@@ -4273,7 +4306,7 @@ function Find-SampleDevice {
             if (-not $queryStartedFromNearby -and $script:AppState) { $script:AppState.NearbyReturnState = $null }
             $script:AppState.CurrentDevice = $null
             $script:ManualRoundUsed = $false
-            Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
+            Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag
             Set-StatusMessage -Ui $ui -Mode 'NotFound'
             if (-not [string]::IsNullOrWhiteSpace($searchTerm)) {
                 [System.Windows.MessageBox]::Show("No device was found for:`n$searchTerm", 'Device Not Found') | Out-Null
@@ -4286,7 +4319,7 @@ function Find-SampleDevice {
         $maintenanceType = ''
         try { $maintenanceType = [string]$match.u_device_rounding } catch {}
         Set-ControlText -Control $ui.MaintenanceTypeComboBox -Value (Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $match.Name)
-        Update-ManualRoundButtonState -Ui $ui -CurrentDevice $match -RoundingByAssetTag $roundingByAssetTag
+        Update-ManualRoundButtonState -Ui $ui -CurrentDevice $match -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag
         $script:RoundingBaseMinutes = 3
         Set-RoundingMinutes -Ui $ui -Minutes $script:RoundingBaseMinutes
         $script:RoundingStartTimeUtc = [DateTime]::UtcNow
@@ -4336,7 +4369,7 @@ function Find-SampleDevice {
             $script:AppState.SelectedSummaryParent = $null
             Clear-WindowData -Ui $ui -ClearNearby:$false
             Set-RoundingMinutes -Ui $ui -Minutes 3
-            Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
+            Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag
             Set-StatusMessage -Ui $ui -Mode 'Ready'
         }
     })
@@ -4562,7 +4595,7 @@ function Find-SampleDevice {
     $ui.CablingNeededCheckBox.IsChecked = $false
     $ui.PhysicalCartCheckBox.IsChecked = $false
     $ui.AddDeviceToTrackerCheckBox.IsChecked = $false
-    Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -RoundingByAssetTag $roundingByAssetTag
+    Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag
     $window.Add_Loaded({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$false })
 
     [void]$window.ShowDialog()

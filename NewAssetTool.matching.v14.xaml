@@ -1076,7 +1076,7 @@
                                 <DataGridTextColumn Header="Room" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Department" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding Department}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Maintenance Type" IsReadOnly="True" Width="Auto" MinWidth="120" Binding="{Binding MaintenanceType}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Last Rounded" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding LastRounded}">
+                                <DataGridTextColumn Header="Last Rounded" IsReadOnly="True" Width="Auto" MinWidth="100" Binding="{Binding LastRounded}" SortMemberPath="LastRoundedSort">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
                                             <Setter Property="Foreground" Value="{Binding LastRoundedForeground}"/>
@@ -1088,7 +1088,7 @@
                                         </Style>
                                     </DataGridTextColumn.CellStyle>
                                 </DataGridTextColumn>
-                                <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="Auto" MinWidth="75" Binding="{Binding DaysAgo}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="Auto" MinWidth="75" Binding="{Binding DaysAgo}" SortMemberPath="DaysAgoSort" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="205" IsReadOnly="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>

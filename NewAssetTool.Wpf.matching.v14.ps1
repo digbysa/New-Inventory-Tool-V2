@@ -2248,9 +2248,14 @@ try {
                 Department=$nearbyDepartment
                 MaintenanceType=(Get-MaintenanceTypeOrDefault -MaintenanceType $maintenanceType -DeviceName $computer.Name)
                 LastRounded=$lastRoundedText
+                # Keep the display text user-friendly while exposing strongly typed
+                # values for WPF's column sorter. Sorting the formatted date (or a
+                # mixture of integer and empty-string DaysAgo values) is lexical.
+                LastRoundedSort=$(if ($lastRoundedDate) { [datetime]$lastRoundedDate } else { [datetime]::MinValue })
                 LastRoundedBackground=$lastRoundedBackground
                 LastRoundedForeground=$(if ($isToday -or (Get-RoundingStatus -RoundedDate $lastRoundedDate) -eq 'Green') { '#15803D' } else { '#000000' })
                 DaysAgo=$daysAgo
+                DaysAgoSort=$(if ($lastRoundedDate) { [int]$daysAgo } else { [int]::MaxValue })
                 IsRoundedToday=$isToday
                 IsExcluded=$isExcluded
                 IsCriticalClinical=$isCriticalClinical

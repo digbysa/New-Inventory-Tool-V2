@@ -302,7 +302,7 @@ try {
 
         $grid = New-Object System.Windows.Controls.DataGrid
         $grid.AutoGenerateColumns = $false; $grid.CanUserAddRows = $false; $grid.CanUserDeleteRows = $false; $grid.IsReadOnly = $false
-        $grid.SelectionUnit = 'CellOrRowHeader'; $grid.GridLinesVisibility = 'All'; $grid.HeadersVisibility = 'All'; $grid.EnableColumnVirtualization = $true; $grid.EnableRowVirtualization = $true
+        $grid.SelectionMode = 'Extended'; $grid.SelectionUnit = 'FullRow'; $grid.GridLinesVisibility = 'All'; $grid.HeadersVisibility = 'All'; $grid.EnableColumnVirtualization = $true; $grid.EnableRowVirtualization = $true
         $grid.Background = [System.Windows.Media.Brushes]::White; $grid.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D1D8E0')
         $blankBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#FCE3E5')
         foreach ($column in $columns) {
@@ -379,6 +379,67 @@ try {
         $template = New-Object System.Windows.DataTemplate; $template.VisualTree = $factory; $deleteColumn.CellTemplate = $template
         [void]$grid.Columns.Add($deleteColumn)
         $grid.ItemsSource = $table.DefaultView
+
+        # Match the Nearby table's multi-row context-menu behavior. Right-clicking
+        # an already selected row keeps the full selection; right-clicking a new
+        # row makes that row the selection before opening the menu.
+        $deleteSelectedRows = {
+            $selectedRows = @($grid.SelectedItems | Where-Object { $_ -is [System.Data.DataRowView] })
+            if ($selectedRows.Count -eq 0) { return }
+            $rowLabel = if ($selectedRows.Count -eq 1) { 'this row' } else { "these $($selectedRows.Count) rows" }
+            $answer = [System.Windows.MessageBox]::Show("Delete $rowLabel from RoundingEvents.csv when you save?", 'Confirm Delete', [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
+            if ($answer -ne [System.Windows.MessageBoxResult]::Yes) { return }
+            foreach ($selectedRow in $selectedRows) { $selectedRow.Row.Delete() }
+            $state.IsDirty = $true
+        }.GetNewClosure()
+        $deleteMenu = New-Object System.Windows.Controls.ContextMenu
+        $deleteSelectedItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Delete selected row(s)' }
+        $deleteSelectedItem.Add_Click({ & $deleteSelectedRows }.GetNewClosure())
+        [void]$deleteMenu.Items.Add($deleteSelectedItem)
+        $grid.ContextMenu = $deleteMenu
+        $grid.Add_PreviewMouseRightButtonDown({
+            param($sender,$e)
+            $source = $e.OriginalSource -as [System.Windows.DependencyObject]
+            while ($source -and -not ($source -is [System.Windows.Controls.DataGridRow])) {
+                try { $source = [System.Windows.Media.VisualTreeHelper]::GetParent($source) } catch { $source = $null }
+            }
+            if (-not $source) { return }
+            $clickedRow = $source.Item
+            if (-not $sender.SelectedItems.Contains($clickedRow)) {
+                $sender.SelectedItems.Clear()
+                [void]$sender.SelectedItems.Add($clickedRow)
+            }
+            $sender.CurrentItem = $clickedRow
+        })
+
+        # WPF does not promote precision-touchpad WM_MOUSEHWHEEL input to a
+        # routed event. Bridge it to this grid's ScrollViewer, and retain Shift +
+        # vertical-wheel horizontal scrolling for conventional mouse hardware.
+        $editor.Add_SourceInitialized({
+            $source = [System.Windows.Interop.HwndSource]::FromVisual($editor)
+            if (-not $source) { return }
+            $editorHorizontalWheelHook = [System.Windows.Interop.HwndSourceHook]{
+                param($hwnd, $msg, $wParam, $lParam, [ref]$handled)
+                if ($msg -ne 0x020E -or -not $grid.IsMouseOver) { return [IntPtr]::Zero }
+                $scrollViewer = Find-VisualChildByType -Root $grid -Type ([System.Windows.Controls.ScrollViewer])
+                if (-not $scrollViewer) { return [IntPtr]::Zero }
+                $delta = ([int64]$wParam -shr 16) -band 0xFFFF
+                if ($delta -ge 0x8000) { $delta -= 0x10000 }
+                if ($delta -gt 0) { $scrollViewer.LineRight() } else { $scrollViewer.LineLeft() }
+                $handled.Value = $true
+                return [IntPtr]::Zero
+            }.GetNewClosure()
+            $source.AddHook($editorHorizontalWheelHook)
+        }.GetNewClosure())
+        $editorWheelHandler = [System.Windows.Input.MouseWheelEventHandler]{
+            param($sender,$e)
+            if (([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Shift) -eq 0) { return }
+            $scrollViewer = Find-VisualChildByType -Root $grid -Type ([System.Windows.Controls.ScrollViewer])
+            if (-not $scrollViewer) { return }
+            if ($e.Delta -lt 0) { $scrollViewer.LineRight() } else { $scrollViewer.LineLeft() }
+            $e.Handled = $true
+        }.GetNewClosure()
+        $grid.AddHandler([System.Windows.UIElement]::PreviewMouseWheelEvent, $editorWheelHandler, $true)
         [System.Windows.Controls.Grid]::SetRow($grid, 1); $root.Children.Add($grid) | Out-Null
 
         $buttons = New-Object System.Windows.Controls.StackPanel; $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = New-Object System.Windows.Thickness(0,10,0,0)

@@ -1507,6 +1507,16 @@ try {
         return (($Raw.Trim().ToUpper() -replace '\s','') -replace '-','')
     }
 
+    function ConvertFrom-AddPeripheralScan {
+        param([string]$Raw)
+        if ([string]::IsNullOrWhiteSpace($Raw)) { return $Raw }
+        $trimmed = $Raw.Trim()
+        if ($trimmed.Length -gt 2 -and $trimmed.StartsWith('C0',[System.StringComparison]::OrdinalIgnoreCase)) {
+            return $trimmed.Substring(0,$trimmed.Length - 1)
+        }
+        return $Raw
+    }
+
     function Resolve-AssociatedPeripheralLookup {
         param([string]$Query,[pscustomobject]$Inventory)
         $normalized = Normalize-AssocSearch -Raw $Query
@@ -2101,7 +2111,12 @@ try {
         $txt.Add_KeyDown({
             if ($_.Key -eq [System.Windows.Input.Key]::Enter -or $_.Key -eq [System.Windows.Input.Key]::Return) {
                 $_.Handled = $true
-                $result = Resolve-AssociatedPeripheralLookup -Query $txt.Text -Inventory $Inventory
+                $query = ConvertFrom-AddPeripheralScan -Raw $txt.Text
+                if ($query -cne $txt.Text) {
+                    $txt.Text = $query
+                    $txt.CaretIndex = $txt.Text.Length
+                }
+                $result = Resolve-AssociatedPeripheralLookup -Query $query -Inventory $Inventory
                 & $updatePreview $result
             }
         })

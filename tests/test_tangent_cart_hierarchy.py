@@ -33,3 +33,16 @@ def test_cart_peripherals_are_listed_as_grandchildren():
     assert "Role='Grandchild'" in associated
     assert "$record.DetectedType -eq 'Cart'" in parent_resolver
     assert "$computer.DetectedType -eq 'Computer'" in parent_resolver
+
+
+def test_summary_displays_the_immediate_parent_name():
+    display_resolver = function_body("Get-ImmediateParentDisplayName")
+    summary = function_body("Set-SelectedSummaryDevice")
+
+    # The summary must resolve only the stored parent reference. In particular,
+    # a scanner on a cart displays AOxxx-CRT rather than the cart's AO computer.
+    assert "$Device.Parent.Trim()" in display_resolver
+    assert "$Inventory.IndexByAsset" in display_resolver
+    assert "return $immediateParent.Name" in display_resolver
+    assert "Resolve-ParentDevice" not in display_resolver
+    assert "Get-ImmediateParentDisplayName -Device $Device -Inventory $Inventory" in summary

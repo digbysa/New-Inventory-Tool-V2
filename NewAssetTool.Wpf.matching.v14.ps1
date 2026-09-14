@@ -1423,6 +1423,17 @@ try {
                     if ($index -and $index.ContainsKey($key)) {
                         $record = $index[$key]
                         if ($record.DetectedType -eq 'Computer' -and $record.Name -match '^(?i)(LD|PC|TD|AO|WT)') { return $record }
+                        # Tangent peripherals are attached to the medical cart, so
+                        # follow that intermediate parent back to the AO computer.
+                        if ($record.DetectedType -eq 'Cart' -and $record.Parent) {
+                            foreach ($parentKey in (Get-AssociationTokenVariants -Token $record.Parent)) {
+                                foreach ($parentIndex in @($Inventory.IndexByName,$Inventory.IndexByAsset,$Inventory.IndexBySerial)) {
+                                    if (-not $parentIndex -or -not $parentIndex.ContainsKey($parentKey)) { continue }
+                                    $computer = $parentIndex[$parentKey]
+                                    if ($computer.DetectedType -eq 'Computer' -and $computer.Name -match '^(?i)(LD|PC|TD|AO|WT)') { return $computer }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1477,13 +1488,14 @@ try {
         $childrenByParent = $Inventory.ChildrenByParent
 
         $parentTokens = New-Object System.Collections.ArrayList
-        foreach ($candidate in @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial,$Device.Parent)) {
+        foreach ($candidate in @($effectiveParent.AssetTag,$effectiveParent.Name,$effectiveParent.Serial)) {
             foreach ($variant in (Get-AssociationTokenVariants -Token $candidate)) {
                 if (-not $parentTokens.Contains($variant)) { [void]$parentTokens.Add($variant) }
             }
         }
 
         $addedChildAssetTags = @{}
+        $directChildren = New-Object System.Collections.ArrayList
         foreach ($token in $parentTokens) {
             if (-not $childrenByParent.ContainsKey($token)) { continue }
             foreach ($entry in $childrenByParent[$token]) {
@@ -1495,7 +1507,26 @@ try {
                 $childDevice = ConvertTo-DeviceRecord -Row $row -DetectedType $type
                 $record = [pscustomobject]@{ Role=$role; Type=$type; Name=$childDevice.Name; AssetTag=$childDevice.AssetTag; Serial=$childDevice.Serial; Model=$childDevice.Model; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$childDevice.RITM; Retire=(Format-DateLong $childDevice.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $type -AssetTag $childDevice.AssetTag); Device=$childDevice }
                 $results += $record
+                [void]$directChildren.Add($childDevice)
                 if (-not [string]::IsNullOrWhiteSpace($childAssetTag)) { $addedChildAssetTags[$childAssetTag] = $true }
+            }
+        }
+
+        # A Tangent's medical cart is its child; peripherals attached to that cart
+        # are displayed one level below it.
+        foreach ($child in $directChildren) {
+            if ($child.DetectedType -ne 'Cart') { continue }
+            foreach ($candidate in @($child.AssetTag,$child.Name,$child.Serial)) {
+                foreach ($variant in (Get-AssociationTokenVariants -Token $candidate)) {
+                    if (-not $childrenByParent.ContainsKey($variant)) { continue }
+                    foreach ($entry in $childrenByParent[$variant]) {
+                        $grandchild = ConvertTo-DeviceRecord -Row $entry.Row -DetectedType $entry.Type
+                        $grandchildAssetTag = if ($grandchild.AssetTag) { $grandchild.AssetTag.Trim().ToUpper() } else { '' }
+                        if ($grandchildAssetTag -and $addedChildAssetTags.ContainsKey($grandchildAssetTag)) { continue }
+                        $results += [pscustomobject]@{ Role='Grandchild'; Type=$entry.Type; Name=$grandchild.Name; AssetTag=$grandchild.AssetTag; Serial=$grandchild.Serial; Model=$grandchild.Model; SerialForeground='#1F2937'; SerialToolTip=''; RITM=$grandchild.RITM; Retire=(Format-DateLong $grandchild.RetireDate); CmdbUrl=(Get-CmdbLink -DeviceType $entry.Type -AssetTag $grandchild.AssetTag); Device=$grandchild }
+                        if ($grandchildAssetTag) { $addedChildAssetTags[$grandchildAssetTag] = $true }
+                    }
+                }
             }
         }
         return ,$results
@@ -1568,6 +1599,21 @@ try {
             'Cart' { return "$($ParentDevice.Name)-CRT" }
             default { return $Candidate.Name }
         }
+    }
+
+    function Get-PeripheralAssociationParent {
+        param([pscustomobject]$ParentDevice,[pscustomobject]$Inventory)
+        if (-not $ParentDevice -or -not $Inventory) { return $ParentDevice }
+        if ($ParentDevice.DetectedType -ne 'Computer' -or $ParentDevice.Name -notmatch '^(?i)AO') { return $ParentDevice }
+
+        $cartName = "$($ParentDevice.Name)-CRT"
+        foreach ($key in (Get-AssociationTokenVariants -Token $cartName)) {
+            if ($Inventory.IndexByName -and $Inventory.IndexByName.ContainsKey($key)) {
+                $cart = $Inventory.IndexByName[$key]
+                if ($cart.DetectedType -eq 'Cart') { return $cart }
+            }
+        }
+        return $ParentDevice
     }
 
     function Get-ParentPreviewDisplay {
@@ -2003,6 +2049,7 @@ try {
     function Show-AddPeripheralDialog {
         param([hashtable]$Ui,[pscustomobject]$ParentDevice,[pscustomobject]$Inventory,[string]$ResolvedXamlPath,[string]$DefaultSearchText='',[string]$InfoMessage='',[object[]]$ConnectedMonitorDetails=@())
         if (-not $ParentDevice) { return $false }
+        $associationParent = Get-PeripheralAssociationParent -ParentDevice $ParentDevice -Inventory $Inventory
         $window = New-Object System.Windows.Window
         $window.Title = 'Add Peripheral (Name/Asset/Serial)'
         $window.SizeToContent = 'WidthAndHeight'
@@ -2086,7 +2133,7 @@ try {
             $c = $result.Candidate
             $proposedName = Get-ProposedPeripheralName -Candidate $c -ParentDevice $ParentDevice
             if ([string]::IsNullOrWhiteSpace($proposedName)) { $proposedName = $c.Name }
-            $proposedParent = $ParentDevice.AssetTag
+            $proposedParent = $associationParent.AssetTag
             $currentParentDisplay = Get-ParentPreviewDisplay -Token $c.Parent -FallbackParent $ParentDevice -Inventory $Inventory
             $proposedParentDisplay = Get-ParentPreviewDisplay -Token $proposedParent -FallbackParent $ParentDevice -Inventory $Inventory
             $previewValues.Type.Text = $c.DetectedType
@@ -2134,12 +2181,12 @@ try {
                 foreach ($row in $Inventory.$collectionName) {
                     $at = Get-FieldValue -Row $row -Names @('asset_tag')
                     if ($at -and $target.AssetTag -and $at.Trim().ToUpper() -eq $target.AssetTag.Trim().ToUpper()) {
-                        Set-RowFieldValue -Row $row -Name 'u_parent_asset' -Value $ParentDevice.AssetTag
+                        Set-RowFieldValue -Row $row -Name 'u_parent_asset' -Value $associationParent.AssetTag
                         Set-RowFieldValue -Row $row -Name 'name' -Value $newName
                     }
                 }
             }
-            Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $target -OldParent $oldParent -NewParent $ParentDevice.AssetTag -OldName $oldName -NewName $newName -Action 'Link' -Inventory $Inventory
+            Add-CmdbAssociationUpdate -ResolvedXamlPath $ResolvedXamlPath -Candidate $target -OldParent $oldParent -NewParent $associationParent.AssetTag -OldName $oldName -NewName $newName -Action 'Link' -Inventory $Inventory
             Build-InventoryIndices -Inventory $Inventory
             $window.DialogResult = $true
             $window.Close()

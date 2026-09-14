@@ -29,3 +29,16 @@ def test_add_peripheral_enter_uses_corrected_scan_for_lookup_and_display():
     assert "$txt.Text = $query" in dialog
     assert "Resolve-AssociatedPeripheralLookup -Query $query" in dialog
     assert SCRIPT.count("ConvertFrom-AddPeripheralScan -Raw") == 1
+
+
+def test_add_peripheral_dialog_focuses_search_when_displayed():
+    dialog = SCRIPT.split("function Show-AddPeripheralDialog", 1)[1].split(
+        "function Get-CmdbLink", 1
+    )[0]
+
+    assert "$window.Add_ContentRendered({" in dialog
+    assert "$txt.Focus() | Out-Null" in dialog
+    assert "$txt.CaretIndex = $txt.Text.Length" in dialog
+    assert dialog.index("$window.Add_ContentRendered({") < dialog.index(
+        "$window.ShowDialog()"
+    )

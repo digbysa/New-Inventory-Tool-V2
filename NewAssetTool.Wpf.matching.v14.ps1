@@ -1440,6 +1440,24 @@ try {
         }
         return $null
     }
+    function Get-ImmediateParentDisplayName {
+        param([pscustomobject]$Device,[pscustomobject]$Inventory)
+        if (-not $Device -or [string]::IsNullOrWhiteSpace($Device.Parent)) { return '(n/a)' }
+
+        $parentToken = $Device.Parent.Trim()
+        if ($parentToken -eq '(n/a)' -or -not $Inventory) { return $parentToken }
+
+        foreach ($key in (Get-AssociationTokenVariants -Token $parentToken)) {
+            foreach ($index in @($Inventory.IndexByAsset,$Inventory.IndexByName,$Inventory.IndexBySerial)) {
+                if (-not $index -or -not $index.ContainsKey($key)) { continue }
+                $immediateParent = $index[$key]
+                if ($immediateParent -and -not [string]::IsNullOrWhiteSpace($immediateParent.Name)) {
+                    return $immediateParent.Name
+                }
+            }
+        }
+        return $parentToken
+    }
     function Get-AssociationTokenVariants {
         param([string]$Token)
         $variants = New-Object System.Collections.ArrayList
@@ -2192,6 +2210,10 @@ try {
             $window.Close()
         })
         if (-not [string]::IsNullOrWhiteSpace($DefaultSearchText)) { $result = Resolve-AssociatedPeripheralLookup -Query $DefaultSearchText -Inventory $Inventory; & $updatePreview $result }
+        $window.Add_ContentRendered({
+            $txt.Focus() | Out-Null
+            $txt.CaretIndex = $txt.Text.Length
+        })
         $null = $window.ShowDialog()
         return [bool]$window.DialogResult
     }
@@ -3298,7 +3320,7 @@ try {
         Set-DisplayText -Ui $Ui -BaseName 'HostName' -Value $Device.Name
         Set-DisplayText -Ui $Ui -BaseName 'AssetTag' -Value $Device.AssetTag
         Set-DisplayText -Ui $Ui -BaseName 'Serial' -Value $Device.Serial
-        Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value $Device.Parent
+        Set-DisplayText -Ui $Ui -BaseName 'Parent' -Value (Get-ImmediateParentDisplayName -Device $Device -Inventory $Inventory)
         Set-DisplayText -Ui $Ui -BaseName 'Ritm' -Value $Device.RITM
         Set-DisplayText -Ui $Ui -BaseName 'Retire' -Value (Format-DateLong $Device.RetireDate)
         Set-LastRoundedDisplay -Ui $Ui -LastRoundedRaw $locationDevice.LastRounded

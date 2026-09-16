@@ -1744,12 +1744,10 @@ try {
         $ipBytes = ConvertTo-IPv4Bytes -IpAddress $ip
         if (-not $ipBytes) { return 'Unknown' }
 
-        foreach ($line in (Get-Content -LiteralPath $subnetPath)) {
-            if ([string]::IsNullOrWhiteSpace($line)) { continue }
-            $parts = $line.Split(',')
-            if ($parts.Count -lt 2) { continue }
-            $cidr = $parts[0].Trim()
-            $subnetName = $parts[1].Trim()
+        $subnets = @(Get-Content -LiteralPath $subnetPath | ConvertFrom-Csv -Header 'Cidr','SubnetName','Notes')
+        foreach ($subnet in $subnets) {
+            $cidr = ([string]$subnet.Cidr).Trim()
+            $subnetName = ([string]$subnet.SubnetName).Trim()
             if ([string]::IsNullOrWhiteSpace($cidr) -or [string]::IsNullOrWhiteSpace($subnetName)) { continue }
             $cidrParts = $cidr.Split('/')
             if ($cidrParts.Count -ne 2) { continue }
@@ -1768,6 +1766,123 @@ try {
             if ($matches) { return $subnetName }
         }
         return 'Unknown'
+    }
+
+    function Test-IPv4Cidr {
+        param([string]$Cidr)
+        if ([string]::IsNullOrWhiteSpace($Cidr)) { return $false }
+        $parts = $Cidr.Trim().Split('/')
+        if ($parts.Count -ne 2 -or -not (ConvertTo-IPv4Bytes -IpAddress $parts[0])) { return $false }
+        $prefix = 0
+        return ([int]::TryParse($parts[1], [ref]$prefix) -and $prefix -ge 0 -and $prefix -le 32)
+    }
+
+    function Show-SubnetFileEditor {
+        param([hashtable]$Ui,[string]$DataRoot)
+
+        $csvPath = Join-Path $DataRoot 'SiteSubnets.csv'
+        $rows = @()
+        try {
+            if (Test-Path -LiteralPath $csvPath) {
+                $rows = @(Get-Content -LiteralPath $csvPath | ConvertFrom-Csv -Header 'Cidr','SubnetName','Notes')
+            }
+        } catch {
+            [System.Windows.MessageBox]::Show("Unable to open SiteSubnets.csv:`n$($_.Exception.Message)", 'Edit Subnet') | Out-Null
+            return
+        }
+
+        $state = [pscustomobject]@{ IsDirty=$false; IsSaving=$false }
+        $table = New-Object System.Data.DataTable
+        foreach ($column in @('Cidr','SubnetName','Notes')) { [void]$table.Columns.Add($column, [string]) }
+        foreach ($row in $rows) {
+            $dataRow = $table.NewRow()
+            $dataRow['Cidr'] = [string]$row.Cidr
+            $dataRow['SubnetName'] = [string]$row.SubnetName
+            $dataRow['Notes'] = [string]$row.Notes
+            [void]$table.Rows.Add($dataRow)
+        }
+        $table.AcceptChanges()
+        $table.Add_ColumnChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } }.GetNewClosure())
+        $table.Add_RowDeleted({ if (-not $state.IsSaving) { $state.IsDirty = $true } }.GetNewClosure())
+        $table.Add_RowChanged({ if (-not $state.IsSaving) { $state.IsDirty = $true } }.GetNewClosure())
+
+        $editor = New-Object System.Windows.Window
+        $editor.Title = 'Subnet Editor - SiteSubnets.csv'
+        $editor.Width = 850; $editor.Height = 650; $editor.MinWidth = 650; $editor.MinHeight = 450
+        $editor.WindowStartupLocation = 'CenterOwner'; $editor.ResizeMode = 'CanResize'
+        $editor.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#F3F5F7')
+        if ($Ui.Window) { $editor.Owner = $Ui.Window }
+        if ($Ui.Window -and $Ui.Window.Icon) { $editor.Icon = $Ui.Window.Icon }
+
+        $root = New-Object System.Windows.Controls.Grid -Property @{ Margin='12' }
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' }))
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='*' }))
+        $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height='Auto' }))
+
+        $addPanel = New-Object System.Windows.Controls.Grid -Property @{ Margin='0,0,0,10' }
+        foreach ($width in @('180','220','*','Auto')) { $addPanel.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width=$width })) }
+        $cidrBox = New-Object System.Windows.Controls.TextBox -Property @{ Padding='6,4'; Margin='0,0,8,0'; ToolTip='CIDR range, for example 10.20.30.0/24' }
+        $nameBox = New-Object System.Windows.Controls.TextBox -Property @{ Padding='6,4'; Margin='0,0,8,0'; ToolTip='Subnet name' }
+        $notesBox = New-Object System.Windows.Controls.TextBox -Property @{ Padding='6,4'; Margin='0,0,8,0'; ToolTip='Optional notes' }
+        $addButton = New-Object System.Windows.Controls.Button -Property @{ Content='Add Range'; MinWidth=100; Padding='12,5' }
+        [System.Windows.Controls.Grid]::SetColumn($nameBox, 1); [System.Windows.Controls.Grid]::SetColumn($notesBox, 2); [System.Windows.Controls.Grid]::SetColumn($addButton, 3)
+        $addPanel.Children.Add($cidrBox) | Out-Null; $addPanel.Children.Add($nameBox) | Out-Null; $addPanel.Children.Add($notesBox) | Out-Null; $addPanel.Children.Add($addButton) | Out-Null
+        $root.Children.Add($addPanel) | Out-Null
+
+        $grid = New-Object System.Windows.Controls.DataGrid
+        $grid.AutoGenerateColumns = $false; $grid.CanUserAddRows = $false; $grid.CanUserDeleteRows = $true; $grid.IsReadOnly = $false
+        $grid.SelectionMode = 'Extended'; $grid.SelectionUnit = 'FullRow'; $grid.GridLinesVisibility = 'All'; $grid.Background = [System.Windows.Media.Brushes]::White
+        foreach ($definition in @(@('CIDR Range','Cidr',180), @('Subnet Name','SubnetName',260), @('Notes','Notes','*'))) {
+            $column = New-Object System.Windows.Controls.DataGridTextColumn
+            $column.Header = $definition[0]; $column.Width = $definition[2]
+            $binding = New-Object System.Windows.Data.Binding("[$($definition[1])]"); $binding.Mode = 'TwoWay'; $binding.UpdateSourceTrigger = 'PropertyChanged'
+            $column.Binding = $binding; [void]$grid.Columns.Add($column)
+        }
+        $grid.ItemsSource = $table.DefaultView
+        [System.Windows.Controls.Grid]::SetRow($grid, 1); $root.Children.Add($grid) | Out-Null
+
+        $addButton.Add_Click({
+            $cidr = $cidrBox.Text.Trim(); $name = $nameBox.Text.Trim()
+            if (-not (Test-IPv4Cidr -Cidr $cidr)) { [System.Windows.MessageBox]::Show('Enter a valid IPv4 CIDR range, such as 10.20.30.0/24.', 'Edit Subnet') | Out-Null; return }
+            if ([string]::IsNullOrWhiteSpace($name)) { [System.Windows.MessageBox]::Show('Enter a subnet name.', 'Edit Subnet') | Out-Null; return }
+            if (@($table.Select("Cidr = '$($cidr.Replace("'", "''"))'", '', [System.Data.DataViewRowState]::CurrentRows)).Count -gt 0) { [System.Windows.MessageBox]::Show("The range $cidr already exists.", 'Edit Subnet') | Out-Null; return }
+            $newRow = $table.NewRow(); $newRow['Cidr'] = $cidr; $newRow['SubnetName'] = $name; $newRow['Notes'] = $notesBox.Text.Trim(); [void]$table.Rows.Add($newRow)
+            $cidrBox.Clear(); $nameBox.Clear(); $notesBox.Clear(); $cidrBox.Focus() | Out-Null
+        }.GetNewClosure())
+
+        $buttons = New-Object System.Windows.Controls.StackPanel -Property @{ Orientation='Horizontal'; HorizontalAlignment='Right'; Margin='0,10,0,0' }
+        $save = New-Object System.Windows.Controls.Button -Property @{ Content='Save & Close'; MinWidth=128; Height=32; Padding='12,6'; Foreground='White'; Background='#16A34A'; FontWeight='SemiBold' }
+        $saveAction = {
+            $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Cell, $true) | Out-Null; $grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) | Out-Null
+            foreach ($row in @($table.Rows | Where-Object { $_.RowState -in @([System.Data.DataRowState]::Added, [System.Data.DataRowState]::Modified) })) {
+                if (-not (Test-IPv4Cidr -Cidr ([string]$row['Cidr'])) -or [string]::IsNullOrWhiteSpace([string]$row['SubnetName'])) {
+                    [System.Windows.MessageBox]::Show('Each new or edited row must have a valid IPv4 CIDR range and subnet name.', 'Edit Subnet') | Out-Null; return $false
+                }
+            }
+            $state.IsSaving = $true
+            try {
+                $outRows = @($table.Select('', '', [System.Data.DataViewRowState]::CurrentRows) | ForEach-Object { [pscustomobject][ordered]@{ Cidr=([string]$_['Cidr']).Trim(); SubnetName=([string]$_['SubnetName']).Trim(); Notes=([string]$_['Notes']).Trim() } })
+                $csvLines = @($outRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip 1)
+                $csvLines | Set-Content -LiteralPath $csvPath -Encoding UTF8
+                $table.AcceptChanges(); $state.IsDirty = $false
+                Set-StatusMessage -Ui $Ui -Mode 'Saved' -CustomText 'Subnet Range Saved'
+                return $true
+            } catch {
+                [System.Windows.MessageBox]::Show("Unable to save SiteSubnets.csv:`n$($_.Exception.Message)", 'Edit Subnet') | Out-Null
+                return $false
+            } finally { $state.IsSaving = $false }
+        }.GetNewClosure()
+        $save.Add_Click({ if (& $saveAction) { $editor.Close() } }.GetNewClosure()); $buttons.Children.Add($save) | Out-Null
+        [System.Windows.Controls.Grid]::SetRow($buttons, 2); $root.Children.Add($buttons) | Out-Null
+        $editor.Content = $root
+        $editor.Add_Closing({ param($sender,$e)
+            if (-not $state.IsDirty) { return }
+            $choice = [System.Windows.MessageBox]::Show('Save subnet changes before closing?', 'Unsaved Changes', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)
+            if ($choice -eq [System.Windows.MessageBoxResult]::Cancel) { $e.Cancel = $true; return }
+            if ($choice -eq [System.Windows.MessageBoxResult]::Yes -and -not (& $saveAction)) { $e.Cancel = $true }
+        }.GetNewClosure())
+        $editor.Add_ContentRendered({ $cidrBox.Focus() | Out-Null })
+        $editor.Show() | Out-Null
     }
 
     function Show-SubnetLookupDialog {
@@ -4300,7 +4415,7 @@ function Find-SampleDevice {
     Set-WindowIconFromFile -Window $window -ResolvedXamlPath $resolvedXamlPath
 
     $ui = Get-NamedControls -Window $window -Names @(
-        'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton',
+        'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton','EditSubnetButton',
         'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
         'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedContainer','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',
@@ -4617,6 +4732,9 @@ function Find-SampleDevice {
     })
     $ui.LookupSubnetButton.Add_Click({
         Show-SubnetLookupDialog -Ui $ui -DataRoot $script:AppState.DataRoot
+    })
+    $ui.EditSubnetButton.Add_Click({
+        Show-SubnetFileEditor -Ui $ui -DataRoot $script:AppState.DataRoot
     })
     $ui.FixNameButton.Add_Click({
         $device = $script:AppState.SelectedSummaryDevice

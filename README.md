@@ -49,6 +49,8 @@ inventory and lookup data.
   information.
 - Resolve an arbitrary IPv4 address against `Data/SiteSubnets.csv` with
   **Lookup Subnet**. `10.64.x.x` addresses are identified as VPN addresses.
+- Add or correct CIDR ranges, subnet names, and optional notes in
+  `Data/SiteSubnets.csv` with the adjacent **Edit Subnet** button.
 - Show a large, easy-to-read monitor label containing the parent asset tag and
   host name.
 
@@ -200,6 +202,9 @@ current Nearby list.
 - **Lookup Subnet:** enter a valid IPv4 address in the dialog, select **Lookup**,
   and read the matching name. An unknown result means no matching CIDR is present
   in `Data/SiteSubnets.csv`.
+- **Edit Subnet:** enter a CIDR range (for example, `10.20.30.0/24`), a subnet
+  name, and optional notes, then select **Add Range** and **Save & Close**. The
+  table also supports correcting or deleting existing entries before saving.
 
 ### 3. Add, remove, or validate peripherals
 

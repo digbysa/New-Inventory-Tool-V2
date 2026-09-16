@@ -1881,7 +1881,10 @@ try {
             if ($choice -eq [System.Windows.MessageBoxResult]::Cancel) { $e.Cancel = $true; return }
             if ($choice -eq [System.Windows.MessageBoxResult]::Yes -and -not (& $saveAction)) { $e.Cancel = $true }
         }.GetNewClosure())
-        $editor.Add_ContentRendered({ $cidrBox.Focus() | Out-Null })
+        # The editor is modeless, so this function returns before WPF necessarily
+        # raises ContentRendered. Capture the textbox in the event handler rather
+        # than relying on the function's local scope still being available.
+        $editor.Add_ContentRendered({ $cidrBox.Focus() | Out-Null }.GetNewClosure())
         $editor.Show() | Out-Null
     }
 

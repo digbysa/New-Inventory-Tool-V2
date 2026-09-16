@@ -53,3 +53,14 @@ def test_edit_subnet_button_opens_validating_csv_editor():
     assert "Select-Object -Skip 1" in editor
     assert "$ui.EditSubnetButton.Add_Click" in SCRIPT
     assert "Show-SubnetFileEditor -Ui $ui -DataRoot $script:AppState.DataRoot" in SCRIPT
+
+
+def test_modeless_subnet_editor_captures_focus_control_for_content_rendered_event():
+    editor = SCRIPT.split("function Show-SubnetFileEditor", 1)[1].split(
+        "function Show-SubnetLookupDialog", 1
+    )[0]
+
+    assert (
+        "$editor.Add_ContentRendered({ $cidrBox.Focus() | Out-Null }.GetNewClosure())"
+        in editor
+    )

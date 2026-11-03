@@ -40,3 +40,20 @@ def test_isolate_handler_uses_main_script_state_instead_of_a_closure_module():
     assert ".GetNewClosure()" not in handler
     assert "-Inventory $script:AppState.Inventory" in handler
     assert "-Ui $sender.Tag.Ui" in handler
+
+
+def test_restore_refreshes_and_returns_before_changing_filter_checkboxes():
+    handler = SCRIPT.split("$ui.ShowAllNearbyButton.Add_Click", 1)[1].split("$ui.ShowAllNearbyCheckBox.Add_Click", 1)[0]
+    restore, show_all = handler.split("return", 1)
+    assert "NearbyIsolatedHostNames.Count -gt 0" in restore
+    assert "NearbyIsolatedHostNames.Clear()" in restore
+    assert "Update-NearbyRows -Ui $ui" in restore
+    assert ".IsChecked =" not in restore
+    assert "RaiseEvent" not in restore
+    assert "$ui.ShowAllNearbyCheckBox.IsChecked = $true" in show_all
+
+
+def test_nearby_summary_sets_button_label_from_isolation_state():
+    summary = SCRIPT.split("function Update-NearbySummary", 1)[1].split("function Update-NearbyCheckboxLabels", 1)[0]
+    assert "NearbyIsolatedHostNames.Count -gt 0" in summary
+    assert "if ($isIsolated) { 'Restore' } else { 'Show All' }" in summary

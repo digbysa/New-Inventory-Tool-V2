@@ -2544,6 +2544,10 @@ try {
         $text = "Nearby Scope (Location): $scopeCount"
         if ($rowCount -gt 0) { $text += " - Showing $rowCount" }
         Set-ControlText -Control $Ui.NearbyScopeSummaryText -Value $text
+        if ($Ui.ShowAllNearbyButton) {
+            $isIsolated = $script:AppState -and $script:AppState.NearbyIsolatedHostNames -and $script:AppState.NearbyIsolatedHostNames.Count -gt 0
+            $Ui.ShowAllNearbyButton.Content = if ($isIsolated) { 'Restore' } else { 'Show All' }
+        }
     }
 
     function Update-NearbyCheckboxLabels {
@@ -4599,7 +4603,21 @@ function Find-SampleDevice {
     foreach ($checkBox in @($ui.TodaysRoundedCheckBox,$ui.ExcludedCheckBox,$ui.RecentlyRoundedCheckBox,$ui.CriticalClinicalCheckBox)) {
         $checkBox.Add_Click($refreshNearbyFromFilters)
     }
-    if ($ui.ShowAllNearbyButton) { $ui.ShowAllNearbyButton.Add_Click({ if ($script:AppState -and $script:AppState.NearbyIsolatedHostNames) { $script:AppState.NearbyIsolatedHostNames.Clear() }; if ($ui.ShowAllNearbyCheckBox) { $ui.ShowAllNearbyCheckBox.IsChecked = $true; $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) } }) }
+    if ($ui.ShowAllNearbyButton) {
+        $ui.ShowAllNearbyButton.Add_Click({
+            if ($script:AppState -and $script:AppState.NearbyIsolatedHostNames -and $script:AppState.NearbyIsolatedHostNames.Count -gt 0) {
+                # Restore the filtered view without changing any checkbox selections.
+                $script:AppState.NearbyIsolatedHostNames.Clear()
+                $script:AppState.NearbyContextSelectedRows = @()
+                Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+                return
+            }
+            if ($ui.ShowAllNearbyCheckBox) {
+                $ui.ShowAllNearbyCheckBox.IsChecked = $true
+                $ui.ShowAllNearbyCheckBox.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+            }
+        })
+    }
 
     $ui.ShowAllNearbyCheckBox.Add_Click({
         try {

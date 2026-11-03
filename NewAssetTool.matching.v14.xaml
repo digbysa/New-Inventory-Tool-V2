@@ -326,7 +326,7 @@
         <Style x:Key="NearbyShowAllButtonStyle" TargetType="Button" BasedOn="{StaticResource NearbyButtonStyle}">
             <Setter Property="Background" Value="#F5F6F8"/>
             <Setter Property="BorderBrush" Value="#D5DBE3"/>
-            <Setter Property="Width" Value="66"/>
+            <Setter Property="MinWidth" Value="78"/>
             <Setter Property="Height" Value="28"/>
             <Setter Property="MinHeight" Value="28"/>
             <Setter Property="Padding" Value="10,3"/>
@@ -1002,10 +1002,10 @@
                         <WrapPanel Grid.Row="1" Margin="6,0,4,2" Height="28" VerticalAlignment="Center">
                             <Button x:Name="ShowAllNearbyButton" Content="Show All" Style="{StaticResource NearbyShowAllButtonStyle}" Margin="0,0,18,0"/>
                             <CheckBox x:Name="ShowAllNearbyCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Show All (0)" Visibility="Collapsed" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="TodaysRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Rounded Today (0)" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="TodaysRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Rounded Today (0)" IsChecked="True" Margin="0,0,18,0"/>
                             <CheckBox x:Name="ExcludedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Excluded (0)" Margin="0,0,18,0"/>
                             <CheckBox x:Name="RecentlyRoundedCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Recently Rounded (0)" IsChecked="True" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="CriticalClinicalCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Critical Clinical (0)"/>
+                            <CheckBox x:Name="CriticalClinicalCheckBox" Style="{StaticResource NearbyCheckBoxStyle}" Content="Critical Clinical (0)" IsChecked="True"/>
                         </WrapPanel>
 
                         <DataGrid x:Name="NearbyDataGrid" Grid.Row="2" Style="{StaticResource LegacyNearbyDataGridStyle}" Margin="0" SelectionMode="Extended" SelectionUnit="FullRow" IsReadOnly="False" EnableColumnVirtualization="False">

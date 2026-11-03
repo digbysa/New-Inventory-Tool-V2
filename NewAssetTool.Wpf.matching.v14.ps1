@@ -3774,6 +3774,11 @@ try {
             finally {
                 $script:AppState.AutomatedPingClick = $false
             }
+            # Use the manual validation path so scans get the same serial checks
+            # and connected-but-unlinked monitor prompt as the green button.
+            if ($script:AppState.CurrentQueryToken -eq $state.QueryToken -and $script:AppState.CurrentDevice -and $state.Ui.ValidateAssociatedButton) {
+                $state.Ui.ValidateAssociatedButton.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Button]::ClickEvent)))
+            }
         })
         $timer.Start()
     }
@@ -4585,6 +4590,7 @@ function Find-SampleDevice {
         $searchTerm = $ui.SearchTextBox.Text
         $match = Find-InventoryMatch -SearchTerm $searchTerm -Inventory $script:AppState.Inventory
         if ($null -eq $match) {
+            $script:AppState.CurrentQueryToken = ''
             if (-not $queryStartedFromNearby -and $script:AppState) { $script:AppState.NearbyReturnState = $null }
             $script:AppState.CurrentDevice = $null
             $script:ManualRoundUsed = $false

@@ -36,6 +36,10 @@ inventory and lookup data.
 - Validate the peripherals physically reported by a reachable computer against
   the inventory. Built-in laptop displays and unusable placeholder monitor
   serials are excluded from monitor validation.
+- Successful scans and queries automatically run the same validation as the green
+  Validate button after the delayed connectivity check (about two seconds).
+  The button remains available to retry. Offline-device messages and prompts to
+  link connected monitors behave the same as manual validation.
 
 ### Network and live diagnostics
 

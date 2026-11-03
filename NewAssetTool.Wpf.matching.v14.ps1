@@ -1029,11 +1029,12 @@ try {
         if (-not $Row) { return '' }
         foreach ($name in @($Names)) {
             if ([string]::IsNullOrWhiteSpace($name)) { continue }
-            foreach ($property in @($Row.PSObject.Properties)) {
-                if ($property.Name -ne $name) { continue }
-                $value = $property.Value
-                if (-not [string]::IsNullOrWhiteSpace([string]$value)) { return [string]$value }
-            }
+            # PSObject's named lookup is case-insensitive and avoids scanning every
+            # CSV column for every field of every inventory record.
+            $property = $Row.PSObject.Properties[$name]
+            if ($null -eq $property) { continue }
+            $value = $property.Value
+            if (-not [string]::IsNullOrWhiteSpace([string]$value)) { return [string]$value }
         }
         return ''
     }
@@ -3668,7 +3669,7 @@ try {
         try {
             $sessionOption = New-CimSessionOption -Protocol Dcom
             $session = New-CimSession -ComputerName $ComputerName -SessionOption $sessionOption -OperationTimeoutSec 3 -ErrorAction Stop
-            $os = Get-CimInstance -CimSession $session -ClassName Win32_OperatingSystem -ErrorAction Stop
+            $os = Get-CimInstance -CimSession $session -ClassName Win32_OperatingSystem -OperationTimeoutSec 3 -ErrorAction Stop
             $boot = if ($os.LastBootUpTime -is [datetime]) { [datetime]$os.LastBootUpTime } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$os.LastBootUpTime) }
             $uptime = (Get-Date) - $boot
             $status.Uptime = '{0}d {1}h {2}m' -f [int][Math]::Floor($uptime.TotalDays),$uptime.Hours,$uptime.Minutes
@@ -3679,7 +3680,7 @@ try {
                 'SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
             )) {
                 try {
-                    $regResult = Invoke-CimMethod -CimSession $session -Namespace root/default -ClassName StdRegProv -MethodName EnumKey -Arguments @{ hDefKey=[uint32]2147483650; sSubKeyName=$key } -ErrorAction SilentlyContinue
+                    $regResult = Invoke-CimMethod -CimSession $session -Namespace root/default -ClassName StdRegProv -MethodName EnumKey -Arguments @{ hDefKey=[uint32]2147483650; sSubKeyName=$key } -OperationTimeoutSec 3 -ErrorAction SilentlyContinue
                     if ($regResult.ReturnValue -eq 0) { $pendingReboot = $true }
                 } catch {}
             }
@@ -3808,18 +3809,81 @@ try {
         $target = Resolve-CurrentPingTarget -Ui $Ui -Inventory $Inventory
         if ([string]::IsNullOrWhiteSpace($target)) { throw 'Enter or query a device before using Ping.' }
 
-        $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $DataRoot
-        $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $DataRoot
-        $restartStatus = if ($connectivity.IsOnline) { Get-RemoteRestartStatus -ComputerName $target } else { [pscustomobject]@{ Uptime='Unavailable'; PendingReboot='Unavailable' } }
-        Set-OnlineStatusUi -Ui $Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName -Uptime $restartStatus.Uptime -PendingReboot $restartStatus.PendingReboot
-
-        if ($StartContinuous) {
-            Start-ContinuousPingWindow -Target $(if ($pingResult.IpAddress -and $pingResult.IpAddress -ne 'Unknown') { $pingResult.IpAddress } else { $target })
-            Set-StatusMessage -Ui $Ui -Mode 'PingComplete'
+        # Each worker has a PowerShell runspace; raw Task scriptblocks cannot safely
+        # call PowerShell helpers. Only the dispatcher timer touches WPF controls.
+        foreach ($pendingTimer in @($script:SystemPingTimers)) {
+            $pendingState = $pendingTimer.Tag
+            if (-not $pendingState.Handle.IsCompleted -and -not $pendingState.Cancelling) {
+                $pendingState.Cancelling = $true
+                [void]$pendingState.Worker.BeginStop($null,$null)
+            }
         }
-        else {
-            Set-StatusMessage -Ui $Ui -Mode 'PingComplete'
+        $requestId = [guid]::NewGuid().ToString('N')
+        $script:CurrentSystemPingRequest = $requestId
+        $queryToken = $script:AppState.CurrentQueryToken
+        $shared = [hashtable]::Synchronized(@{ Connectivity=$null; Restart=$null })
+        $initialState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+        foreach ($name in @('Invoke-PingOnce','Invoke-DevicePing','Test-RemoteConnectivity','Get-RemoteRestartStatus',
+            'Get-FieldValue','Get-IPv4AddressFromPingReply','Resolve-HostIPv4Address','Resolve-SubnetName','ConvertTo-IPv4Bytes')) {
+            $definition = (Get-Command $name -CommandType Function).Definition
+            $initialState.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList $name,$definition))
         }
+        $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialState)
+        $runspace.Open()
+        $worker = [PowerShell]::Create()
+        $worker.Runspace = $runspace
+        [void]$worker.AddScript({
+            param($target,$dataRoot,$shared)
+            $ErrorActionPreference = 'Stop'
+            $pingResult = Invoke-DevicePing -ComputerName $target -DataRoot $dataRoot
+            $connectivity = Test-RemoteConnectivity -HostName $target -KnownPingResult $pingResult -DataRoot $dataRoot
+            # Publish connectivity first, before potentially slow remote management calls.
+            $shared.Connectivity = $connectivity
+            $shared.Restart = if ($connectivity.IsOnline) { Get-RemoteRestartStatus -ComputerName $target } else { [pscustomobject]@{ Uptime='Unavailable'; PendingReboot='Unavailable' } }
+        }.ToString()).AddArgument($target).AddArgument($DataRoot).AddArgument($shared)
+        try { $handle = $worker.BeginInvoke() }
+        catch { $worker.Dispose(); $runspace.Dispose(); throw }
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds(100)
+        $timer.Tag = [pscustomobject]@{
+            Ui=$Ui; Worker=$worker; Runspace=$runspace; Handle=$handle; Shared=$shared
+            QueryToken=$queryToken; RequestId=$requestId; Target=$target
+            StartContinuous=[bool]$StartContinuous; Published=$false; Cancelling=$false
+        }
+        $timer.Add_Tick({
+            param($sender,$eventArgs)
+            $state = $sender.Tag
+            $current = $script:AppState.CurrentQueryToken -eq $state.QueryToken -and $script:CurrentSystemPingRequest -eq $state.RequestId
+            $connectivity = $state.Shared.Connectivity
+            $restartStatus = $state.Shared.Restart
+            if ($current -and $connectivity -and (-not $state.Published -or $restartStatus)) {
+                $uptime = if ($restartStatus) { $restartStatus.Uptime } else { 'Checking...' }
+                $pending = if ($restartStatus) { $restartStatus.PendingReboot } else { 'Checking...' }
+                Set-OnlineStatusUi -Ui $state.Ui -IsOnline:$connectivity.IsOnline -LatencyMs $connectivity.LatencyMs -IpAddress $connectivity.IpAddress -Subnet $connectivity.Subnet -CheckedHost $connectivity.HostName -Uptime $uptime -PendingReboot $pending
+                if (-not $state.Published -and $state.StartContinuous) {
+                    Start-ContinuousPingWindow -Target $(if ($connectivity.IpAddress) { $connectivity.IpAddress } else { $state.Target })
+                }
+                $state.Published = $true
+            }
+            if (-not $state.Handle.IsCompleted) { return }
+            $sender.Stop()
+            try {
+                [void]$state.Worker.EndInvoke($state.Handle)
+                if ($current) {
+                    if ($state.Worker.HadErrors) { Set-StatusMessage -Ui $state.Ui -Mode 'Warning' -CustomText 'Network check failed. Try Ping again.' }
+                    else { Set-StatusMessage -Ui $state.Ui -Mode 'PingComplete' }
+                }
+            } catch {
+                if ($current) { Set-StatusMessage -Ui $state.Ui -Mode 'Warning' -CustomText 'Network check failed. Try Ping again.' }
+            } finally {
+                $state.Worker.Dispose()
+                $state.Runspace.Dispose()
+                [void]$script:SystemPingTimers.Remove($sender)
+                $sender.Tag = $null
+            }
+        })
+        [void]$script:SystemPingTimers.Add($timer)
+        $timer.Start()
     }
 
     function Start-DelayedQueryPing {
@@ -4598,6 +4662,22 @@ function Find-SampleDevice {
         if ($box) { $box.Add_TextChanged({ Update-CheckCompleteButtonState -Ui $ui }) }
     }
 
+    $script:CurrentSystemPingRequest = ''
+    $script:SystemPingTimers = New-Object System.Collections.ArrayList
+    $window.Add_Closed({
+        foreach ($timer in @($script:SystemPingTimers)) {
+            $timer.Stop()
+            $state = $timer.Tag
+            if ($state.Handle.IsCompleted) {
+                $state.Worker.Dispose()
+                $state.Runspace.Dispose()
+            } else {
+                # Request cancellation without waiting for a slow network operation on exit.
+                [void]$state.Worker.BeginStop($null,$null)
+            }
+        }
+        $script:SystemPingTimers.Clear()
+    })
     $script:NearbyAllRows = $null
     $script:NearbyNaturalColumnWidths = $null
     $script:NearbyColumnLayoutTimer = New-Object System.Windows.Threading.DispatcherTimer

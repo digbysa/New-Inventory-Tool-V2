@@ -3,8 +3,8 @@
         Title="New Inventory Tool"
         Width="1366"
         Height="768"
-        MinWidth="1200"
-        MinHeight="720"
+        MinWidth="900"
+        MinHeight="480"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#DDE3E8"
@@ -509,10 +509,8 @@
                     Background="{StaticResource WindowSurfaceBrush}"
                     Margin="18,12,18,10">
                 <TabItem x:Name="SystemTab"><TabItem.Header><TextBlock Text="System" Margin="0,0,8,0"/></TabItem.Header>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  CanContentScroll="False">
-                        <Grid Background="Transparent">
+                    <Viewbox x:Name="SystemPageViewport" Stretch="Uniform" StretchDirection="DownOnly" VerticalAlignment="Top">
+                        <Grid Background="Transparent" Width="{Binding ActualWidth, ElementName=SystemPageViewport}" MinWidth="1200">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -972,7 +970,7 @@
                             </Border>
                         </Grid>
                         </Grid>
-                    </ScrollViewer>
+                    </Viewbox>
                 </TabItem>
 
                 <TabItem x:Name="NearbyTab"><TabItem.Header><TextBlock Text="Nearby" Margin="0,0,8,0"/></TabItem.Header>

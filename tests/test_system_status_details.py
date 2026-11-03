@@ -34,7 +34,7 @@ def test_system_details_only_become_visible_after_successful_ping():
     assert "$Ui.DevicePendingRebootText.Visibility = $visibility" in visibility
     assert "Set-DeviceNetworkVisibility -Ui $Ui -IsVisible:$IsOnline" in status_ui
     assert "if ($connectivity.IsOnline) { Get-RemoteRestartStatus" in ping
-    assert "-Uptime $restartStatus.Uptime -PendingReboot $restartStatus.PendingReboot" in ping
+    assert "-Uptime $uptime -PendingReboot $pending" in ping
 
 
 def test_system_uptime_uses_green_orange_and_red_day_thresholds():

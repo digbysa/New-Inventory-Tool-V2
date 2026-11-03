@@ -3912,6 +3912,127 @@ try {
         $timer.Start()
     }
 
+    function Get-DisplaySettingsPath {
+        return (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'NewInventoryTool/display-settings.json')
+    }
+
+    function Read-DisplayScale {
+        param([string]$Path=(Get-DisplaySettingsPath))
+        try {
+            if (Test-Path -LiteralPath $Path) {
+                $settings = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+                return [Math]::Max(100, [Math]::Min(150, [int]$settings.SystemScalePercent))
+            }
+        } catch {}
+        return 100
+    }
+
+    function Save-DisplayScale {
+        param([int]$Percent,[string]$Path=(Get-DisplaySettingsPath))
+        $folder = Split-Path -Parent $Path
+        if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+        @{ SystemScalePercent=[Math]::Max(100, [Math]::Min(150, $Percent)) } | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding UTF8
+    }
+
+    function Add-SystemDisplayEntries {
+        param([System.Windows.DependencyObject]$Root)
+        if ($Root -is [System.Windows.FrameworkElement]) {
+            $entry = [pscustomobject]@{ Element=$Root; FontSize=$null; Height=$Root.Height; MinHeight=$Root.MinHeight; Margin=$Root.Margin; Rows=@(); Columns=@() }
+            if ($Root -is [System.Windows.Controls.Control] -or $Root -is [System.Windows.Controls.TextBlock]) { $entry.FontSize=$Root.FontSize }
+            if ($Root -is [System.Windows.Controls.Grid]) {
+                $entry.Rows = @($Root.RowDefinitions | ForEach-Object { [pscustomobject]@{ Row=$_; Height=$_.Height } })
+                $entry.Columns = @($Root.ColumnDefinitions | ForEach-Object { [pscustomobject]@{ Column=$_; Width=$_.Width } })
+            }
+            [void]$script:SystemDisplayEntries.Add($entry)
+        }
+        foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($Root)) {
+            if ($child -is [System.Windows.DependencyObject]) { Add-SystemDisplayEntries -Root $child }
+        }
+    }
+
+    function Set-SystemDisplayScale {
+        param([hashtable]$Ui,[int]$Percent)
+        $script:SystemDisplayScale = [Math]::Max(100, [Math]::Min(150, $Percent))
+        $factor = $script:SystemDisplayScale / 100.0
+        $compact = $factor -gt 1
+        foreach ($entry in $script:SystemDisplayEntries) {
+            $element = $entry.Element
+            if ($null -ne $entry.FontSize) { $element.FontSize = $entry.FontSize * $factor }
+            # Recover unused card space and vertical gaps to make room for larger text.
+            $gap = if ($compact) { 1.0 / ($factor * $factor) } else { 1.0 }
+            $m = $entry.Margin
+            $element.Margin = New-Object System.Windows.Thickness -ArgumentList $m.Left,($m.Top * $gap),$m.Right,($m.Bottom * $gap)
+            if ($compact -and $entry.Height -ge 350) { $element.Height = [double]::NaN }
+            elseif (-not [double]::IsNaN($entry.Height)) { $element.Height = $entry.Height * $factor }
+            else { $element.Height = $entry.Height }
+            $element.MinHeight = if ($compact -and $entry.MinHeight -ge 350) { 0 } else { $entry.MinHeight * $factor }
+            foreach ($row in $entry.Rows) {
+                if ($compact -and $row.Height.IsAbsolute) {
+                    # Header and card rows follow their contents rather than fixed heights.
+                    $row.Row.Height = [System.Windows.GridLength]::Auto
+                } else { $row.Row.Height = $row.Height }
+            }
+            foreach ($column in $entry.Columns) {
+                if ($column.Width.IsAbsolute -and $column.Width.Value -ge 80) {
+                    $column.Column.Width = New-Object System.Windows.GridLength ($column.Width.Value * $factor)
+                } else { $column.Column.Width = $column.Width }
+            }
+        }
+        # Keep a usable comments editor when compact cards follow their contents.
+        $Ui.CommentsTextBox.MinHeight = if ($compact) { 50 } else { 0 }
+        $Ui.SystemPageHost.Dispatcher.BeginInvoke([Action]{ Update-SystemPageFit -Ui $Ui }.GetNewClosure(), [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+    }
+
+    function Show-DisplaySettings {
+        param([hashtable]$Ui)
+        $dialog = [System.Windows.Markup.XamlReader]::Parse(@'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Display settings" Width="460" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner" Background="#F4F6F8" ShowInTaskbar="False">
+    <StackPanel Margin="24">
+        <TextBlock Text="System page size" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
+        <TextBlock Text="Increase text and control sizes for a smaller laptop screen." TextWrapping="Wrap" FontSize="14" Margin="0,0,0,16"/>
+        <DockPanel Margin="0,0,0,8">
+            <TextBlock Text="Display size" FontSize="14"/>
+            <TextBlock x:Name="ScaleLabel" Text="100%" HorizontalAlignment="Right" FontSize="14" FontWeight="SemiBold"/>
+        </DockPanel>
+        <Slider x:Name="ScaleSlider" Minimum="100" Maximum="150" TickFrequency="5" IsSnapToTickEnabled="True" TickPlacement="BottomRight" AutoToolTipPlacement="TopLeft"/>
+        <TextBlock Text="Spacing adjusts to make room. The page always fits the window; on small windows the size is limited by the available space." TextWrapping="Wrap" FontSize="13" Foreground="#64748B" Margin="0,14,0,18"/>
+        <Grid>
+            <Button x:Name="ResetButton" Content="Reset to 100%" HorizontalAlignment="Left" Padding="12,6"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" IsCancel="True" Padding="12,6" Margin="0,0,8,0"/>
+                <Button x:Name="SaveButton" Content="Save" IsDefault="True" Padding="16,6"/>
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</Window>
+'@)
+        $dialog.Owner = $Ui.Window
+        $slider = $dialog.FindName('ScaleSlider')
+        $label = $dialog.FindName('ScaleLabel')
+        $previous = $script:SystemDisplayScale
+        $slider.Value = $previous
+        $label.Text = "$previous%"
+        $slider.Tag = @{ Ui=$Ui; Label=$label }
+        $slider.Add_ValueChanged({
+            param($sender,$e)
+            $sender.Tag.Label.Text = ('{0:0}%' -f $sender.Value)
+            Set-SystemDisplayScale -Ui $sender.Tag.Ui -Percent ([int]$sender.Value)
+        })
+        $reset = $dialog.FindName('ResetButton')
+        $reset.Tag = $slider
+        $reset.Add_Click({ param($sender,$e) $sender.Tag.Value = 100 })
+        $save = $dialog.FindName('SaveButton')
+        $save.Tag = @{ Slider=$slider; Dialog=$dialog }
+        $save.Add_Click({
+            param($sender,$e)
+            try {
+                Save-DisplayScale -Percent ([int]$sender.Tag.Slider.Value)
+                $sender.Tag.Dialog.DialogResult = $true
+            } catch { [void][System.Windows.MessageBox]::Show('The display setting could not be saved. Please try again.', 'Display settings') }
+        })
+        if ($dialog.ShowDialog() -ne $true) { Set-SystemDisplayScale -Ui $Ui -Percent $previous }
+    }
+
     function Update-SystemPageFit {
         param([hashtable]$Ui)
         $hostPanel = $Ui.SystemPageHost
@@ -4567,7 +4688,7 @@ function Find-SampleDevice {
 
     $ui = Get-NamedControls -Window $window -Names @(
         'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton','EditSubnetButton',
-        'MainTabControl','SystemTab','SystemPageHost','SystemPageContent','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
+        'SettingsButton','MainTabControl','SystemTab','SystemPageHost','SystemPageContent','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
         'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedContainer','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',
         'AssociatedDevicesDataGrid','FixNameButton',
@@ -5075,6 +5196,13 @@ function Find-SampleDevice {
     $ui.PhysicalCartCheckBox.IsChecked = $false
     $ui.AddDeviceToTrackerCheckBox.IsChecked = $false
     Update-ManualRoundButtonState -Ui $ui -CurrentDevice $null -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag
+    $script:SystemDisplayScale = 100
+    $script:SystemDisplayEntries = New-Object System.Collections.ArrayList
+    $window.Add_Loaded({
+        if ($script:SystemDisplayEntries.Count -eq 0) { Add-SystemDisplayEntries -Root $ui.SystemPageContent }
+        Set-SystemDisplayScale -Ui $ui -Percent (Read-DisplayScale)
+    })
+    $ui.SettingsButton.Add_Click({ Show-DisplaySettings -Ui $ui })
     $window.Add_Loaded({ Ensure-RoundingPlan -Ui $ui -Window $window -ResolvedXamlPath $resolvedXamlPath -Force:$false })
 
     [void]$window.ShowDialog()

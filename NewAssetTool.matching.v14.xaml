@@ -500,6 +500,9 @@
                 <Button x:Name="MonitorLabelButton" Grid.Column="4" Content="Monitor Label" Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,12,0"/>
                 <Button x:Name="LookupSubnetButton" Grid.Column="5" Content="Lookup Subnet" Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,12,0"/>
                 <Button x:Name="EditSubnetButton" Grid.Column="6" Content="Edit Subnet" Style="{StaticResource ToolbarButtonStyle}"/>
+                <Button x:Name="SettingsButton" Grid.Column="7" HorizontalAlignment="Right" Width="36" Padding="4,0" ToolTip="Display settings" AutomationProperties.Name="Display settings" Style="{StaticResource ToolbarButtonStyle}">
+                    <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="18"/>
+                </Button>
             </Grid>
         </Border>
 

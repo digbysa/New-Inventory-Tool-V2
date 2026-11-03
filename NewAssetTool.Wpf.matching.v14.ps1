@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$XamlPath = $(if ($PSScriptRoot) { Join-Path $PSScriptRoot 'NewAssetTool.matching.v14.xaml' } else { 'NewAssetTool.matching.v3.xaml' })
 )
@@ -2576,21 +2576,53 @@ try {
         param([hashtable]$Ui)
         if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
 
-        # Measure each Nearby column against its cells, then lock in a pixel width with
-        # a small comfort buffer so values are not pressed directly against dividers.
-        # Location deliberately retains its current pixel width, including any width
-        # chosen by dragging its header divider.
-        $extraColumnSpace = 18
-        foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
-            if ([string]$column.Header -eq 'Location') { continue }
-            $column.Width = New-Object System.Windows.Controls.DataGridLength -ArgumentList 1, ([System.Windows.Controls.DataGridLengthUnitType]::SizeToCells)
+        $grid = $Ui.NearbyDataGrid
+        # A hidden tab has no usable viewport. Leave the request pending until shown.
+        if (-not $grid.IsVisible -or $grid.ActualWidth -le 0) { return }
+        $script:AppState.NearbyColumnsAutoFitPending = $false
+        $grid.UpdateLayout()
+        $viewer = Find-VisualChildByType -Root $grid -Type ([System.Windows.Controls.ScrollViewer])
+        $available = if ($viewer -and $viewer.ViewportWidth -gt 0) { $viewer.ViewportWidth } else { $grid.ActualWidth - 17 }
+        $available = [Math]::Max(0, $available - 2)
+
+        # Measure all bound values, including rows outside the virtualized viewport.
+        $measure = New-Object System.Windows.Controls.TextBlock
+        $measure.FontFamily = $grid.FontFamily
+        $measure.FontSize = 13
+        $infinite = New-Object System.Windows.Size -ArgumentList ([double]::PositiveInfinity), ([double]::PositiveInfinity)
+        $widths = @{}
+        $minimumTotal = 0.0
+        $desiredTotal = 0.0
+        foreach ($column in @($grid.Columns)) {
+            $minimumTotal += $column.MinWidth
+            if ([string]$column.Header -eq 'Location') {
+                $desired = [Math]::Max($column.MinWidth, $column.Width.Value)
+            } else {
+                $measure.Text = [string]$column.Header
+                $measure.Measure($infinite)
+                $desired = [Math]::Max($column.MinWidth, $measure.DesiredSize.Width + 14)
+                $property = if ($column -is [System.Windows.Controls.DataGridBoundColumn]) { [string]$column.Binding.Path.Path } else { 'Status' }
+                foreach ($row in $grid.ItemsSource) {
+                    $measure.Text = [string]$row.$property
+                    $measure.Measure($infinite)
+                    $padding = if ($property -eq 'Status') { 32 } else { 14 }
+                    $desired = [Math]::Max($desired, $measure.DesiredSize.Width + $padding)
+                }
+            }
+            $widths[$column] = $desired
+            $desiredTotal += $desired
         }
-        try { $Ui.NearbyDataGrid.UpdateLayout() } catch {}
-        foreach ($column in @($Ui.NearbyDataGrid.Columns)) {
-            if ([string]$column.Header -eq 'Location') { continue }
-            if ($column.ActualWidth -gt 0) {
-                $targetWidth = [Math]::Max($column.ActualWidth + $extraColumnSpace, $column.MinWidth)
-                $column.Width = New-Object System.Windows.Controls.DataGridLength $targetWidth
+        # Share the available width; wrapped cells retain full values on narrow windows.
+        $ratio = if ($desiredTotal -gt $available -and $desiredTotal -gt $minimumTotal) {
+            [Math]::Max(0, ($available - $minimumTotal) / ($desiredTotal - $minimumTotal))
+        } else { 1.0 }
+        foreach ($column in @($grid.Columns)) {
+            if ([string]$column.Header -eq 'Status') {
+                # Consume any spare space instead of leaving a blank filler after Status.
+                $column.Width = New-Object System.Windows.Controls.DataGridLength -ArgumentList 1, ([System.Windows.Controls.DataGridLengthUnitType]::Star)
+            } else {
+                $target = $column.MinWidth + ($widths[$column] - $column.MinWidth) * $ratio
+                $column.Width = New-Object System.Windows.Controls.DataGridLength $target
             }
         }
     }
@@ -2654,9 +2686,9 @@ try {
         $rows = @($allRows | Where-Object { Test-NearbyRowVisible -Ui $Ui -Row $_ })
         $Ui.NearbyDataGrid.ItemsSource = $rows
         Restore-NearbySortState -Ui $Ui -SortState $sortState
-        $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+        $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }.GetNewClosure(), [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
         if ($script:AppState -and $script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending') {
-            $script:AppState.NearbyColumnsAutoFitPending = $false
+            $script:AppState.NearbyColumnsAutoFitPending = -not $Ui.NearbyDataGrid.IsVisible
         }
         if ($script:AppState) {
             $associated = @()
@@ -2997,7 +3029,11 @@ try {
         $contextResolvedXamlPath = $ResolvedXamlPath
         $menu = New-Object System.Windows.Controls.ContextMenu
         $isolateItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Isolate' }
-        $isolateItem.Add_Click({ param($sender,$e) Invoke-IsolateSelectedNearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $contextResolvedXamlPath }.GetNewClosure())
+        $isolateItem.Tag = @{ Ui=$Ui; ResolvedXamlPath=$ResolvedXamlPath }
+        $isolateItem.Add_Click({
+            param($sender,$e)
+            Invoke-IsolateSelectedNearbyRows -Ui $sender.Tag.Ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $sender.Tag.ResolvedXamlPath
+        })
         [void]$menu.Items.Add($isolateItem)
         $pingItem = New-Object System.Windows.Controls.MenuItem -Property @{ Header='Ping selected host(s)' }
         $pingItem.Add_Click({ param($sender,$e) Invoke-SelectedNearbyPing -Ui $ui -DataRoot $contextDataRoot }.GetNewClosure())
@@ -4540,6 +4576,11 @@ function Find-SampleDevice {
             }
         })
     }
+
+    $ui.NearbyDataGrid.Add_SizeChanged({
+        param($sender,$e)
+        if ($e.WidthChanged -and $sender.IsVisible) { AutoFit-NearbyColumns -Ui $ui }
+    })
 
     $script:IsUpdatingNearbyFilters = $false
     $refreshNearbyFromFilters = {

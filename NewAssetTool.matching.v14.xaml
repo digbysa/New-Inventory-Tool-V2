@@ -279,7 +279,8 @@
             <Setter Property="BorderBrush" Value="#E6EAEE"/>
             <Setter Property="AlternatingRowBackground" Value="#FAFCFF"/>
             <Setter Property="RowBackground" Value="#FFFFFF"/>
-            <Setter Property="RowHeight" Value="28"/>
+            <Setter Property="RowHeight" Value="NaN"/>
+            <Setter Property="MinRowHeight" Value="28"/>
             <Setter Property="ColumnHeaderHeight" Value="23"/>
             <Setter Property="HorizontalGridLinesBrush" Value="#E6EAEE"/>
             <Setter Property="VerticalGridLinesBrush" Value="#E6EAEE"/>
@@ -347,8 +348,8 @@
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="LineHeight" Value="18"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="TextWrapping" Value="NoWrap"/>
-            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="TextTrimming" Value="None"/>
         </Style>
 
         <Style x:Key="NearbyHostCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
@@ -1072,7 +1073,15 @@
                                 <DataGridTextColumn Header="IP Address" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Subnet" IsReadOnly="True" Width="Auto" MinWidth="65" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Asset Tag" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="110" MinWidth="110" Binding="{Binding Location}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
+                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="110" MinWidth="110" Binding="{Binding Location}">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
+                                            <Setter Property="TextWrapping" Value="NoWrap"/>
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                            <Setter Property="ToolTip" Value="{Binding Location}"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                                 <DataGridTextColumn Header="Building" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Building}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Floor" IsReadOnly="True" Width="Auto" MinWidth="55" Binding="{Binding Floor}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Room" IsReadOnly="True" Width="Auto" MinWidth="80" Binding="{Binding Room}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
@@ -1091,7 +1100,7 @@
                                     </DataGridTextColumn.CellStyle>
                                 </DataGridTextColumn>
                                 <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="Auto" MinWidth="75" Binding="{Binding DaysAgo}" SortMemberPath="DaysAgoSort" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="205" IsReadOnly="False">
+                                <DataGridTemplateColumn Header="Status" Width="*" MinWidth="205" IsReadOnly="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid>
@@ -1102,6 +1111,11 @@
                                                           Background="Transparent"
                                                           VerticalContentAlignment="Center"
                                                           HorizontalContentAlignment="Stretch">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
                                                     <ComboBox.Style>
                                                         <Style TargetType="ComboBox">
                                                             <Setter Property="Visibility" Value="Visible"/>

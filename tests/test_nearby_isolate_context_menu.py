@@ -33,3 +33,10 @@ def test_isolate_uses_selection_captured_before_context_menu_takes_focus():
 def test_show_all_clears_nearby_isolation_filter():
     show_all_hook = SCRIPT.split("$ui.ShowAllNearbyButton.Add_Click", 1)[1].split("$ui.ShowAllNearbyCheckBox.Add_Click", 1)[0]
     assert "$script:AppState.NearbyIsolatedHostNames.Clear()" in show_all_hook
+
+
+def test_isolate_handler_uses_main_script_state_instead_of_a_closure_module():
+    handler = SCRIPT.split("$isolateItem.Add_Click(", 1)[1].split("[void]$menu.Items.Add($isolateItem)", 1)[0]
+    assert ".GetNewClosure()" not in handler
+    assert "-Inventory $script:AppState.Inventory" in handler
+    assert "-Ui $sender.Tag.Ui" in handler

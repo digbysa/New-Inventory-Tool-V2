@@ -2576,6 +2576,16 @@ try {
         return $true
     }
 
+    function Request-NearbyColumnLayout {
+        param([hashtable]$Ui)
+        $script:AppState.NearbyColumnsAutoFitPending = $true
+        if ($Ui.NearbyDataGrid.IsVisible -and $script:NearbyColumnLayoutTimer) {
+            # Coalesce refresh and resize notifications; let input and rendering run first.
+            $script:NearbyColumnLayoutTimer.Stop()
+            $script:NearbyColumnLayoutTimer.Start()
+        }
+    }
+
     function AutoFit-NearbyColumns {
         param([hashtable]$Ui)
         if (-not $Ui -or -not $Ui.NearbyDataGrid) { return }
@@ -2584,44 +2594,50 @@ try {
         # A hidden tab has no usable viewport. Leave the request pending until shown.
         if (-not $grid.IsVisible -or $grid.ActualWidth -le 0) { return }
         $script:AppState.NearbyColumnsAutoFitPending = $false
-        $grid.UpdateLayout()
         $viewer = Find-VisualChildByType -Root $grid -Type ([System.Windows.Controls.ScrollViewer])
         $available = if ($viewer -and $viewer.ViewportWidth -gt 0) { $viewer.ViewportWidth } else { $grid.ActualWidth - 17 }
         $available = [Math]::Max(0, $available - 2)
 
-        # Measure all bound values, including rows outside the virtualized viewport.
-        $measure = New-Object System.Windows.Controls.TextBlock
-        $measure.FontFamily = $grid.FontFamily
-        $measure.FontSize = 13
-        $infinite = New-Object System.Windows.Size -ArgumentList ([double]::PositiveInfinity), ([double]::PositiveInfinity)
-        $widths = @{}
+        if (-not $script:NearbyNaturalColumnWidths) {
+            # Measure all bound values, including rows outside the virtualized viewport.
+            $measure = New-Object System.Windows.Controls.TextBlock
+            $measure.FontFamily = $grid.FontFamily
+            $measure.FontSize = 13
+            $infinite = New-Object System.Windows.Size -ArgumentList ([double]::PositiveInfinity), ([double]::PositiveInfinity)
+            $widths = @{}
+            foreach ($column in @($grid.Columns)) {
+                if ([string]$column.Header -eq 'Status') {
+                    # Reserve enough space for the longest option even before it is selected.
+                    $measure.Text = 'Inaccessible - Room locked - Card Swipe'
+                    $measure.Measure($infinite)
+                    $desired = [Math]::Max($column.MinWidth, [Math]::Ceiling($measure.DesiredSize.Width + 32))
+                } elseif ([string]$column.Header -eq 'Location') {
+                    $desired = $column.MinWidth
+                } else {
+                    $measure.Text = [string]$column.Header
+                    $measure.Measure($infinite)
+                    $desired = [Math]::Max($column.MinWidth, $measure.DesiredSize.Width + 14)
+                    $property = if ($column -is [System.Windows.Controls.DataGridBoundColumn]) { [string]$column.Binding.Path.Path } else { 'Status' }
+                    $seenValues = New-Object 'System.Collections.Generic.HashSet[string]'
+                    foreach ($row in $script:NearbyAllRows) {
+                        $value = [string]$row.$property
+                        if (-not $seenValues.Add($value)) { continue }
+                        $measure.Text = $value
+                        $measure.Measure($infinite)
+                        $padding = if ($property -eq 'Status') { 32 } else { 14 }
+                        $desired = [Math]::Max($desired, $measure.DesiredSize.Width + $padding)
+                    }
+                }
+                $widths[$column] = $desired
+            }
+            $script:NearbyNaturalColumnWidths = $widths
+        }
+        $widths = $script:NearbyNaturalColumnWidths
         $minimumTotal = 0.0
         $desiredTotal = 0.0
         foreach ($column in @($grid.Columns)) {
-            if ([string]$column.Header -eq 'Status') {
-                # Reserve enough space for the longest option even before it is selected.
-                $measure.Text = 'Inaccessible - Room locked - Card Swipe'
-                $measure.Measure($infinite)
-                $desired = [Math]::Max($column.MinWidth, [Math]::Ceiling($measure.DesiredSize.Width + 32))
-                $minimumTotal += $desired
-            } elseif ([string]$column.Header -eq 'Location') {
-                $desired = $column.MinWidth
-                $minimumTotal += $column.MinWidth
-            } else {
-                $minimumTotal += $column.MinWidth
-                $measure.Text = [string]$column.Header
-                $measure.Measure($infinite)
-                $desired = [Math]::Max($column.MinWidth, $measure.DesiredSize.Width + 14)
-                $property = if ($column -is [System.Windows.Controls.DataGridBoundColumn]) { [string]$column.Binding.Path.Path } else { 'Status' }
-                foreach ($row in $grid.ItemsSource) {
-                    $measure.Text = [string]$row.$property
-                    $measure.Measure($infinite)
-                    $padding = if ($property -eq 'Status') { 32 } else { 14 }
-                    $desired = [Math]::Max($desired, $measure.DesiredSize.Width + $padding)
-                }
-            }
-            $widths[$column] = $desired
-            $desiredTotal += $desired
+            $desiredTotal += $widths[$column]
+            $minimumTotal += $(if ([string]$column.Header -eq 'Status') { $widths[$column] } else { $column.MinWidth })
         }
         # Share the available width; wrapped cells retain full values on narrow windows.
         $ratio = if ($desiredTotal -gt $available -and $desiredTotal -gt $minimumTotal) {
@@ -2691,18 +2707,21 @@ try {
     }
 
     function Update-NearbyRows {
-        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='')
+        param([hashtable]$Ui,[pscustomobject]$Inventory,[string]$ResolvedXamlPath='',[switch]$FilterOnly)
         $sortState = @(Get-NearbySortState -Ui $Ui)
-        if (-not [string]::IsNullOrWhiteSpace($ResolvedXamlPath)) { Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath }
-        $allRows = @(Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory)
-        Update-NearbyCheckboxLabels -Ui $Ui -Rows $allRows
+        if ($FilterOnly -and $null -ne $script:NearbyAllRows) {
+            $allRows = $script:NearbyAllRows
+        } else {
+            if (-not [string]::IsNullOrWhiteSpace($ResolvedXamlPath)) { Load-NearbyRoundingEvents -ResolvedXamlPath $ResolvedXamlPath }
+            $allRows = @(Build-NearbyDevices -Device $script:AppState.CurrentDevice -Inventory $Inventory)
+            $script:NearbyAllRows = $allRows
+            $script:NearbyNaturalColumnWidths = $null
+            Update-NearbyCheckboxLabels -Ui $Ui -Rows $allRows
+        }
         $rows = @($allRows | Where-Object { Test-NearbyRowVisible -Ui $Ui -Row $_ })
         $Ui.NearbyDataGrid.ItemsSource = $rows
         Restore-NearbySortState -Ui $Ui -SortState $sortState
-        $Ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $Ui }.GetNewClosure(), [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
-        if ($script:AppState -and $script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending') {
-            $script:AppState.NearbyColumnsAutoFitPending = -not $Ui.NearbyDataGrid.IsVisible
-        }
+        Request-NearbyColumnLayout -Ui $Ui
         if ($script:AppState) {
             $associated = @()
             try { $associated = @($Ui.AssociatedDevicesDataGrid.ItemsSource) } catch {}
@@ -2785,6 +2804,8 @@ try {
             $s = $sender.Tag
             if (-not $s -or $s.Index -ge $s.Total) {
                 $sender.Stop()
+                $script:NearbyNaturalColumnWidths = $null
+                Request-NearbyColumnLayout -Ui $Ui
                 try { $Ui.NearbyDataGrid.Items.Refresh() } catch {}
                 if ($Ui.PingAllButton) { $Ui.PingAllButton.IsEnabled = $true }
                 if ($script:AppState) { $script:AppState.NearbyPingInProgress = $false }
@@ -2859,7 +2880,7 @@ try {
             }
             $script:AppState.NearbyContextSelectedRows = @()
         }
-        Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath
+        Update-NearbyRows -Ui $Ui -Inventory $Inventory -ResolvedXamlPath $ResolvedXamlPath -FilterOnly
     }
 
     function Invoke-SelectedNearbyPing {
@@ -3520,7 +3541,7 @@ try {
             $Ui.MainTabControl.Dispatcher.BeginInvoke([Action]{
                 if ($script:AppState.CurrentQueryToken -ne $QueryToken) { return }
                 $Ui.AssociatedDevicesDataGrid.ItemsSource = $associated
-                $Ui.NearbyDataGrid.ItemsSource = @()
+                $script:NearbyAllRows = $null; $script:NearbyNaturalColumnWidths = $null; $Ui.NearbyDataGrid.ItemsSource = @()
                 Update-NearbySummary -Ui $Ui
                 $script:AppState.SampleData = [pscustomobject]@{ Device=$Device; Associated=$associated; Nearby=@() }
             }) | Out-Null
@@ -3854,7 +3875,7 @@ try {
         $Ui.AssociatedDevicesDataGrid.ItemsSource = @()
         if ($ClearNearby) {
             Update-NearbySummary -Ui $Ui
-            $Ui.NearbyDataGrid.ItemsSource = @()
+            $script:NearbyAllRows = $null; $script:NearbyNaturalColumnWidths = $null; $Ui.NearbyDataGrid.ItemsSource = @()
         } else {
             Update-NearbySummary -Ui $Ui
         }
@@ -4577,6 +4598,15 @@ function Find-SampleDevice {
         if ($box) { $box.Add_TextChanged({ Update-CheckCompleteButtonState -Ui $ui }) }
     }
 
+    $script:NearbyAllRows = $null
+    $script:NearbyNaturalColumnWidths = $null
+    $script:NearbyColumnLayoutTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:NearbyColumnLayoutTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $script:NearbyColumnLayoutTimer.Add_Tick({
+        $script:NearbyColumnLayoutTimer.Stop()
+        AutoFit-NearbyColumns -Ui $ui
+    })
+    $window.Add_Closed({ $script:NearbyColumnLayoutTimer.Stop() })
     if ($script:AppState -and -not ($script:AppState.PSObject.Properties.Name -contains 'NearbyColumnsAutoFitPending')) {
         $script:AppState | Add-Member -NotePropertyName NearbyColumnsAutoFitPending -NotePropertyValue $true -Force
     }
@@ -4584,21 +4614,20 @@ function Find-SampleDevice {
         $ui.MainTabControl.Add_SelectionChanged({
             param($sender,$e)
             if ($sender.SelectedItem -eq $ui.NearbyTab -and $script:AppState.NearbyColumnsAutoFitPending) {
-                $script:AppState.NearbyColumnsAutoFitPending = $false
-                $ui.NearbyDataGrid.Dispatcher.BeginInvoke([Action]{ AutoFit-NearbyColumns -Ui $ui }, [System.Windows.Threading.DispatcherPriority]::Loaded) | Out-Null
+                Request-NearbyColumnLayout -Ui $ui
             }
         })
     }
 
     $ui.NearbyDataGrid.Add_SizeChanged({
         param($sender,$e)
-        if ($e.WidthChanged -and $sender.IsVisible) { AutoFit-NearbyColumns -Ui $ui }
+        if ($e.WidthChanged -and $sender.IsVisible) { Request-NearbyColumnLayout -Ui $ui }
     })
 
     $script:IsUpdatingNearbyFilters = $false
     $refreshNearbyFromFilters = {
         if ($script:IsUpdatingNearbyFilters) { return }
-        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath -FilterOnly
     }
     foreach ($checkBox in @($ui.TodaysRoundedCheckBox,$ui.ExcludedCheckBox,$ui.RecentlyRoundedCheckBox,$ui.CriticalClinicalCheckBox)) {
         $checkBox.Add_Click($refreshNearbyFromFilters)
@@ -4609,7 +4638,7 @@ function Find-SampleDevice {
                 # Restore the filtered view without changing any checkbox selections.
                 $script:AppState.NearbyIsolatedHostNames.Clear()
                 $script:AppState.NearbyContextSelectedRows = @()
-                Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+                Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath -FilterOnly
                 return
             }
             if ($ui.ShowAllNearbyCheckBox) {
@@ -4636,7 +4665,7 @@ function Find-SampleDevice {
         } finally {
             $script:IsUpdatingNearbyFilters = $false
         }
-        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath
+        Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath -FilterOnly
     })
 
     $ui.CityComboBox.Add_SelectionChanged({ if (-not $script:IsPopulatingLocationCombos -and $null -ne $ui.CityComboBox.SelectedItem) { Populate-LocationCombos -Ui $ui -Inventory $script:AppState.Inventory -ChangedLevel 'City' -ChangedValue ([string]$ui.CityComboBox.SelectedItem) } })
@@ -4907,7 +4936,7 @@ function Find-SampleDevice {
     })
     $ui.FileEditorButton.Add_Click({ Show-RoundingEventsFileEditor -Ui $ui -ResolvedXamlPath $resolvedXamlPath })
     $ui.RebuildNearbyButton.Add_Click({ Update-NearbyRows -Ui $ui -Inventory $script:AppState.Inventory -ResolvedXamlPath $resolvedXamlPath })
-    $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
+    $ui.ClearNearbyButton.Add_Click({ Ensure-NearbyState; $script:AppState.ActiveNearbyScopes.Clear(); $script:NearbyAllRows = $null; $script:NearbyNaturalColumnWidths = $null; $ui.NearbyDataGrid.ItemsSource = @(); Update-NearbySummary -Ui $ui })
     $ui.PingAllButton.Add_Click({ Invoke-AllVisibleNearbyPing -Ui $ui -DataRoot $dataRoot })
     $ui.NearbySaveButton.Add_Click({ Save-NearbyEvents -Ui $ui -Inventory $script:AppState.Inventory -RoundingByAssetTag $roundingByAssetTag -ResolvedXamlPath $resolvedXamlPath })
     $ui.AssociatedDevicesDataGrid.Add_MouseDoubleClick({

@@ -26,7 +26,7 @@ def test_nearby_autofit_measures_all_rows_and_defers_hidden_tabs():
         "function Get-NearbySortState", 1
     )[0]
     assert "-not $grid.IsVisible" in autofit_body
-    assert "foreach ($row in $grid.ItemsSource)" in autofit_body
+    assert "foreach ($row in $script:NearbyAllRows)" in autofit_body
     assert "$column.Binding.Path.Path" in autofit_body
     assert "$viewer.ViewportWidth" in autofit_body
     assert "DataGridLengthUnitType]::Star" in autofit_body
@@ -46,9 +46,26 @@ def test_nearby_status_is_last_and_cells_can_wrap():
 def test_nearby_status_reserves_full_option_width_while_location_absorbs_resize():
     body = SCRIPT.split("function AutoFit-NearbyColumns", 1)[1].split("function Get-NearbySortState", 1)[0]
     assert "$measure.Text = 'Inaccessible - Room locked - Card Swipe'" in body
-    assert "$minimumTotal += $desired" in body
+    assert "if ([string]$column.Header -eq 'Status') { $widths[$column] } else { $column.MinWidth }" in body
     layout = body.split("# Share the available width", 1)[1]
     location, status = layout.split("} elseif ([string]$column.Header -eq 'Status')", 1)
     assert "if ([string]$column.Header -eq 'Location')" in location
     assert "DataGridLengthUnitType]::Star" in location
     assert "DataGridLength $widths[$column]" in status
+
+
+def test_column_measurements_are_cached_and_duplicate_values_are_skipped():
+    body = SCRIPT.split("function AutoFit-NearbyColumns", 1)[1].split("function Get-NearbySortState", 1)[0]
+    assert "if (-not $script:NearbyNaturalColumnWidths)" in body
+    assert "if (-not $seenValues.Add($value)) { continue }" in body
+    assert "$script:NearbyNaturalColumnWidths = $widths" in body
+    assert "UpdateLayout()" not in body
+
+
+def test_resize_requests_are_coalesced_without_measuring_in_the_size_handler():
+    handler = SCRIPT.split("$ui.NearbyDataGrid.Add_SizeChanged", 1)[1].split("$script:IsUpdatingNearbyFilters", 1)[0]
+    assert "Request-NearbyColumnLayout -Ui $ui" in handler
+    assert "AutoFit-NearbyColumns" not in handler
+    request = SCRIPT.split("function Request-NearbyColumnLayout", 1)[1].split("function AutoFit-NearbyColumns", 1)[0]
+    assert "NearbyColumnLayoutTimer.Stop()" in request
+    assert "NearbyColumnLayoutTimer.Start()" in request

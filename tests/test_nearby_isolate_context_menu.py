@@ -57,3 +57,18 @@ def test_nearby_summary_sets_button_label_from_isolation_state():
     summary = SCRIPT.split("function Update-NearbySummary", 1)[1].split("function Update-NearbyCheckboxLabels", 1)[0]
     assert "NearbyIsolatedHostNames.Count -gt 0" in summary
     assert "if ($isIsolated) { 'Restore' } else { 'Show All' }" in summary
+
+
+def test_filter_only_refresh_reuses_rows_without_reloading_events():
+    body = SCRIPT.split("function Update-NearbyRows", 1)[1].split("function Get-NearbySelectedRows", 1)[0]
+    cached, rebuild = body.split("} else {", 1)
+    assert "if ($FilterOnly -and $null -ne $script:NearbyAllRows)" in cached
+    assert "$allRows = $script:NearbyAllRows" in cached
+    assert "Load-NearbyRoundingEvents" not in cached
+    assert "Build-NearbyDevices" not in cached
+    assert "Build-NearbyDevices" in rebuild
+    assert "$script:NearbyNaturalColumnWidths = $null" in rebuild
+    isolate = SCRIPT.split("function Invoke-IsolateSelectedNearbyRows", 1)[1].split("function Invoke-SelectedNearbyPing", 1)[0]
+    restore = SCRIPT.split("$ui.ShowAllNearbyButton.Add_Click", 1)[1].split("return", 1)[0]
+    assert "-FilterOnly" in isolate
+    assert "-FilterOnly" in restore

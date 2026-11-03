@@ -509,8 +509,9 @@
                     Background="{StaticResource WindowSurfaceBrush}"
                     Margin="18,12,18,10">
                 <TabItem x:Name="SystemTab"><TabItem.Header><TextBlock Text="System" Margin="0,0,8,0"/></TabItem.Header>
+                    <Grid x:Name="SystemPageHost">
                     <Viewbox x:Name="SystemPageViewport" Stretch="Uniform" StretchDirection="DownOnly" VerticalAlignment="Top">
-                        <Grid Background="Transparent" Width="{Binding ActualWidth, ElementName=SystemPageViewport}" MinWidth="1200">
+                        <Grid x:Name="SystemPageContent" Background="Transparent" Width="1200" MinWidth="1200">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -971,6 +972,7 @@
                         </Grid>
                         </Grid>
                     </Viewbox>
+                    </Grid>
                 </TabItem>
 
                 <TabItem x:Name="NearbyTab"><TabItem.Header><TextBlock Text="Nearby" Margin="0,0,8,0"/></TabItem.Header>

@@ -3912,6 +3912,20 @@ try {
         $timer.Start()
     }
 
+    function Update-SystemPageFit {
+        param([hashtable]$Ui)
+        $hostPanel = $Ui.SystemPageHost
+        $content = $Ui.SystemPageContent
+        if (-not $hostPanel.IsVisible -or $hostPanel.ActualWidth -le 0 -or $hostPanel.ActualHeight -le 0) { return }
+        $naturalHeight = $content.ActualHeight
+        if ($naturalHeight -le 0) { return }
+        # Expand the logical canvas before uniformly shrinking it to fit the height.
+        # Its rendered width then equals the host width, with undistorted text.
+        $scale = [Math]::Min(1.0, [Math]::Min($hostPanel.ActualHeight / $naturalHeight, $hostPanel.ActualWidth / $content.MinWidth))
+        $targetWidth = [Math]::Max($content.MinWidth, $hostPanel.ActualWidth / $scale)
+        if ([Math]::Abs($content.Width - $targetWidth) -gt 0.5) { $content.Width = $targetWidth }
+    }
+
     function Increment-Fonts {
         param([System.Windows.DependencyObject]$Root)
         if ($null -eq $Root) { return }
@@ -4553,7 +4567,7 @@ function Find-SampleDevice {
 
     $ui = Get-NamedControls -Window $window -Names @(
         'SearchTextBox','QueryButton','PingButton','LiveDetailsButton','MonitorLabelButton','LookupSubnetButton','EditSubnetButton',
-        'MainTabControl','SystemTab','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
+        'MainTabControl','SystemTab','SystemPageHost','SystemPageContent','NearbyTab','SelectedDeviceText','DeviceStatusIcon','DeviceOnlineText','DeviceOnlineDot','DeviceResponseTimeText','LastQueryBadgeText',
         'DetectedTypeDisplay','HostNameDisplay','AssetTagDisplay','SerialDisplay','ParentDisplay','RitmDisplay','RetireDisplay',
         'DetectedTypeTextBox','HostNameTextBox','AssetTagTextBox','SerialNumberTextBox','ParentTextBox','RitmTextBox','RetireDateTextBox','LastRoundedContainer','LastRoundedLabelText','LastRoundedText','LastRoundedAttentionBadge','LastRoundedAttentionText',
         'AssociatedDevicesDataGrid','FixNameButton',
@@ -4572,6 +4586,12 @@ function Find-SampleDevice {
         'DataPathText','OutputPathText','DaysPerWeekBadge','DaysPerWeekBadgeText','TodayBadge','TodayBadgeText','ThisWeekBadge','ThisWeekBadgeText','RemainingPerDayBadge','RemainingPerDayBadgeText','StatusMessageBadge','DataFileBadge','DataFileBadgeText','DeviceIpText','DeviceSubnetText','DeviceUptimeText','DevicePendingRebootText'
     )
     $ui.Window = $window
+    $ui.SystemPageHost.Add_SizeChanged({ Update-SystemPageFit -Ui $ui })
+    $ui.SystemPageContent.Add_Loaded({ Update-SystemPageFit -Ui $ui })
+    $ui.SystemPageContent.Add_SizeChanged({
+        param($sender,$e)
+        if ($e.HeightChanged) { Update-SystemPageFit -Ui $ui }
+    })
 
     $dataRoot = Join-Path (Split-Path -Parent $resolvedXamlPath) 'Data'
     $availableSites = Get-InventorySites -DataRoot $dataRoot

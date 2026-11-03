@@ -279,7 +279,7 @@
             <Setter Property="BorderBrush" Value="#E6EAEE"/>
             <Setter Property="AlternatingRowBackground" Value="#FAFCFF"/>
             <Setter Property="RowBackground" Value="#FFFFFF"/>
-            <Setter Property="RowHeight" Value="NaN"/>
+            <Setter Property="RowHeight" Value="28"/>
             <Setter Property="MinRowHeight" Value="28"/>
             <Setter Property="ColumnHeaderHeight" Value="23"/>
             <Setter Property="HorizontalGridLinesBrush" Value="#E6EAEE"/>
@@ -348,8 +348,8 @@
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="LineHeight" Value="18"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-            <Setter Property="TextTrimming" Value="None"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         </Style>
 
         <Style x:Key="NearbyHostCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
@@ -1113,7 +1113,7 @@
                                                           HorizontalContentAlignment="Stretch">
                                                     <ComboBox.ItemTemplate>
                                                         <DataTemplate>
-                                                            <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
+                                                            <TextBlock Text="{Binding}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                                                         </DataTemplate>
                                                     </ComboBox.ItemTemplate>
                                                     <ComboBox.Style>

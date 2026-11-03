@@ -32,7 +32,7 @@ def test_nearby_autofit_measures_all_rows_and_defers_hidden_tabs():
     assert "DataGridLengthUnitType]::Star" in autofit_body
 
 
-def test_nearby_status_is_last_and_cells_can_wrap():
+def test_nearby_status_is_last_and_cells_do_not_wrap():
     root = ET.parse(XAML_PATH).getroot()
     ns = {"w": "http://schemas.microsoft.com/winfx/2006/xaml/presentation"}
     grid = next(e for e in root.iter() if e.get("{http://schemas.microsoft.com/winfx/2006/xaml}Name") == "NearbyDataGrid")
@@ -40,7 +40,7 @@ def test_nearby_status_is_last_and_cells_can_wrap():
     assert columns[-1].get("Header") == "Status"
     assert columns[-1].get("Width") == "Auto"
     style = next(e for e in root.iter() if e.get("{http://schemas.microsoft.com/winfx/2006/xaml}Key") == "NearbyCellTextStyle")
-    assert any(e.get("Property") == "TextWrapping" and e.get("Value") == "Wrap" for e in style)
+    assert any(e.get("Property") == "TextWrapping" and e.get("Value") == "NoWrap" for e in style)
 
 
 def test_nearby_status_reserves_full_option_width_while_location_absorbs_resize():
@@ -69,3 +69,14 @@ def test_resize_requests_are_coalesced_without_measuring_in_the_size_handler():
     request = SCRIPT.split("function Request-NearbyColumnLayout", 1)[1].split("function AutoFit-NearbyColumns", 1)[0]
     assert "NearbyColumnLayoutTimer.Stop()" in request
     assert "NearbyColumnLayoutTimer.Start()" in request
+
+
+def test_nearby_rows_keep_fixed_height_and_truncate_long_text():
+    root = ET.parse(XAML_PATH).getroot()
+    key = "{http://schemas.microsoft.com/winfx/2006/xaml}Key"
+    grid_style = next(e for e in root.iter() if e.get(key) == "LegacyNearbyDataGridStyle")
+    assert any(e.get("Property") == "RowHeight" and e.get("Value") == "28" for e in grid_style)
+    text_style = next(e for e in root.iter() if e.get(key) == "NearbyCellTextStyle")
+    assert any(e.get("Property") == "TextTrimming" and e.get("Value") == "CharacterEllipsis" for e in text_style)
+    grid = next(e for e in root.iter() if e.get("{http://schemas.microsoft.com/winfx/2006/xaml}Name") == "NearbyDataGrid")
+    assert not any(e.get("TextWrapping") == "Wrap" for e in grid.iter())

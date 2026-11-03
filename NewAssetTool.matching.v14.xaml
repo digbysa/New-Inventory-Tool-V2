@@ -1073,7 +1073,7 @@
                                 <DataGridTextColumn Header="IP Address" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding IPAddress}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Subnet" IsReadOnly="True" Width="Auto" MinWidth="65" Binding="{Binding Subnet}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
                                 <DataGridTextColumn Header="Asset Tag" IsReadOnly="True" Width="Auto" MinWidth="85" Binding="{Binding AssetTag}" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="110" MinWidth="110" Binding="{Binding Location}">
+                                <DataGridTextColumn Header="Location" IsReadOnly="True" Width="*" MinWidth="110" Binding="{Binding Location}">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource NearbyCellTextStyle}">
                                             <Setter Property="TextWrapping" Value="NoWrap"/>
@@ -1100,7 +1100,7 @@
                                     </DataGridTextColumn.CellStyle>
                                 </DataGridTextColumn>
                                 <DataGridTextColumn Header="Days Ago" IsReadOnly="True" Width="Auto" MinWidth="75" Binding="{Binding DaysAgo}" SortMemberPath="DaysAgoSort" ElementStyle="{StaticResource NearbyCellTextStyle}"/>
-                                <DataGridTemplateColumn Header="Status" Width="*" MinWidth="205" IsReadOnly="False">
+                                <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="205" IsReadOnly="False">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid>

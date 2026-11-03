@@ -2594,10 +2594,17 @@ try {
         $minimumTotal = 0.0
         $desiredTotal = 0.0
         foreach ($column in @($grid.Columns)) {
-            $minimumTotal += $column.MinWidth
-            if ([string]$column.Header -eq 'Location') {
-                $desired = [Math]::Max($column.MinWidth, $column.Width.Value)
+            if ([string]$column.Header -eq 'Status') {
+                # Reserve enough space for the longest option even before it is selected.
+                $measure.Text = 'Inaccessible - Room locked - Card Swipe'
+                $measure.Measure($infinite)
+                $desired = [Math]::Max($column.MinWidth, [Math]::Ceiling($measure.DesiredSize.Width + 32))
+                $minimumTotal += $desired
+            } elseif ([string]$column.Header -eq 'Location') {
+                $desired = $column.MinWidth
+                $minimumTotal += $column.MinWidth
             } else {
+                $minimumTotal += $column.MinWidth
                 $measure.Text = [string]$column.Header
                 $measure.Measure($infinite)
                 $desired = [Math]::Max($column.MinWidth, $measure.DesiredSize.Width + 14)
@@ -2617,9 +2624,11 @@ try {
             [Math]::Max(0, ($available - $minimumTotal) / ($desiredTotal - $minimumTotal))
         } else { 1.0 }
         foreach ($column in @($grid.Columns)) {
-            if ([string]$column.Header -eq 'Status') {
-                # Consume any spare space instead of leaving a blank filler after Status.
+            if ([string]$column.Header -eq 'Location') {
+                # Location absorbs viewport changes; Status keeps its measured pixel width.
                 $column.Width = New-Object System.Windows.Controls.DataGridLength -ArgumentList 1, ([System.Windows.Controls.DataGridLengthUnitType]::Star)
+            } elseif ([string]$column.Header -eq 'Status') {
+                $column.Width = New-Object System.Windows.Controls.DataGridLength $widths[$column]
             } else {
                 $target = $column.MinWidth + ($widths[$column] - $column.MinWidth) * $ratio
                 $column.Width = New-Object System.Windows.Controls.DataGridLength $target
